@@ -36,9 +36,6 @@ GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "hist_gradient_boosting": {"model__learning_rate": [0.03, 0.1],
                                "model__max_depth": [2, 3],
                                "model__max_iter": [200, 400]},
-    "lightgbm": {"model__learning_rate": [0.03, 0.05],
-                 "model__num_leaves": [7, 15, 31],
-                 "model__min_child_samples": [5, 10]},
 }
 
 #: Lưới rút gọn cho máy yếu (--quick).
@@ -46,7 +43,6 @@ QUICK_GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "logistic": {"model__C": [0.1, 1.0]},
     "random_forest": {"model__max_depth": [3, 6], "model__min_samples_leaf": [2]},
     "hist_gradient_boosting": {"model__learning_rate": [0.05], "model__max_depth": [3]},
-    "lightgbm": {"model__learning_rate": [0.05], "model__num_leaves": [15]},
 }
 
 #: Hai metric chấm điểm CV: AUROC (xếp hạng) và AP (quan trọng khi lớp dương là lớp cần bắt).
@@ -95,7 +91,7 @@ def run(models: List[str] | None = None, quick: bool = False,
         n_splits: int = 4) -> Dict[str, Any]:
     """Tinh chỉnh các mô hình trên train bằng CV chia theo công ty, xác nhận lại trên validation."""
     ensure_dirs()
-    names = [m for m in (models or ["logistic", "random_forest", "hist_gradient_boosting", "lightgbm"])
+    names = [m for m in (models or ["logistic", "random_forest", "hist_gradient_boosting"])
              if m in MODEL_REGISTRY]
     train_s, val_s = load_prepared("train"), load_prepared("validation")
     X, y = build_feature_matrix(train_s), extract_labels(train_s)

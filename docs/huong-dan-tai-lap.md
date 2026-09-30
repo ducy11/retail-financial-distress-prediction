@@ -35,7 +35,7 @@ python -m scripts.analyze --quick                        # giảm số lần ho�
 | `python -m forecasting.data` | `data/prepared/*` | Tái tạo split gốc (mặc định bỏ qua nếu đã có; `--force` để ghi lại, byte-identical) |
 | `python -m scripts.eda` | `reports/figures/eda/*.png`, `reports/results/eda.md` | 9 hình EDA + thống kê mô tả 14 tỷ số/16 chỉ tiêu, tỉ lệ lớp %, tương quan, nhận xét tự động (mục 3.1–3.6) |
 | `python -m scripts.eda_deep` | `reports/results/eda_deep.{json,md}`, `reports/figures/eda_deep/*.png` | EDA chuyên sâu: chất lượng 47 feature, entropy/IR nhãn, liên hệ feature–nhãn, cụm đa cộng tuyến, drift KS/SMD/PSI, rò rỉ & missingness-mang-nhãn |
-| `python -m forecasting.train` | `reports/results/summary.json`, `reports/models/best.joblib` | Fit các họ mô hình (logistic/RF/HGB/LightGBM), chọn mô hình trên validation, tính ngưỡng |
+| `python -m forecasting.train` | `reports/results/summary.json`, `reports/models/best.joblib` | Fit 3 họ mô hình (logistic / random forest / hist gradient boosting), chọn mô hình trên validation, tính ngưỡng |
 | `python -m forecasting.baselines` | `reports/results/baselines.json` | Dummy, ticker-prior, single-feature (đối chứng bắt buộc) |
 | `python -m forecasting.validation` | `reports/results/validation_checks.json` | GroupKFold, LOCO, bootstrap CI, tương quan hạng |
 | `python -m forecasting.tuning` | `reports/results/tuning.{json,md}` | GridSearchCV chia theo công ty + so với cấu hình mặc định |

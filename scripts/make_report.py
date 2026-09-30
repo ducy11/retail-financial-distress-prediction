@@ -25,7 +25,6 @@ PRETTY = {
     "logistic": "Logistic Regression",
     "random_forest": "Random Forest",
     "hist_gradient_boosting": "HistGradientBoosting",
-    "xgboost": "XGBoost",
     "dummy_most_frequent": "Dummy (lớp đa số)",
     "ticker_prior": "Baseline “nhớ mặt công ty” (ticker-prior)",
 }
@@ -70,10 +69,6 @@ REFERENCE_ROWS: List[Dict[str, str]] = [
      "ref": "Friedman, J. H. (2001). Greedy function approximation: A gradient boosting machine. "
             "*The Annals of Statistics*, 29(5), 1189–1232.",
      "where": "`hist_gradient_boosting` (scikit-learn) — mô hình so sánh"},
-    {"group": "",
-     "ref": "Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., & Liu, T.-Y. (2017). "
-            "LightGBM: A highly efficient gradient boosting decision tree. *NeurIPS 30*.",
-     "where": "`lightgbm` — mô hình so sánh (`forecasting/models.py`)"},
     {"group": "",
      "ref": "Pedregosa, F., và cộng sự (2011). Scikit-learn: Machine learning in Python. "
             "*Journal of Machine Learning Research*, 12, 2825–2830.",
@@ -243,8 +238,9 @@ def section_summary(a: Dict[str, Any]) -> str:
         f"hiện tại + YoY, 10 tốc độ tăng trưởng, cấu trúc vốn, chỉ báo căng thẳng, cực trị/độ bền "
         f"theo cửa sổ); pipeline chính `median-impute → [scaler cho mô hình tuyến tính] → model` "
         "(**winsorize không dùng ở pipeline chính** — chỉ được thử nghiệm ở mục 9.1), " 
-        "đặt trong `Pipeline` của scikit-learn; **4 họ mô hình** (Logistic Regression, Random "
-        "Forest, HistGradientBoosting, **LightGBM**); đánh giá in-domain **và cross-company "
+        "đặt trong `Pipeline` của scikit-learn; **3 họ mô hình** (Logistic Regression, Random "
+        "Forest, HistGradientBoosting — tất cả thuần scikit-learn, KHÔNG dùng xgboost/lightgbm); "
+        "đánh giá in-domain **và cross-company "
         "(GroupKFold/LOCO)**; chọn mô hình theo **AP cross-company** (quy tắc đầy đủ ở mục 5.2; "
         "mô hình triển khai giữ **cấu hình mặc định** — xem mục 5.3) rồi đánh giá trên test "
         "(**test không tham gia chọn mô hình/ngưỡng**).",
@@ -299,7 +295,7 @@ def section_intro(a: Dict[str, Any]) -> str:
         "### 2.2. Câu hỏi nghiên cứu",
         "",
         table(["#", "Câu hỏi", "Trả lời ở mục"],
-              [["RQ1", "Bốn họ mô hình (tuyến tính / bagging / boosting) khác nhau thế nào?", "6, 7"],
+              [["RQ1", "Ba họ mô hình (tuyến tính / bagging / boosting) khác nhau thế nào?", "6, 7"],
                ["RQ2", "Đặc trưng nào quyết định kết quả? Có đặc trưng chi phối bất thường?", "7.2, 7.3"],
                ["RQ3", "Mô hình có tổng quát hoá sang **công ty chưa từng thấy**?", "6.4, 8"],
                ["RQ4", "Kết luận có phụ thuộc vào **định nghĩa nhãn**?", "8.2"]],
@@ -813,11 +809,7 @@ def section_models(a: Dict[str, Any]) -> str:
                            ", ".join(f"`{k}={v}`" for k, v in HYPERPARAMS["random_forest"].items())],
                           ["HistGradientBoosting", "Boosting (cây)",
                            ", ".join(f"`{k}={v}`" for k, v
-                                     in HYPERPARAMS["hist_gradient_boosting"].items())],
-                          ["XGBoost *(tuỳ chọn)*", "Boosting",
-                           "Không chạy được trong môi trường này (xung đột phiên bản xgboost 2.1.3 "
-                           "↔ scikit-learn 1.6.0: `'super' object has no attribute "
-                           "'__sklearn_tags__'`) → pipeline tự bỏ qua và ghi rõ trong log"]],
+                                     in HYPERPARAMS["hist_gradient_boosting"].items())]],
                          ["---", "---", "---"])
 
     tune_rows: List[List[str]] = []
@@ -876,7 +868,7 @@ def section_models(a: Dict[str, Any]) -> str:
         "",
         "## 5. Mô hình và siêu tham số",
         "",
-        "### 5.1. Bốn họ mô hình",
+        "### 5.1. Ba họ mô hình",
         "",
         params_table, "",
         f"Registry có {len(MODEL_REGISTRY)} họ mô hình; script **thử lần lượt** và tự bỏ mô hình nào lỗi ở "
@@ -1679,13 +1671,15 @@ def section_conclusion(a: Dict[str, Any]) -> str:
     n_loco = checks.get("loco_n_evaluable")
     base_auc = next((r["test"]["auroc"] for r in a["baselines"].get("rows", [])
                      if r["baseline"] == "ticker_prior"), None)
+    # Danh sách mô hình ĐÃ huấn luyện (đọc từ artifact, không hard-code) để câu kết luận luôn khớp.
+    models_run = sorted({str(m.get("model")) for m in a["summary"].get("models", [])})
     return "\n".join([
         "",
         "## 10. Kết luận và hướng phát triển",
         "",
         "### 10.1. Kết luận chính",
         "",
-        f"1. Các họ mô hình (Logistic, Random Forest, HistGradientBoosting, LightGBM) đều đạt AUROC test "
+        f"1. {len(models_run)} họ mô hình ({', '.join(PRETTY.get(m, m) for m in models_run)}) đều đạt AUROC test "
         f"~0,97–0,98; mô hình được chốt là **{PRETTY.get(best, best)}** theo quy tắc công bố trước ở "
         f"mục 5.2 (`{a['summary'].get('selection_rule', '—')}`) — tức ưu tiên khả năng tổng quát hoá "
         f"sang công ty chưa từng thấy, không ưu tiên điểm in-domain.",
@@ -1882,7 +1876,7 @@ def slides(a: Dict[str, Any]) -> str:
             "Dự báo quý kế tiếp: doanh nghiệp bán lẻ có rơi vào suy giảm tài chính (`is_distressed`)?",
             f"Dữ liệu: {corpus.get('n_companies')} chuỗi bán lẻ Mỹ, {corpus.get('n_quarters')} quý, "
             f"{corpus.get('n_samples')} mẫu",
-            "RQ1 bốn họ mô hình · RQ2 đặc trưng quyết định · RQ3 công ty chưa từng thấy · RQ4 định nghĩa nhãn"]},
+            "RQ1 ba họ mô hình · RQ2 đặc trưng quyết định · RQ3 công ty chưa từng thấy · RQ4 định nghĩa nhãn"]},
         {"title": "Dữ liệu và cách tạo mẫu", "bullets": [
             "16 chỉ tiêu/quý từ SEC XBRL → mẫu = (lịch sử ≤ as_of, quý target, nhãn)",
             "Chia tập theo thời gian trong từng công ty + dải purge 16 mẫu",
@@ -1909,8 +1903,8 @@ def slides(a: Dict[str, Any]) -> str:
             "Pipeline chính: median-impute → (scaler cho tuyến tính) → model; không ticker one-hot",
             "Winsorize IQR chỉ nằm ở thí nghiệm 9.1 (lợi ích cho mô hình chốt trong khoảng nhiễu)"],
          "image": "reports/figures/eda/04_ratio_boxplots_by_label.png"},
-        {"title": "Các họ mô hình và tinh chỉnh", "bullets": [
-            "Logistic · Random Forest · HistGradientBoosting · LightGBM (XGBoost bị bỏ do xung đột phiên bản)",
+        {"title": "Ba họ mô hình và tinh chỉnh", "bullets": [
+            "Logistic Regression · Random Forest · HistGradientBoosting (3 họ, thuần scikit-learn)",
             "GridSearchCV với StratifiedGroupKFold theo mã cổ phiếu; refit theo AP",
             "Chọn mô hình: AP cross-company (GroupKFold) → best-F1(val) → AP → AUROC → gap nhỏ nhất",
             "Mô hình TRIỂN KHAI giữ cấu hình MẶC ĐỊNH (tinh chỉnh chỉ +0,003 CV-AP ⇒ dưới mức nhiễu)"],
@@ -2120,7 +2114,7 @@ def repro_doc() -> str:
                 "EDA chuyên sâu: chất lượng 47 feature, entropy/IR nhãn, liên hệ feature–nhãn, "
                 "cụm đa cộng tuyến, drift KS/SMD/PSI, rò rỉ & missingness-mang-nhãn"],
                ["`python -m forecasting.train`", "`reports/results/summary.json`, `reports/models/best.joblib`",
-                "Fit các họ mô hình (logistic/RF/HGB/LightGBM), chọn mô hình trên validation, tính ngưỡng"],
+                "Fit 3 họ mô hình (logistic / random forest / hist gradient boosting), chọn mô hình trên validation, tính ngưỡng"],
                ["`python -m forecasting.baselines`", "`reports/results/baselines.json`",
                 "Dummy, ticker-prior, single-feature (đối chứng bắt buộc)"],
                ["`python -m forecasting.validation`", "`reports/results/validation_checks.json`",

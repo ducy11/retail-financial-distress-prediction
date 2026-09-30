@@ -1,6 +1,6 @@
 """Huấn luyện các model ứng viên trên train split, chọn mô hình theo AP CROSS-COMPANY.
 
-Lệnh: python -m forecasting.train [--model logistic|random_forest|xgboost]
+Lệnh: python -m forecasting.train [--model logistic|random_forest|hist_gradient_boosting]
 
 - Nạp prepared/train.json, validation.json.
 - Xây features (bậc 2) từ lịch sử; impute median trong pipeline.
@@ -31,7 +31,7 @@ from .features import build_feature_matrix, extract_labels, feature_names
 from .models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model, predict_proba
 from .validation import bootstrap_ci
 
-#: Mô hình mặc định = các mô hình CÓ MẶT trong registry (tự bỏ xgboost nếu thư viện lỗi).
+#: Mô hình mặc định = 3 họ mô hình của đồ án (logistic · random forest · hist gradient boosting).
 DEFAULT_MODELS = [m for m in DEFAULT_MODEL_ORDER if m in MODEL_REGISTRY]
 
 
@@ -154,7 +154,7 @@ def run(model_names: List[str] | None = None) -> Dict[str, Any]:
         print(f"  Fit {name} ...")
         try:
             row, model = train_split(name, X_train, y_train, X_val, y_val)
-        except Exception as e:  # noqa: BLE001 - xgboost/sklearn nhiều khi không tương thích runtime
+        except Exception as e:  # noqa: BLE001 - lỗi fit của sklearn (dữ liệu/quá ít mẫu)
             print(f"    LỖI fit {name}: {e}. Bỏ qua model này.")
             continue
         row["n_features"] = len(feats)

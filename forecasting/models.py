@@ -7,14 +7,13 @@ Mô tả ĐÚNG như code thực thi (tránh docstring sai so với hành vi):
 - Đánh giá khả năng tổng quát hoá sang công ty CHƯA TỪNG THẤY nằm ở `forecasting.validation`
   (GroupKFold / Leave-One-Company-Out) và baseline `ticker_prior` ở `forecasting.baselines`.
 
-Model registry (4 họ chạy được offline):
+Model registry (3 họ chạy được offline, thuần scikit-learn):
 - `logistic` — tuyến tính (tuyến tính trên log-odds của 47 feature đã scale);
 - `random_forest` — bagging cây quyết định;
-- `hist_gradient_boosting` — boosting cây thuần scikit-learn (**luôn chạy được**, không phụ thuộc xgboost);
-- `lightgbm` — boosting hiện đại (leaf-wise + GOSS/EFB); chỉ xuất hiện khi môi trường có `lightgbm`
-  (xem `requirements-benchmark.txt`), tự động bỏ qua nếu thiếu;
-- `xgboost` — tuỳ chọn; bị bỏ qua khi phiên bản xgboost/sklearn xung đột (môi trường này: xgboost
-  2.1.3 ↔ scikit-learn 1.6 lỗi `'super' object has no attribute '__sklearn_tags__'`).
+- `hist_gradient_boosting` — boosting cây.
+
+Đồ án **chỉ dùng 3 họ mô hình này** (không dùng `xgboost`/`lightgbm`): mọi script, báo cáo và slide đều
+lấy danh sách từ `MODEL_REGISTRY`/`HYPERPARAMS` dưới đây nên chỉ cần sửa ở MỘT chỗ là toàn repo nhất quán.
 
 Pipeline chuẩn: [`Winsorizer`] → `SimpleImputer(median)` → [`scaler`] → estimator, trong đó scaler
 mặc định là `StandardScaler` cho mô hình tuyến tính và `none` cho mô hình cây — có thể đổi sang
@@ -41,20 +40,6 @@ from .preprocessing import Winsorizer, make_scaler
 # và output test không bị nhiễu; chi tiết ở `runtime_warnings.py`.
 quiet_library_warnings()
 
-try:
-    from xgboost import XGBClassifier
-
-    HAS_XGB = True
-except Exception:  # pragma: no cover - máy không có xgboost
-    HAS_XGB = False
-
-try:  # LightGBM là phụ thuộc TUỲ CHỌN (lab đã dùng); thiếu thì registry bỏ qua
-    from lightgbm import LGBMClassifier
-
-    HAS_LGBM = True
-except Exception:  # pragma: no cover - máy không có lightgbm
-    HAS_LGBM = False
-
 from .config import RANDOM_SEED
 
 #: Hyperparameter của từng mô hình (nguồn duy nhất; tuning ghi đè qua `params`).
@@ -64,13 +49,6 @@ HYPERPARAMS: Dict[str, Dict[str, Any]] = {
                       "class_weight": "balanced_subsample", "n_jobs": 1},
     "hist_gradient_boosting": {"max_iter": 300, "learning_rate": 0.05, "max_depth": 3,
                                "l2_regularization": 1.0, "class_weight": "balanced"},
-    "lightgbm": {"n_estimators": 400, "learning_rate": 0.05, "num_leaves": 15,
-                 "min_child_samples": 10, "subsample": 0.9, "subsample_freq": 1,
-                 "colsample_bytree": 0.8, "reg_lambda": 1.0, "class_weight": "balanced",
-                 "n_jobs": 1, "verbose": -1, "force_col_wise": True},
-    "xgboost": {"n_estimators": 400, "max_depth": 3, "learning_rate": 0.05, "subsample": 0.9,
-                "colsample_bytree": 0.8, "scale_pos_weight": 2.0, "eval_metric": "logloss",
-                "n_jobs": 1},
 }
 
 MODEL_REGISTRY = {
@@ -79,13 +57,8 @@ MODEL_REGISTRY = {
     "hist_gradient_boosting": HistGradientBoostingClassifier,
 }
 
-#: Thứ tự thử nghiệm mặc định (các họ mô hình luôn sẵn có + boosting hiện đại khi môi trường cho phép).
-DEFAULT_MODEL_ORDER = ["logistic", "random_forest", "hist_gradient_boosting", "lightgbm", "xgboost"]
-
-if HAS_XGB:
-    MODEL_REGISTRY["xgboost"] = XGBClassifier
-if HAS_LGBM:
-    MODEL_REGISTRY["lightgbm"] = LGBMClassifier
+#: Thứ tự thử nghiệm mặc định — đúng 3 họ mô hình của đồ án.
+DEFAULT_MODEL_ORDER = ["logistic", "random_forest", "hist_gradient_boosting"]
 
 #: Mô hình cần scale (tuyến tính).
 NEEDS_SCALING = {"logistic"}
@@ -111,12 +84,8 @@ def make_model(name: str, scaler: str | None = None, winsorize: str = "none", **
     elif name == "random_forest":
         # random_state áp cho cả rừng; n_jobs=1 để output ổn định giữa các máy
         estimator = RandomForestClassifier(**params)
-    elif name == "hist_gradient_boosting":
+    else:  # hist_gradient_boosting — họ boosting duy nhất được dùng trong đồ án
         estimator = HistGradientBoostingClassifier(**params)
-    elif name == "lightgbm":
-        estimator = LGBMClassifier(**params)
-    else:  # pragma: no cover - chỉ chạy khi có xgboost
-        estimator = XGBClassifier(**params)
 
     steps: list[tuple[str, Any]] = []
     if winsorize != "none":

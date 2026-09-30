@@ -4,6 +4,11 @@
 `reports/imbalance/techniques.md` (+ `.csv`, `.json`, `.log`) — chạy lại được bằng
 `python -m imbalance_lab.techniques`.*
 
+> **Phạm vi:** LightGBM/XGBoost trong lab này chỉ là **base learner cho các kỹ thuật mất cân bằng**
+> (ví dụ Focal Loss cần custom objective của LightGBM), **KHÔNG thuộc bộ mô hình của đồ án**. Bộ mô hình
+> chính thức gồm đúng **3 họ thuần scikit-learn**: Logistic Regression · Random Forest ·
+> HistGradientBoosting (`forecasting/models.py`).
+
 ## 1. Bảng đối chiếu: yêu cầu ↔ cài đặt ↔ kiểm thử
 
 | Mục trong yêu cầu #2 | Khoá | Cài đặt | Kiểm thử tự động |

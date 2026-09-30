@@ -1085,7 +1085,7 @@ def check_model_report_alignment(a: Auditor) -> None:
        + hình `04_threshold_curves.png` nói về mô hình khác với `best.joblib`.
     2. Báo cáo phải **công bố cấu hình THẬT đang chạy** (mặc định) chứ không để bảng tinh chỉnh gây
        hiểu là đã triển khai cấu hình CV tốt nhất.
-    3. Bảng so sánh §6.1 phải có **đủ các mô hình** đã huấn luyện (gồm LightGBM khi môi trường có).
+    3. Bảng so sánh §6.1 phải có **đủ các mô hình** đã huấn luyện (đọc từ `forecasting.models.MODEL_REGISTRY`).
     4. Không được nói "chốt test đúng một lần" (test được chấm cho nhiều hệ thống; điều đúng là test
        KHÔNG tham gia chọn mô hình/ngưỡng).
     """
@@ -1110,8 +1110,8 @@ def check_model_report_alignment(a: Auditor) -> None:
                 "docs/BAO-CAO.md: còn câu 'chốt trên test đúng một lần' (không khớp artifact)")
         a.check("không thuộc ba tập" in flat, "report_numbers",
                 "docs/BAO-CAO.md §1: thiếu câu giải thích 16 mẫu purge không thuộc 3 tập")
-        models_in_registry = [m for m in ("logistic", "random_forest", "hist_gradient_boosting",
-                                          "lightgbm") if m in _model_registry()]
+        models_in_registry = [m for m in ("logistic", "random_forest", "hist_gradient_boosting")
+                              if m in _model_registry()]
         missing = [m for m in models_in_registry if f"model[{m}]" not in text]
         a.eq("report_numbers",
              "docs/BAO-CAO.md: thiếu mô hình trong bảng so sánh (mọi mô hình đã huấn luyện phải có)",
@@ -1144,7 +1144,7 @@ def check_docs_text_consistency(a: Auditor) -> None:
                if int(e.get("actual", -1)) == 0 and int(e.get("predicted", -1)) == 1)
     best = summary.get("best_model")
     pretty = {"logistic": "Logistic Regression", "random_forest": "Random Forest",
-              "hist_gradient_boosting": "HistGradientBoosting", "xgboost": "XGBoost"}.get(best, best)
+              "hist_gradient_boosting": "HistGradientBoosting"}.get(best, best)
 
     slide_path, report_path = DOCS_DIR / "slide.md", DOCS_DIR / "BAO-CAO.md"
     slide = slide_path.read_text(encoding="utf-8") if slide_path.exists() else ""

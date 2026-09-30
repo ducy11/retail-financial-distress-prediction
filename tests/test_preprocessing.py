@@ -130,17 +130,26 @@ class TestPipelineAssembly(unittest.TestCase):
             make_model("khong-ton-tai")
 
 
-class TestBoostingRegistry(unittest.TestCase):
-    """Boosting hiện đại phải nằm trong pipeline chính khi môi trường có thư viện."""
+class TestThreeModelRegistry(unittest.TestCase):
+    """Đồ án CHỈ dùng 3 họ mô hình thuần scikit-learn (KHÔNG xgboost/lightgbm) — chặn tái phát."""
 
-    def test_lightgbm_registered_and_in_default_order(self):
-        from forecasting.models import DEFAULT_MODEL_ORDER, HAS_LGBM
+    def test_registry_has_exactly_three_models(self):
+        from forecasting.models import DEFAULT_MODEL_ORDER, HYPERPARAMS
 
-        if not HAS_LGBM:
-            self.skipTest("môi trường không có lightgbm")
-        self.assertIn("lightgbm", MODEL_REGISTRY)
-        self.assertIn("lightgbm", DEFAULT_MODEL_ORDER)
-        steps = make_model("lightgbm", winsorize="iqr")
+        self.assertEqual(sorted(MODEL_REGISTRY),
+                         ["hist_gradient_boosting", "logistic", "random_forest"])
+        self.assertEqual(sorted(DEFAULT_MODEL_ORDER), sorted(MODEL_REGISTRY))
+        self.assertEqual(sorted(HYPERPARAMS), sorted(MODEL_REGISTRY))
+
+    def test_no_optional_boosting_library_is_imported(self):
+        """Pipeline chính không được import lightgbm/xgboost (mọi script dùng 3 mô hình sklearn)."""
+        src = (ROOT / "forecasting" / "models.py").read_text(encoding="utf-8")
+        for needle in ("lightgbm", "xgboost"):
+            self.assertNotIn(f"import {needle}", src,
+                             f"pipeline chính không được import {needle}")
+
+    def test_hist_gradient_boosting_runs_with_winsorize(self):
+        steps = make_model("hist_gradient_boosting", winsorize="iqr")
         self.assertEqual([name for name, _ in steps.steps][0], "winsorize")
         X = np.random.default_rng(0).normal(size=(40, 5))
         y = (X[:, 0] > 0).astype(int)

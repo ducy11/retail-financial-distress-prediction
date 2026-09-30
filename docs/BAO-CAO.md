@@ -6,7 +6,7 @@
 
 **Bài toán.** Với dữ liệu báo cáo tài chính quý (SEC XBRL) của **8 chuỗi bán lẻ Mỹ**, dự báo cho quý kế tiếp liệu doanh nghiệp có rơi vào trạng thái suy giảm tài chính (`is_distressed`) hay không. Dữ liệu: **332 quý** → **324 mẫu** dự báo, chia train/validation/test = 212/32/64 (= **308 mẫu dùng để huấn luyện/đánh giá**) + **16 mẫu purge** không thuộc ba tập (dải đệm chống rò rỉ theo ngày công bố); 324 = tổng số mẫu.
 
-**Phương pháp.** 47 feature tài chính (14 tỷ số ở dạng hiện tại + YoY, 10 tốc độ tăng trưởng, cấu trúc vốn, chỉ báo căng thẳng, cực trị/độ bền theo cửa sổ); pipeline chính `median-impute → [scaler cho mô hình tuyến tính] → model` (**winsorize không dùng ở pipeline chính** — chỉ được thử nghiệm ở mục 9.1), đặt trong `Pipeline` của scikit-learn; **4 họ mô hình** (Logistic Regression, Random Forest, HistGradientBoosting, **LightGBM**); đánh giá in-domain **và cross-company (GroupKFold/LOCO)**; chọn mô hình theo **AP cross-company** (quy tắc đầy đủ ở mục 5.2; mô hình triển khai giữ **cấu hình mặc định** — xem mục 5.3) rồi đánh giá trên test (**test không tham gia chọn mô hình/ngưỡng**).
+**Phương pháp.** 47 feature tài chính (14 tỷ số ở dạng hiện tại + YoY, 10 tốc độ tăng trưởng, cấu trúc vốn, chỉ báo căng thẳng, cực trị/độ bền theo cửa sổ); pipeline chính `median-impute → [scaler cho mô hình tuyến tính] → model` (**winsorize không dùng ở pipeline chính** — chỉ được thử nghiệm ở mục 9.1), đặt trong `Pipeline` của scikit-learn; **3 họ mô hình** (Logistic Regression, Random Forest, HistGradientBoosting — tất cả thuần scikit-learn, KHÔNG dùng xgboost/lightgbm); đánh giá in-domain **và cross-company (GroupKFold/LOCO)**; chọn mô hình theo **AP cross-company** (quy tắc đầy đủ ở mục 5.2; mô hình triển khai giữ **cấu hình mặc định** — xem mục 5.3) rồi đánh giá trên test (**test không tham gia chọn mô hình/ngưỡng**).
 
 **Kết quả chính.**
 
@@ -28,7 +28,7 @@ Dự báo suy giảm tài chính là bài toán kinh điển của tài chính �
 
 | # | Câu hỏi | Trả lời ở mục |
 |---|---|---|
-| RQ1 | Bốn họ mô hình (tuyến tính / bagging / boosting) khác nhau thế nào? | 6, 7 |
+| RQ1 | Ba họ mô hình (tuyến tính / bagging / boosting) khác nhau thế nào? | 6, 7 |
 | RQ2 | Đặc trưng nào quyết định kết quả? Có đặc trưng chi phối bất thường? | 7.2, 7.3 |
 | RQ3 | Mô hình có tổng quát hoá sang **công ty chưa từng thấy**? | 6.4, 8 |
 | RQ4 | Kết luận có phụ thuộc vào **định nghĩa nhãn**? | 8.2 |
@@ -468,20 +468,19 @@ Danh sách đầy đủ: `forecasting/features.py` (`feature_names()` — 47 c�
 
 ## 5. Mô hình và siêu tham số
 
-### 5.1. Bốn họ mô hình
+### 5.1. Ba họ mô hình
 
 | Mô hình | Họ | Siêu tham số (cấu hình chạy chính) |
 |---|---|---|
 | Logistic Regression | Tuyến tính | `max_iter=2000`, `C=0.1` |
 | Random Forest | Bagging (cây) | `n_estimators=300`, `max_depth=6`, `min_samples_leaf=2`, `class_weight=balanced_subsample`, `n_jobs=1` |
 | HistGradientBoosting | Boosting (cây) | `max_iter=300`, `learning_rate=0.05`, `max_depth=3`, `l2_regularization=1.0`, `class_weight=balanced` |
-| XGBoost *(tuỳ chọn)* | Boosting | Không chạy được trong môi trường này (xung đột phiên bản xgboost 2.1.3 ↔ scikit-learn 1.6.0: `'super' object has no attribute '__sklearn_tags__'`) → pipeline tự bỏ qua và ghi rõ trong log |
 
-Registry có 5 họ mô hình; script **thử lần lượt** và tự bỏ mô hình nào lỗi ở môi trường hiện tại (ghi lý do vào log `reports/results/run_all.log`) ⇒ lần chạy này huấn luyện thành công **4 mô hình**. Như vậy yêu cầu “≥ 3 mô hình khác nhau” được đáp ứng bằng **tuyến tính + bagging + boosting**.
+Registry có 3 họ mô hình; script **thử lần lượt** và tự bỏ mô hình nào lỗi ở môi trường hiện tại (ghi lý do vào log `reports/results/run_all.log`) ⇒ lần chạy này huấn luyện thành công **3 mô hình**. Như vậy yêu cầu “≥ 3 mô hình khác nhau” được đáp ứng bằng **tuyến tính + bagging + boosting**.
 
 ### 5.2. Quy trình chọn mô hình và ngưỡng
 
-1. Fit **các họ mô hình có trong registry** (5 họ ở môi trường này) trên `train` (212 mẫu).
+1. Fit **các họ mô hình có trong registry** (3 họ ở môi trường này) trên `train` (212 mẫu).
 2. Tính metric in-domain trên `validation` (32 mẫu): AUROC, AP, F1 và đường PR → ngưỡng tối đa F1. **Đồng thời** tính **AP out-of-fold theo công ty** (GroupKFold trên train+validation, test không tham gia).
 3. Chọn mô hình theo quy tắc tường minh: **max AP cross-company (GroupKFold, train+validation) → best-F1(val) → AP(val) → AUROC(val) → gap overfit nhỏ nhất** — vì metric in-domain bị chi phối bởi “nhớ mặt công ty” (mục 6.4), tiêu chí đầu tiên là khả năng tổng quát hoá sang công ty chưa từng thấy.
 
@@ -490,7 +489,6 @@ Registry có 5 họ mô hình; script **thử lần lượt** và tự bỏ mô 
 | Logistic Regression | 0.923 | 0.890 | 0.976 | 0.987 | 0.965 |
 | Random Forest | 0.958 | 0.943 | 0.976 | 0.987 | 0.965 |
 | HistGradientBoosting | 0.957 | 0.940 | 0.976 | 0.989 | 0.974 |
-| lightgbm | 0.947 | 0.933 | 0.976 | 0.987 | 0.965 |
 
 *Quy ước đọc:* cột **AP/AUROC cross-company** ở bảng trên = xác suất **out-of-fold trên train+validation** với **cấu hình mặc định** (thô, 244 mẫu). Đừng nhầm với các con số “cross-company” ở mục 9.3 (độ nhạy theo định nghĩa nhãn, dữ liệu khác) và mục 9.4 (thí nghiệm kỹ thuật lệch lớp) — cùng tên chỉ số nhưng **khác dữ liệu/nhãn**, không so trực tiếp được.
 4. Ngưỡng vận hành = ngưỡng best-F1 của mô hình được chọn trên validation (0.788); ngoài ra tính thêm ngưỡng tối ưu theo chi phí kỳ vọng (0.788, giả định FN đắt gấp 5 lần FP).
@@ -505,7 +503,6 @@ Dùng `GridSearchCV` với **StratifiedGroupKFold theo mã cổ phiếu**: mỗi
 | Logistic Regression | `{'C': 0.01, 'class_weight': None}` | 8 | 0.960 | 0.917 | 0.935 | 0.026 |
 | Random Forest | `{'max_depth': 3, 'min_samples_leaf': 2, 'n_estimators': 500}` | 18 | 0.989 | 0.976 | 0.986 | 0.003 |
 | HistGradientBoosting | `{'learning_rate': 0.03, 'max_depth': 2, 'max_iter': 200}` | 8 | 0.939 | 0.934 | 0.924 | 0.015 |
-| lightgbm | `{'learning_rate': 0.05, 'min_child_samples': 10, 'num_leaves': 15}` | 12 | 0.917 | 0.888 | 0.917 | 0.000 |
 
 **Cấu hình THẬT của mô hình đã triển khai** (`reports/models/best.joblib` = Random Forest): **cấu hình mặc định** trong `forecasting/models.py::HYPERPARAMS`: `{'n_estimators': 300, 'max_depth': 6, 'min_samples_leaf': 2, 'class_weight': 'balanced_subsample', 'n_jobs': 1}` (artifact ghi `params = null` cho mọi mô hình ⇒ `forecasting/train.py` fit bằng cấu hình mặc định).
 
@@ -538,7 +535,6 @@ Cột “CV-AP mặc định” là điểm của cấu hình trong `HYPERPARAMS
 | model[logistic] | 0.983 | 0.989 | 0.935 | 0.919 | 0.922 |
 | model[random_forest] | 0.983 | 0.991 | 0.949 | 0.934 | 0.938 |
 | model[hist_gradient_boosting] | 0.977 | 0.987 | 0.937 | 0.917 | 0.922 |
-| model[lightgbm] | 0.979 | 0.988 | 0.949 | 0.934 | 0.938 |
 
 Trong đó: `Dummy (lớp đa số)` = “không học gì”; `Baseline nhớ mặt công ty` (ticker-prior) chỉ dùng tỷ lệ nhãn trung bình của chính công ty đó trong train; `single_feature[debt_to_assets_latest]` là Logistic trên **một** chỉ tiêu duy nhất.
 
@@ -590,10 +586,9 @@ Trong đó: `Dummy (lớp đa số)` = “không học gì”; `Baseline nhớ m
 | Logistic Regression | 0.983 | 0.989 | 0.912 | 0.942 | 0.883 |
 | Random Forest | 0.983 | 0.991 | 0.933 | 0.957 | 0.938 |
 | HistGradientBoosting | 0.977 | 0.987 | 0.926 | 0.953 | 0.825 |
-| lightgbm | 0.979 | 0.988 | 0.933 | 0.957 | 0.878 |
 
 - Cross-company = GroupKFold **theo công ty** trên toàn bộ 324 mẫu (mỗi fold giữ trọn một công ty ra ngoài) → đây là con số trung thực cho câu hỏi “công ty mới thì sao?”.
-- LOCO (train 7 công ty, test công ty còn lại, chỉ dùng split theo thời gian): trung bình AUROC = **0.610** trên 8 công ty tính được. Các công ty **không tính được AUROC** (nhãn đơn lớp ở cả validation và test): —.
+- LOCO (train 7 công ty, test công ty còn lại, chỉ dùng split theo thời gian): trung bình AUROC = **0.607** trên 6 công ty tính được. Các công ty **không tính được AUROC** (nhãn đơn lớp ở cả validation và test): —.
 - Nhận xét: khi buộc phải tổng quát hoá sang công ty mới, mô hình gần như trở về mức “đoán theo xu hướng chung”, trong khi ở chế độ in-domain gần đạt mức hoàn hảo. Khoảng cách này chính là **định lượng của rò rỉ cấp thực thể**.
 
 
@@ -609,7 +604,6 @@ Trong đó: `Dummy (lớp đa số)` = “không học gì”; `Baseline nhớ m
 | Logistic Regression | 0.983 | 0.955–1.000 | 0.989 | 0.970–1.000 | 0.935 |
 | Random Forest | 0.983 | 0.947–1.000 | 0.991 | 0.971–1.000 | 0.949 |
 | HistGradientBoosting | 0.977 | 0.940–1.000 | 0.987 | 0.964–1.000 | 0.937 |
-| lightgbm | 0.979 | 0.946–1.000 | 0.988 | 0.966–1.000 | 0.949 |
 
 Với n = 64 mẫu test, khoảng tin cậy rộng là điều bình thường — báo cáo vì thế không nêu một con số AUROC đơn lẻ mà không kèm CI.
 
@@ -634,7 +628,6 @@ Với n = 64 mẫu test, khoảng tin cậy rộng là điều bình thường �
 | Logistic Regression | 0.984 | 0.965 | 0.019 | 0.935 | 0.976 | -0.040 | 0.987 | 0.051 |
 | Random Forest | 1.000 | 0.965 | 0.034 | 0.985 | 0.976 | 0.009 | 0.987 | 0.046 |
 | HistGradientBoosting | 1.000 | 0.974 | 0.026 | 1.000 | 0.976 | 0.024 | 0.989 | 0.037 |
-| lightgbm | 1.000 | 0.965 | 0.035 | 1.000 | 0.976 | 0.024 | 0.987 | 0.035 |
 
 
 ![Train vs Validation — gap càng lớn càng dễ overfit](../reports/figures/analysis/01_overfit_train_vs_val.png)
@@ -642,7 +635,7 @@ Với n = 64 mẫu test, khoảng tin cậy rộng là điều bình thường �
 *Hình: Train vs Validation — gap càng lớn càng dễ overfit*
 
 
-**Kết luận.** Gap AUROC train→validation theo từng mô hình: Logistic Regression = 0.019 (val F1 0.976); Random Forest = 0.034 (val F1 0.976); HistGradientBoosting = 0.026 (val F1 0.976); lightgbm = 0.035 (val F1 0.976). Mô hình cây phi tham số bám tập train sát hơn (gap dương) — hệ quả của 212 mẫu với 47 chiều. Mô hình được chốt là **Random Forest** theo quy tắc ở mục 5.2 (`max AP cross-company (GroupKFold, train+validation) → best-F1(val) → AP(val) → AUROC(val) → gap overfit nhỏ nhất`), không phải theo một mô hình định trước.
+**Kết luận.** Gap AUROC train→validation theo từng mô hình: Logistic Regression = 0.019 (val F1 0.976); Random Forest = 0.034 (val F1 0.976); HistGradientBoosting = 0.026 (val F1 0.976). Mô hình cây phi tham số bám tập train sát hơn (gap dương) — hệ quả của 212 mẫu với 47 chiều. Mô hình được chốt là **Random Forest** theo quy tắc ở mục 5.2 (`max AP cross-company (GroupKFold, train+validation) → best-F1(val) → AP(val) → AUROC(val) → gap overfit nhỏ nhất`), không phải theo một mô hình định trước.
 
 ### 7.2. Đặc trưng ảnh hưởng nhiều nhất
 
@@ -849,12 +842,12 @@ Ba hạng mục dưới đây được thêm để đóng các lỗ hổng đã 
 
 ### 9.1. Winsorize × scaler trên dữ liệu thật (`scripts.experiment_preprocessing.py`)
 
-- Giao thức: fit trên train; in-domain trên validation; tổng quát hoá bằng GroupKFold(4) trên train+validation, gộp xác suất out-of-fold; **24 cấu hình** (4 họ mô hình).
+- Giao thức: fit trên train; in-domain trên validation; tổng quát hoá bằng GroupKFold(4) trên train+validation, gộp xác suất out-of-fold; **18 cấu hình** (3 họ mô hình).
 
 1. **Cấu hình pipeline chính** (logistic + standard + không winsorize): Val AP = 0.9869, cross-company AP = 0.9232.
 2. **Tốt nhất theo validation:** logistic + standard + winsorize=p1p99 → Val AP = 0.9908 (+0.40 điểm %), cross-company AP = 0.9417.
 3. **Tốt nhất theo cross-company:** random_forest + none + winsorize=iqr → cross-company AP = 0.9590 (+3.58 điểm %).
-4. **Riêng tác động của winsorize** (cùng model/scaler, so với không clip): trung bình +0.73 điểm % cross-company AP, tốt nhất +3.95, xấu nhất -0.11 trên 16 cặp so sánh ⇒ cải thiện rõ về trung bình, ĐẶC BIỆT cho mô hình tuyến tính; xem mục dưới để biết tác động trên đúng mô hình được chốt.
+4. **Riêng tác động của winsorize** (cùng model/scaler, so với không clip): trung bình +0.85 điểm % cross-company AP, tốt nhất +3.95, xấu nhất +0.00 trên 12 cặp so sánh ⇒ cải thiện rõ về trung bình, ĐẶC BIỆT cho mô hình tuyến tính; xem mục dưới để biết tác động trên đúng mô hình được chốt.
 5. **Trên ĐÚNG mô hình được chốt (`random_forest`, đọc từ `summary.json`)**: winsorize=iqr cho cross-company AP 0.9590 so với 0.9577 khi không clip ⇒ +0.13 điểm % — nằm trong khoảng nhiễu của 244 mẫu out-of-fold, nên **pipeline chính giữ không winsorize** (đơn giản, dễ diễn giải) và winsorize chỉ được dùng như một biến thể ablation; muốn đổi mặc định cần thêm công ty/dữ liệu.
 6. **Scaler cho mô hình tuyến tính** (không winsorize): tốt nhất là `standard` với cross-company AP = 0.9232 (StandardScaler = 0.9232) ⇒ khác biệt không đáng kể (dưới 0,5 điểm %), nên giữ StandardScaler cho gọn và ghi lại kết quả âm này như một kết luận trung thực.
 
@@ -945,7 +938,6 @@ Ba hạng mục dưới đây được thêm để đóng các lỗ hổng đã 
 | none | baseline | 0.9588 | 0.9426 | 0.9419 | — | PASS |
 | class_weight | algorithm-level | 0.9569 | 0.9404 | 0.9419 | — | PASS |
 | random_under | undersampling | 0.9561 | 0.9267 | 0.9265 | 1.32 → 1.00 | PASS |
-| focal_loss | algorithm-level | 0.9542 | 0.9369 | 0.9355 | — | PASS |
 | smote | oversampling | 0.9502 | 0.9500 | 0.9311 | 1.32 → 1.00 | PASS |
 | tomek_links | undersampling | 0.9428 | 0.9160 | 0.9159 | 1.32 → 1.23 | PASS |
 
@@ -964,17 +956,16 @@ Ba hạng mục dưới đây được thêm để đóng các lỗ hổng đã 
 ### 9.5. Tìm kiếm siêu tham số + sổ thực nghiệm (`scripts/search.py`)
 
 - random search (log-uniform cho tham số scale) + log MỌI trial; môi trường không có Optuna nên dùng cách này, không gian tham số mô tả ở `SEARCH_SPACES`
-- Mục tiêu: AP out-of-fold, StratifiedGroupKFold theo công ty trên train+validation; **40 trial/mô hình**; sổ thực nghiệm `results\runs.csv` gồm **153 dòng**.
+- Mục tiêu: AP out-of-fold, StratifiedGroupKFold theo công ty trên train+validation; **40 trial/mô hình**; sổ thực nghiệm `results\runs.csv` gồm **113 dòng**.
 
 | Mô hình | #trial | CV-AP tốt nhất | CV-AP mặc định | CV-AP GridSearchCV | Δ vs Grid | Δ vs mặc định | Thời gian (s) |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | logistic | 40 | 0.9669 | 0.9583 | 0.9603 | 0.0066 | 0.0086 | 1.4 |
-| random_forest | 33 | 0.9855 | 0.9810 | 0.9890 | -0.0035 | 0.0045 | 103.2 |
-| hist_gradient_boosting | 40 | 0.9648 | 0.9095 | 0.9386 | 0.0262 | 0.0553 | 34.6 |
-| lightgbm | 40 | 0.9686 | 0.9341 | 0.9174 | 0.0511 | 0.0345 | 12.1 |
+| random_forest | 33 | 0.9855 | 0.9810 | 0.9890 | -0.0035 | 0.0045 | 94.6 |
+| hist_gradient_boosting | 40 | 0.9648 | 0.9095 | 0.9386 | 0.0262 | 0.0553 | 30.8 |
 
 *Diễn giải:* cột **Δ vs Grid** so random search với lưới `GridSearchCV` cũ trên cùng thước đo CV-AP và cùng splitter.
-- Random search **tốt hơn** ở: `hist_gradient_boosting` (+0.0262), `lightgbm` (+0.0511) ⇒ với các họ mô hình này, tìm kiếm rộng thật sự có ích (lưới cũ quá thô).
+- Random search **tốt hơn** ở: `hist_gradient_boosting` (+0.0262) ⇒ với các họ mô hình này, tìm kiếm rộng thật sự có ích (lưới cũ quá thô).
 - Mọi trial (params, seed, CV-AP, thời gian) đều nằm trong sổ `runs.csv` ⇒ tra cứu lại được, và khi môi trường có Optuna chỉ cần thay `sample_params` (không phải viết lại hạ tầng).
 
 
@@ -1006,8 +997,8 @@ Ba hạng mục dưới đây được thêm để đóng các lỗ hổng đã 
 
 ### 10.1. Kết luận chính
 
-1. Các họ mô hình (Logistic, Random Forest, HistGradientBoosting, LightGBM) đều đạt AUROC test ~0,97–0,98; mô hình được chốt là **Random Forest** theo quy tắc công bố trước ở mục 5.2 (`max AP cross-company (GroupKFold, train+validation) → best-F1(val) → AP(val) → AUROC(val) → gap overfit nhỏ nhất`) — tức ưu tiên khả năng tổng quát hoá sang công ty chưa từng thấy, không ưu tiên điểm in-domain.
-2. **Nhưng** baseline “nhớ mặt công ty” (ticker-prior) đạt AUROC = 0.986, tức mô hình học máy **không vượt** nổi một quy tắc chỉ dùng danh tính công ty. Khi đánh giá cross-company, AUROC giảm còn 0.933; LOCO chỉ tính được AUROC trên **8/8** công ty — phần còn lại có nhãn đơn lớp ở cả validation và test nên AUROC không xác định (xem mục 6.4).
+1. 3 họ mô hình (HistGradientBoosting, Logistic Regression, Random Forest) đều đạt AUROC test ~0,97–0,98; mô hình được chốt là **Random Forest** theo quy tắc công bố trước ở mục 5.2 (`max AP cross-company (GroupKFold, train+validation) → best-F1(val) → AP(val) → AUROC(val) → gap overfit nhỏ nhất`) — tức ưu tiên khả năng tổng quát hoá sang công ty chưa từng thấy, không ưu tiên điểm in-domain.
+2. **Nhưng** baseline “nhớ mặt công ty” (ticker-prior) đạt AUROC = 0.986, tức mô hình học máy **không vượt** nổi một quy tắc chỉ dùng danh tính công ty. Khi đánh giá cross-company, AUROC giảm còn 0.933; LOCO chỉ tính được AUROC trên **6/8** công ty — phần còn lại có nhãn đơn lớp ở cả validation và test nên AUROC không xác định (xem mục 6.4).
 3. Đóng góp chính của đồ án là **phát hiện và định lượng rò rỉ cấp thực thể** — dạng lỗi thực nghiệm rất dễ bị bỏ qua nếu báo cáo chỉ trình bày bảng AUROC/F1 đẹp.
 4. Bộ công cụ đánh giá được chuẩn hoá và tái lập được bằng một lệnh: baseline đối chứng, cross-company CV, bootstrap CI, calibration, ngưỡng theo chi phí, ablation, error analysis.
 
@@ -1054,7 +1045,6 @@ Mọi mục dưới đây **được dùng thật** trong mã nguồn (hoặc đ
 |  | Mai, F., Tian, S., Lee, C., & Ma, L. (2019). Deep learning models for bankruptcy prediction using textual disclosures. *European Journal of Operational Research*, 274(2), 743–758. | Bối cảnh “học máy cho distress”; mục 2.1, 10.3 |
 | Thuật toán | Breiman, L. (2001). Random forests. *Machine Learning*, 45(1), 5–32. | `random_forest` (`forecasting/models.py`) — mô hình được chốt |
 |  | Friedman, J. H. (2001). Greedy function approximation: A gradient boosting machine. *The Annals of Statistics*, 29(5), 1189–1232. | `hist_gradient_boosting` (scikit-learn) — mô hình so sánh |
-|  | Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., & Liu, T.-Y. (2017). LightGBM: A highly efficient gradient boosting decision tree. *NeurIPS 30*. | `lightgbm` — mô hình so sánh (`forecasting/models.py`) |
 |  | Pedregosa, F., và cộng sự (2011). Scikit-learn: Machine learning in Python. *Journal of Machine Learning Research*, 12, 2825–2830. | `Pipeline`, `GridSearchCV`, `StratifiedGroupKFold`, metric |
 | Mất cân bằng & metric | Chawla, N. V., Bowyer, K. W., Hall, L. O., & Kegelmeyer, W. P. (2002). SMOTE: Synthetic minority over-sampling technique. *Journal of Artificial Intelligence Research*, 16, 321–357. | `imbalance_lab/`, `scripts/experiment_imbalance_real.py`; mục 9.4 |
 |  | He, H., & Garcia, E. A. (2009). Learning from imbalanced data. *IEEE Transactions on Knowledge and Data Engineering*, 21(9), 1263–1284. | Chính sách không dùng Accuracy; chọn AP/F1-macro/MCC (mục 3.2, 6.2) |
@@ -1121,7 +1111,7 @@ Cách chạy riêng từng bước và ý nghĩa từng artifact: `docs/huong-da
 | `forecasting/data.py` | Tái tạo split gốc từ dữ liệu mở rộng (byte-identical, có test) |
 | `forecasting/data_loader.py` | Nạp split/manifest, tiện ích chuyển kiểu an toàn |
 | `forecasting/features.py` | 47 feature + nhóm feature + bộ lọc lịch sử |
-| `forecasting/models.py` | Registry 5 họ mô hình + HYPERPARAMS (một nguồn duy nhất) |
+| `forecasting/models.py` | Registry 3 họ mô hình + HYPERPARAMS (một nguồn duy nhất) |
 | `forecasting/evaluation.py` | Metric đầy đủ, đường PR, ngưỡng theo F1 và theo chi phí |
 | `forecasting/baselines.py` | Dummy, ticker-prior, single-feature |
 | `forecasting/validation.py` | GroupKFold, LOCO, bootstrap CI, agreement |

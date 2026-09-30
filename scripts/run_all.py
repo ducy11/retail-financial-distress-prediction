@@ -29,7 +29,7 @@ STEPS: List[Tuple[str, str, str, Dict[str, Any], bool]] = [
      "scripts.verify_provenance", "run", {}, False),
     ("eda (hình EDA + bảng tổng quan)", "scripts.eda", "run", {}, False),
     ("eda_deep (feature/nhãn/tương quan/drift chuyên sâu)", "scripts.eda_deep", "run", {}, False),
-    ("train (4 họ mô hình, chọn theo AP cross-company)", "forecasting.train", "run", {}, True),
+    ("train (3 họ mô hình, chọn theo AP cross-company)", "forecasting.train", "run", {}, True),
     ("baselines (dummy / ticker-prior / 1-feature)", "forecasting.baselines", "run", {}, False),
     ("validation (GroupKFold / LOCO / bootstrap)", "forecasting.validation", "run", {}, False),
     ("tuning (GridSearchCV chia theo công ty)", "forecasting.tuning", "run", {}, False),

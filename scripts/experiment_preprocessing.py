@@ -238,7 +238,7 @@ def run(write: bool = True, quick: bool = False, out_dir: Path | None = None,
     out = Path(out_dir) if out_dir else RESULTS_DIR
     figs = Path(fig_dir) if fig_dir else (RESULTS_DIR.parent / "figures" / "preprocessing")
     splits = {name: load_prepared(name) for name in ("train", "validation", "test")}
-    models = [m for m in ("logistic", "random_forest", "hist_gradient_boosting", "lightgbm")
+    models = [m for m in ("logistic", "random_forest", "hist_gradient_boosting")
               if m in MODEL_REGISTRY]
     variants = _variants(models, quick=quick)
     rows = [evaluate_variant(variant, splits) for variant in variants]

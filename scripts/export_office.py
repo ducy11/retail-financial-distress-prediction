@@ -12,6 +12,7 @@ Lệnh: python -m scripts.export_office
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 import zipfile
@@ -435,31 +436,54 @@ def build_pptx(md_path: Path, out_path: Path) -> int:
     return n
 
 
+def _replace_locked(tmp: Path, target: Path) -> bool:
+    """Thay file đích bằng file tạm (atomic). Nếu file đích ĐANG MỞ (Word/PowerPoint) thì giữ file cũ.
+
+    Vì sao cần: trên Windows, ghi đè một `.docx`/`.pptx` đang mở sẽ ném `PermissionError` và làm
+    hỏng cả bước xuất (kể cả các file khác chưa kịp xuất). Ở đây ta ghi ra `*.tmp` rồi `os.replace`
+    — nếu bị khoá thì in cảnh báo rõ ràng (kèm cách sửa) và GIỮ NGUYÊN file cũ thay vì crash.
+    """
+    try:
+        os.replace(tmp, target)
+        return True
+    except PermissionError:
+        tmp.unlink(missing_ok=True)
+        print(f"⚠ BỎ QUA {target.name}: file đang được mở (Word/PowerPoint) nên không ghi đè được. "
+              f"Hãy ĐÓNG file rồi chạy lại `python -m scripts.export_office`.")
+        return False
+
+
 def run() -> Dict[str, Any]:
     """Xuất `docs/BAO-CAO.md` → .docx, `docs/slide.md` và `docs/slide-bao-ve.md` → .pptx."""
     ensure_utf8_stdio()
     out: Dict[str, Any] = {}
     report_md, slides_md = DOCS_DIR / "BAO-CAO.md", DOCS_DIR / "slide.md"
     if report_md.exists():
-        counts = build_docx(report_md, DOCS_DIR / "BAO-CAO.docx")
+        tmp = DOCS_DIR / "BAO-CAO.docx.tmp"
+        counts = build_docx(report_md, tmp)
         out["docx"] = {"path": str(DOCS_DIR / "BAO-CAO.docx"), **counts}
-        print(f"Word: docs/BAO-CAO.docx — {counts['heading']} tiêu đề, {counts['table']} bảng, "
-              f"{counts['image']} hình" + (f", thiếu {counts['missing_image']} hình"
-                                           if counts["missing_image"] else ""))
+        if _replace_locked(tmp, DOCS_DIR / "BAO-CAO.docx"):
+            print(f"Word: docs/BAO-CAO.docx — {counts['heading']} tiêu đề, {counts['table']} bảng, "
+                  f"{counts['image']} hình" + (f", thiếu {counts['missing_image']} hình"
+                                               if counts["missing_image"] else ""))
     else:
         print("Chưa có docs/BAO-CAO.md — chạy `python -m scripts.make_report` trước.")
     if slides_md.exists():
-        n = build_pptx(slides_md, DOCS_DIR / "BAO-CAO-slide.pptx")
+        tmp = DOCS_DIR / "BAO-CAO-slide.pptx.tmp"
+        n = build_pptx(slides_md, tmp)
         out["pptx"] = {"path": str(DOCS_DIR / "BAO-CAO-slide.pptx"), "slides": n}
-        print(f"Slide: docs/BAO-CAO-slide.pptx — {n} slide")
+        if _replace_locked(tmp, DOCS_DIR / "BAO-CAO-slide.pptx"):
+            print(f"Slide: docs/BAO-CAO-slide.pptx — {n} slide")
     # Dàn slide BẢO VỆ (viết tay, 11 slide, có lời thoại trong file .md) — nếu có thì xuất thêm.
     defense_md = DOCS_DIR / "slide-bao-ve.md"
     if defense_md.exists():
         try:
-            n_defense = build_pptx(defense_md, DOCS_DIR / "BAO-CAO-slide-bao-ve.pptx")
+            tmp = DOCS_DIR / "BAO-CAO-slide-bao-ve.pptx.tmp"
+            n_defense = build_pptx(defense_md, tmp)
             out["pptx_defense"] = {"path": str(DOCS_DIR / "BAO-CAO-slide-bao-ve.pptx"),
                                    "slides": n_defense}
-            print(f"Slide bảo vệ: docs/BAO-CAO-slide-bao-ve.pptx — {n_defense} slide")
+            if _replace_locked(tmp, DOCS_DIR / "BAO-CAO-slide-bao-ve.pptx"):
+                print(f"Slide bảo vệ: docs/BAO-CAO-slide-bao-ve.pptx — {n_defense} slide")
         except Exception as exc:  # noqa: BLE001 - không để bước phụ làm hỏng cả bước xuất
             print(f"Bỏ qua slide bảo vệ: {exc}")
     # Bản WORD của (a) dàn slide bảo vệ và (b) bộ tài liệu bảo vệ: để đọc/duyệt và DỰNG SLIDE trực tiếp
@@ -472,11 +496,13 @@ def run() -> Dict[str, Any]:
         if not src_md.exists():
             continue
         try:
-            counts = build_docx(src_md, DOCS_DIR / docx_name)
+            tmp = DOCS_DIR / f"{docx_name}.tmp"
+            counts = build_docx(src_md, tmp)
             out[docx_name] = {"path": str(DOCS_DIR / docx_name), **counts}
-            print(f"Word ({what}): docs/{docx_name} — {counts['heading']} tiêu đề, "
-                  f"{counts['table']} bảng, {counts['image']} hình"
-                  + (f", thiếu {counts['missing_image']} hình" if counts["missing_image"] else ""))
+            if _replace_locked(tmp, DOCS_DIR / docx_name):
+                print(f"Word ({what}): docs/{docx_name} — {counts['heading']} tiêu đề, "
+                      f"{counts['table']} bảng, {counts['image']} hình"
+                      + (f", thiếu {counts['missing_image']} hình" if counts["missing_image"] else ""))
         except Exception as exc:  # noqa: BLE001 - bước phụ
             print(f"Bỏ qua {docx_name}: {exc}")
     return out

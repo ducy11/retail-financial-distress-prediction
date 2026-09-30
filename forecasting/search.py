@@ -49,13 +49,6 @@ SEARCH_SPACES: Dict[str, Dict[str, Tuple[Any, ...]]] = {
         "max_iter": ("choice", (200, 300, 400, 600)),
         "l2_regularization": ("loguniform", 1e-3, 10.0),
     },
-    "lightgbm": {
-        "learning_rate": ("loguniform", 0.01, 0.2),
-        "num_leaves": ("int", 5, 40),
-        "min_child_samples": ("int", 5, 30),
-        "reg_lambda": ("loguniform", 1e-3, 10.0),
-        "colsample_bytree": ("float", 0.5, 1.0),
-    },
 }
 
 

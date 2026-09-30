@@ -163,8 +163,8 @@ def _fit(name: str, X, y):
     return model
 
 
-#: Các mô hình đưa vào kiểm chứng (bỏ mô hình thư viện lỗi thời; thêm LightGBM khi môi trường có).
-MODELS_FOR_CHECKS = ["logistic", "random_forest", "hist_gradient_boosting", "lightgbm"]
+#: Các mô hình đưa vào kiểm chứng = đúng 3 họ mô hình của đồ án.
+MODELS_FOR_CHECKS = ["logistic", "random_forest", "hist_gradient_boosting"]
 
 
 def run(model_names: Sequence[str] | None = None) -> Dict[str, Any]:

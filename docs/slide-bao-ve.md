@@ -7,7 +7,7 @@
 
 - Dữ liệu SEC XBRL · 8 công ty · 324 mẫu · 47 feature
 - Train/Validation/Test = 212/32/64, chia theo thời gian
-- Tái lập 1 lệnh · 220 test · 98.200 phép kiểm tra, 0 phát hiện
+- Tái lập 1 lệnh · 222 test · 98.200 phép kiểm tra, 0 phát hiện
 - **Dữ liệu SEC thật:** 20 file hash khớp, 4.609 fact tra ngược, 0 bịa
 - Kết luận trung thực: mô hình **không** chắc hơn baseline
 
@@ -53,18 +53,18 @@
 
 *Đây là slide chống rò rỉ. Impute và scale nằm trong Pipeline nên mỗi fold học thống kê của riêng nó. Nhóm cố ý không one-hot mã cổ phiếu vì làm vậy sẽ hợp thức hoá đúng loại rò rỉ đang đo. Winsorize không được đưa vào pipeline chính vì lợi ích đo được nằm trong khoảng nhiễu.*
 
-## 6. Bốn họ mô hình và cách chọn
+## 6. Ba họ mô hình và cách chọn
 
-- Logistic · Random Forest · HistGradientBoosting · LightGBM
+- Logistic Regression · Random Forest · HistGradientBoosting (3 họ, thuần scikit-learn)
 - GridSearchCV + StratifiedGroupKFold, refit theo AP
 - **Mô hình triển khai giữ cấu hình MẶC ĐỊNH** (tinh chỉnh chỉ +0,003 CV-AP ⇒ nhiễu)
 - Chọn theo **AP cross-company**, không theo F1 in-domain
-- Random search + sổ thực nghiệm `runs.csv` (153 dòng)
-- XGBoost bị chặn phiên bản, đã ghi cách sửa
+- Random search + sổ thực nghiệm `runs.csv` (113 dòng)
+- Chỉ 3 họ mô hình (không xgboost/lightgbm) ⇒ mọi báo cáo/slide lấy từ 1 registry
 
 ![Đường Precision-Recall trên validation](../reports/figures/validation_pr_curves.png)
 
-*Tiêu chí chọn là AP cross-company — mô hình phải chịu được công ty chưa từng thấy. Kết quả âm cũng được ghi lại: random search không giúp Random Forest, còn LightGBM thì +0,049.*
+*Tiêu chí chọn là AP cross-company — mô hình phải chịu được công ty chưa từng thấy. Kết quả âm cũng được ghi lại: random search không giúp Random Forest, còn HGB thì +0,026.*
 
 ## 7. Kết quả trên test (n = 64) — kèm baseline đối chứng
 
@@ -109,7 +109,7 @@
 - KernelSHAP tự cài: sai số efficiency ~1e-16
 - Demo: `python -m scripts.predict --sample-id HD-2024Q2 --explain`
 - Kiểm chứng dữ liệu thật: `python -m scripts.verify_provenance` (0 lệch)
-- 220 test tự động · audit 98.200 phép kiểm tra, 0 phát hiện
+- 222 test tự động · audit 98.200 phép kiểm tra, 0 phát hiện
 
 ![Trong tập so với cross-company](../reports/figures/analysis/07_in_domain_vs_cross_company.png)
 

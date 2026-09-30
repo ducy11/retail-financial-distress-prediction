@@ -20,6 +20,7 @@ reports/results/*
 reports/figures/*
 !reports/results/.gitkeep
 !reports/figures/.gitkeep
+docs/*.tmp
 
 # Dữ liệu thô SEC (snapshot lớn, tải lại bằng scripts.crawl_sec)
 data/sec/raw/*

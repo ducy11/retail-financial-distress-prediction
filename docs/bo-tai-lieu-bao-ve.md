@@ -3,7 +3,7 @@
 *Tài liệu VIẾT TAY (không sinh tự động), dùng để làm slide và ôn phản biện. Mọi số liệu đọc trực tiếp
 từ artifact trong repo: `reports/results/*.json`, `docs/BAO-CAO.md`, `reports/figures/**`.
 Kiểm chứng: `python -m scripts.audit_data` (98.200 phép kiểm tra, 0 phát hiện) và
-`python -m unittest discover -s tests` (220 test PASS).*
+`python -m unittest discover -s tests` (222 test PASS).*
 
 **Cách dùng**
 
@@ -18,7 +18,7 @@ Kiểm chứng: `python -m scripts.audit_data` (98.200 phép kiểm tra, 0 phát
   (deck 11 slide) và **`docs/BAO-CAO-slide-bao-ve.docx` + `docs/bo-tai-lieu-bao-ve.docx`** —
   bản Word giữ nguyên takeaway/bullet/lời thoại để **dựng slide** (kể cả trên máy không có PowerPoint).
 - **Đã qua 1 vòng kiểm toán độc lập (auditor khó tính):** các lỗi phát hiện — mô hình phân tích khác
-  mô hình triển khai, giấu cấu hình đang chạy, thiếu LightGBM trong bảng so sánh, 2 ô số sai trong
+  mô hình triển khai, giấu cấu hình đang chạy, bảng so sánh thiếu mô hình, 2 ô số sai trong
   tài liệu này — **đã sửa** và được **audit chặn tái phát** (`check_model_report_alignment`); danh
   sách đầy đủ ở `docs/ke-hoach-tiep-theo.md` mục #19.
 
@@ -81,8 +81,8 @@ X (47 features, có NaN)
 ```
 
 - **Mã hoá categorical:** không có biến phân loại; **cố ý KHÔNG one-hot `ticker`** (sẽ hợp thức hoá đúng loại rò rỉ thực thể đang đo).
-- **Mất cân bằng:** `class_weight='balanced_subsample'` (RF) / `'balanced'` (HGB, LightGBM) — trọng số **tính trong `fit`** từ nhãn fold-train. **Không** resample ở pipeline chính; SMOTE/RUS/Focal Loss đo riêng (lab 98/2 và thí nghiệm trên dữ liệu thật) — **không cải thiện có ý nghĩa** (`smote_enn` 0,9683 vs đối chứng 0,9588, p = 0,21).
-- **Chống rò rỉ (7 lớp):** split theo thời gian + purge; impute/scale trong Pipeline; CV theo nhóm công ty; **test KHÔNG tham gia chọn mô hình/ngưỡng** (chỉ dùng để báo cáo & so sánh nhiều hệ thống trên cùng 64 mẫu); manifest có SHA-256 nguồn & split; 220 test tự động (gồm `test_no_label_leak_in_features`, `test_main_pipeline_has_no_balancer`).
+- **Mất cân bằng:** `class_weight='balanced_subsample'` (RF) / `'balanced'` (HGB) — trọng số **tính trong `fit`** từ nhãn fold-train. **Không** resample ở pipeline chính; SMOTE/RUS đo riêng (lab 98/2 và thí nghiệm trên dữ liệu thật) — **không cải thiện có ý nghĩa** (`smote_enn` 0,9683 vs đối chứng 0,9588, p = 0,21).
+- **Chống rò rỉ (7 lớp):** split theo thời gian + purge; impute/scale trong Pipeline; CV theo nhóm công ty; **test KHÔNG tham gia chọn mô hình/ngưỡng** (chỉ dùng để báo cáo & so sánh nhiều hệ thống trên cùng 64 mẫu); manifest có SHA-256 nguồn & split; 222 test tự động (gồm `test_no_label_leak_in_features`, `test_main_pipeline_has_no_balancer`, `TestThreeModelRegistry`).
 
 ## 1.3. Kiến trúc mô hình & Siêu tham số
 
@@ -91,16 +91,18 @@ X (47 features, có NaN)
 | **Logistic Regression** | Tuyến tính | `max_iter=2000`, `C=0.1`, kèm `StandardScaler` | `C=0.01`, `class_weight=None` → **CV-AP 0,960** (mặc định 0,935, **+0,026**) |
 | **Random Forest** ✅ *chốt* | Bagging (cây) | `n_estimators=300`, `max_depth=6`, `min_samples_leaf=2`, `class_weight='balanced_subsample'` | `max_depth=3`, `min_samples_leaf=2`, `n_estimators=500` → **CV-AP 0,989** (+0,003) |
 | **HistGradientBoosting** | Boosting (sklearn) | `max_iter=300`, `learning_rate=0.05`, `max_depth=3`, `l2_regularization=1.0`, `class_weight='balanced'` | `lr=0.03`, `depth=2`, `max_iter=200` → **CV-AP 0,939** (+0,015) |
-| **LightGBM** | Boosting hiện đại | `n_estimators=400`, `lr=0.05`, `num_leaves=15`, `min_child_samples=10`, `subsample=0.9`, `colsample_bytree=0.8`, `reg_lambda=1.0`, `class_weight='balanced'` | `lr=0.05`, `num_leaves=15`, `min_child_samples=10` → CV-AP 0,917 (= mặc định) |
-| *XGBoost* | Boosting | — | **Bị môi trường chặn** (xgboost 2.1.3 ↔ sklearn 1.6: `'super' object has no attribute '__sklearn_tags__'`); cách sửa: `pip install "scikit-learn>=1.7"` hoặc `xgboost<2.1` |
+
+> **Phạm vi mô hình của đồ án: đúng 3 họ thuần scikit-learn** (Logistic Regression · Random Forest ·
+> HistGradientBoosting). Không dùng `xgboost`/`lightgbm` ở bất kỳ bước nào của pipeline chính
+> (`forecasting/models.py::MODEL_REGISTRY` chỉ có 3 mục; test `TestThreeModelRegistry` chặn tái phát).
 
 **Ghi chú kiểm toán quan trọng:** `reports/models/best.joblib` (Random Forest) được fit bằng **cấu hình MẶC ĐỊNH** `{n_estimators=300, max_depth=6, min_samples_leaf=2, class_weight='balanced_subsample', random_state=42}` — mọi `params` trong `summary.json` đều là `null`. Cấu hình tốt nhất theo CV ở cột cuối (`max_depth=3, n_estimators=500`, CV-AP 0,989 so với mặc định 0,986) **KHÔNG được đưa vào mô hình chốt** vì chênh lệch **+0,003 CV-AP** nằm trong mức nhiễu của 212 mẫu train. ⇒ **Toàn bộ số test/AUROC/AP trong tài liệu này thuộc cấu hình mặc định**; và test **không** tham gia chọn mô hình/ngưỡng (nên không được thử cấu hình khác trên test).
 
 **Cách tối ưu (bài bản, có lưu vết):**
 
 - `GridSearchCV` (8–18 cấu hình/mô hình) + **`StratifiedGroupKFold(4)`** + **`refit="average_precision"`**; luôn in kèm điểm của cấu hình mặc định trên cùng splitter ⇒ trả lời "tinh chỉnh có thật sự cải thiện không".
-- Bổ sung **random search** (40 trial/mô hình — đúng tham số mặc định mà `scripts.run_all` dùng, mẫu log-uniform cho tham số scale) + **sổ thực nghiệm** `reports/results/runs.csv` (**153 dòng**: run_id, model, params, seed, CV-AP, ±std, thời gian, trạng thái).
-- Δ random search vs GridSearchCV: **LightGBM +0,051**, HGB **+0,026**, logistic +0,007, **Random Forest −0,004** ⇒ mô hình được chốt không hưởng lợi thêm từ tìm kiếm rộng hơn (kết quả âm được báo cáo).
+- Bổ sung **random search** (40 trial/mô hình — đúng tham số mặc định mà `scripts.run_all` dùng: 40 trial logistic, **33** Random Forest, 40 HGB, mẫu log-uniform cho tham số scale) + **sổ thực nghiệm** `reports/results/runs.csv` (**113 dòng**; mỗi dòng = 1 trial với run_id, model, params, seed, CV-AP, ±std, thời gian, trạng thái).
+- Δ random search vs GridSearchCV: HGB **+0,026**, logistic +0,007, **Random Forest −0,004** ⇒ mô hình được chốt không hưởng lợi thêm từ tìm kiếm rộng hơn (kết quả âm được báo cáo).
 - **Tiêu chí dừng:** không còn cải thiện AP cross-company có ý nghĩa; **không bao giờ dùng test** để chọn cấu hình.
 
 ## 1.4. Bảng tổng hợp kết quả (TEST — n = 64, ngưỡng 0,5)
@@ -119,15 +121,14 @@ X (47 features, có NaN)
 | Logistic Regression | 0,922 | 0,923 | 0,947 | 0,935 | 0,919 | 0,838 | 0,983 | 0,989 | 0,912 |
 | **Random Forest** ✅ | 0,938 | 0,925 | 0,974 | 0,949 | 0,934 | 0,871 | 0,983 | **0,991** | **0,933** |
 | HistGradientBoosting | 0,922 | 0,902 | 0,974 | 0,937 | 0,917 | 0,839 | 0,977 | 0,987 | 0,926 |
-| LightGBM | 0,938 | 0,925 | 0,974 | 0,949 | 0,934 | 0,871 | 0,979 | 0,988 | **0,933** |
 | **Random Forest @ ngưỡng vận hành 0,788** | **0,953** | **0,973** | 0,947 | **0,960** | **0,952** | **0,904** | 0,983 | 0,991 | 0,933 |
 
-*Bảng đã được **kiểm toán lại từng ô** với `reports/results/baselines.json` + `test_evaluation.json` (tự tính lại Precision/Recall/F1/Accuracy/MCC từ confusion matrix — khớp tuyệt đối). Thú vị: **Random Forest và LightGBM cho cùng quyết định tại ngưỡng 0,5** (cùng CM 23/3/1/37) nên các ô metric giống nhau; khác biệt chỉ ở xác suất (Brier 0,046 vs 0,035) và ở AP cross-company (0,9577 vs 0,9471 — lý do RF được chốt).*
+*Bảng đã được **kiểm toán lại từng ô** với `reports/results/baselines.json` + `test_evaluation.json` (tự tính lại Precision/Recall/F1/Accuracy/MCC từ confusion matrix — khớp tuyệt đối).*
 
 **Mô hình chiến thắng & chênh lệch**
 
 - Chốt **Random Forest** theo **quy tắc công bố trước**: `max AP cross-company (GroupKFold) → best-F1(val) → AP(val) → AUROC(val) → gap overfit nhỏ nhất`.
-- AP cross-company (OOF trên train+validation, 244 mẫu): RF **0,9577** > HGB 0,9569 > LightGBM 0,9471 > logistic 0,9232 ⇒ RF chỉ hơn HGB **0,0008** (≈0, dưới mọi mức nhiễu) và thắng nhờ **tie-break cuối cùng** trong quy tắc công bố trước (gap overfit F1: RF +0,009 so với HGB +0,024). Nói cách khác: **các họ mô hình gần như tương đương**, đây là điều phải nói rõ thay vì hô "RF tốt nhất".
+- AP cross-company (OOF trên train+validation, 244 mẫu): RF **0,9577** > HGB 0,9569 > logistic 0,9232 ⇒ RF chỉ hơn HGB **0,0008** (≈0, dưới mọi mức nhiễu) và thắng nhờ **tie-break cuối cùng** trong quy tắc công bố trước (gap overfit F1: RF +0,009 so với HGB +0,024). Nói cách khác: **ba họ mô hình gần như tương đương**, đây là điều phải nói rõ thay vì hô "RF tốt nhất".
 - Hơn logistic: ΔAP test +0,002; **Δcross-company AUROC +0,021**. Hơn HGB: ΔAP +0,004; Δcross-company +0,007.
 - **Đối chiếu trung thực:** các họ mô hình chênh nhau **< 0,01 AUROC** trên test ⇒ *thuật toán không phải nút thắt*; `ticker_prior` (không dùng feature) vẫn **cao hơn mô hình 0,003 AUROC**.
 
@@ -137,7 +138,7 @@ X (47 features, có NaN)
 1. **Dữ liệu nhỏ + nhiều cột đa cộng tuyến** (VIF > 10 ở 33/47): RF (bagging + `max_features` ngẫu nhiên) giảm phương sai và **bền với cột trùng thông tin**; boosting dễ dồn importance vào vài cột mạnh.
 2. **Đuôi nặng/outlier** (skew tới −14,9; 30,6% giá trị `debt_to_equity_latest` ngoài IQR): mô hình cây **bất biến đơn vị** nên ít bị ngoại lai kéo, trong khi logistic phụ thuộc scaler — bằng chứng: đổi scaler cho logistic làm kết quả **xấu đi rõ** (`robust` = 0,8676 AP cross-company so với `standard` = 0,9232, mục 9.1), còn mô hình cây không cần scaler.
 3. Quan sát (không phải thí nghiệm cô lập): cấu hình trọng số khác nhau — RF dùng `class_weight='balanced_subsample'`, HGB dùng `'balanced'` — và RF cho precision 0,925 so với 0,902 của HGB ở cùng recall 0,974. Vì hai mô hình khác nhau về bản chất, **không thể quy chênh lệch 0,023 này cho riêng `class_weight`**; muốn kết luận cần ablation đổi trọng số trên cùng một mô hình.
-4. **Thí nghiệm tiền xử lý (mục 9.1):** `random_forest + winsorize IQR` đạt AP cross-company **0,9590** — cao nhất trong 24 cấu hình (tham chiếu `logistic + StandardScaler` = 0,9232). Nhưng so **cùng mô hình được chốt**: winsorize chỉ **+0,13 điểm %** (0,9590 vs 0,9577) ⇒ nằm trong khoảng nhiễu của 244 mẫu out-of-fold, nên **pipeline chính giữ không winsorize** cho đơn giản; lợi ích thật nằm ở mô hình **tuyến tính** (+1,85 điểm % với `p1p99`).
+4. **Thí nghiệm tiền xử lý (mục 9.1):** `random_forest + winsorize IQR` đạt AP cross-company **0,9590** — cao nhất trong 18 cấu hình (tham chiếu `logistic + StandardScaler` = 0,9232). Nhưng so **cùng mô hình được chốt**: winsorize chỉ **+0,13 điểm %** (0,9590 vs 0,9577) ⇒ nằm trong khoảng nhiễu của 244 mẫu out-of-fold, nên **pipeline chính giữ không winsorize** cho đơn giản; lợi ích thật nằm ở mô hình **tuyến tính** (+1,85 điểm % với `p1p99`).
 5. **Kiểm định thống kê nói thật:** RF vs `ticker_prior`: ΔAUROC = −0,0030, **p = 0,7546** (DeLong); ΔAP = +0,0061, CI95 [−0,0048; +0,0215], p = 0,344.
 
 ## 1.5. Phân tích chuyên sâu (Confusion Matrix · Error Analysis · Overfit)
@@ -173,12 +174,10 @@ năng bị giới hạn bởi **chất lượng nhãn**, không phải thuật t
 | Logistic | 0,984 | 0,965 | **0,019** | 0,935 | 0,976 | −0,040 | 0,987 | 0,051 |
 | **Random Forest** | **1,000** | 0,965 | 0,034 | 0,985 | 0,976 | **+0,009** | 0,987 | 0,046 |
 | HistGradientBoosting | 1,000 | **0,974** | 0,026 | 1,000 | 0,976 | +0,024 | 0,989 | **0,037** |
-| LightGBM | 1,000 | 0,965 | 0,035 | 1,000 | 0,976 | +0,024 | 0,987 | 0,035 |
 
 - **Có overfit nhẹ** (Train AUROC 1,000 vs Val 0,965–0,974; gap 0,019–0,035) — điển hình dữ liệu nhỏ (212 mẫu train).
 - **Kiểm soát đã áp dụng:** giới hạn độ phức tạp theo đúng cấu hình **đang chạy** (RF `max_depth=6`,
-  `min_samples_leaf=2`; HGB `max_depth=3`, `l2_regularization=1.0`; LightGBM `num_leaves=15`,
-  `reg_lambda=1.0`, `min_child_samples=10`); `class_weight` thay resample;
+  `min_samples_leaf=2`; HGB `max_depth=3`, `l2_regularization=1.0`); `class_weight` thay resample;
   **`StratifiedGroupKFold` + LOCO** để chẩn đoán tổng quát hoá; **ngưỡng chọn trên validation/OOF**;
   **bootstrap CI 2.000 vòng**; scaler chỉ dùng cho mô hình tuyến tính.
 - **Học chưa bão hoà:** learning curve (chia theo công ty, `analysis.json::learning_curve`): train
@@ -213,7 +212,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
   - Dự báo suy giảm tài chính doanh nghiệp bán lẻ Mỹ
   - Dữ liệu SEC XBRL · 8 công ty · 324 mẫu · 47 features
   - Tái lập 100%: seed 42, split byte-identical
-  - Audit 98.200 phép kiểm tra · 220 test tự động
+  - Audit 98.200 phép kiểm tra · 222 test tự động
 - **Speaker notes:** "Đồ án không chỉ dừng ở AUROC 0,983 mà còn chỉ ra vì sao con số đó **chưa** chứng minh năng lực dự báo. Toàn bộ số liệu trên slide đều sinh từ artifact trong repo và tái lập bằng một lệnh, nên nhóm sẵn sàng chạy lại ngay trong buổi bảo vệ nếu thầy/cô yêu cầu."
 
 ### Slide 2 — Đặt vấn đề & Mục tiêu
@@ -266,14 +265,14 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 
 ### Slide 6 — Thuật toán & Tinh chỉnh siêu tham số
 
-- **Takeaway:** 4 họ mô hình; chọn theo AP cross-company, không theo F1 in-domain.
+- **Takeaway:** 3 họ mô hình; chọn theo AP cross-company, không theo F1 in-domain.
 - **Hiển thị:** bảng siêu tham số + sơ đồ quy tắc chọn mô hình.
 - **Bullets:**
-  - Logistic · Random Forest · HGB · LightGBM
+  - Logistic Regression · Random Forest · HGB (3 họ, thuần scikit-learn)
   - GridSearchCV 8–18 cấu hình + StratifiedGroupKFold
   - refit = average_precision (không phụ thuộc ngưỡng)
-  - Random search 40 trial + sổ `runs.csv` 153 dòng
-  - XGBoost bị chặn phiên bản; đã ghi cách sửa
+  - Random search 40 trial/mô hình + sổ `runs.csv` 113 dòng
+  - Chỉ 3 họ mô hình thuần scikit-learn (KHÔNG xgboost/lightgbm); đổi mô hình chỉ cần sửa 1 registry
 - **Speaker notes:** "Điểm khác biệt là tiêu chí chọn: nhóm xếp hạng theo AP cross-company, nghĩa là mô hình phải chịu được công ty chưa từng thấy. GridSearchCV chạy trên StratifiedGroupKFold và refit theo AP; nhóm còn chạy random search và ghi mọi trial vào sổ để so sánh công bằng với lưới cũ — kết quả âm cũng được lưu."
 
 ### Slide 7 — Bảng so sánh hiệu năng (Test set)
@@ -380,10 +379,10 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
   cột trùng thông tin/ngoại lai, không cần scaler; logistic phụ thuộc scaler và bị ngoại lai chi phối;
   boosting dễ dồn importance vào vài cột mạnh.
 - **③ Số liệu:**
-  - Cross-company OOF AUROC: RF **0,933** = LightGBM 0,933 > HGB 0,926 > logistic 0,912.
-  - AP cross-company: RF **0,958** > HGB 0,957 > LightGBM 0,947.
+  - Cross-company OOF AUROC: RF **0,933** > HGB 0,926 > logistic 0,912.
+  - AP cross-company: RF **0,958** > HGB 0,957 > logistic 0,923.
   - Test AP 0,991 (RF) vs 0,989 (logistic); precision 0,925 vs HGB 0,902 ở cùng recall 0,974.
-  - `random_forest + winsorize IQR` = **0,9590 AP cross-company**, cao nhất trong 24 cấu hình
+  - `random_forest + winsorize IQR` = **0,9590 AP cross-company**, cao nhất trong 18 cấu hình
     (tham chiếu `logistic + StandardScaler` = 0,9232).
   - Ablation (mục 7.4): bỏ nhóm `ratios_latest` làm AUROC test giảm mạnh nhất ⇒ tín hiệu tập trung ở nhóm cấu trúc vốn/thanh khoản hiện tại.
 - **④ Kết luận:** RF là lựa chọn **theo quy tắc công bố trước** (max AP cross-company) và hợp lý về bias–variance;
@@ -394,11 +393,11 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 - **① Thừa nhận:** "Có — train AUROC chạm 1,000 trong khi validation chỉ 0,965–0,974, gap 0,019–0,035."
 - **② Luận điểm kỹ thuật:** Với 212 mẫu và 47 cột, cây sâu sẽ "nhớ" dữ liệu. Nhóm kiểm soát bằng
   **giới hạn độ phức tạp theo cấu hình đang chạy** (RF `max_depth=6`/`min_samples_leaf=2`;
-  HGB `max_depth=3`, `l2_regularization=1.0`; LightGBM `num_leaves=15`, `reg_lambda=1.0`),
+  HGB `max_depth=3`, `l2_regularization=1.0`),
   **`class_weight` thay cho resample**, **CV theo nhóm công ty**, **ngưỡng chọn trên OOF/val**
   và **bootstrap 2.000 vòng** để báo cáo độ bất định.
 - **③ Số liệu:**
-  - gap F1 của RF chỉ **+0,009** (logistic −0,040; HGB +0,024; LightGBM +0,024).
+  - gap F1 của RF chỉ **+0,009** (logistic −0,040; HGB +0,024).
   - val AP 0,987–0,989; Brier val 0,035–0,051; test AUROC 0,983 với **CI95 = [0,947; 1,000]**.
   - Learning curve: train ≈ 1,000 (0,9997) nhưng **val 0,731→0,895** khi train tăng 83→162 mẫu,
     **gap 0,105** ⇒ **underfitting do thiếu dữ liệu**, không phải cần regularize thêm.
@@ -429,8 +428,8 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
   không truy vết được.
 - **③ Số liệu:**
   - Lưới so với mặc định: logistic **+0,026**, HGB +0,015, RF +0,003.
-  - Random search so với lưới: LightGBM **+0,051**, HGB **+0,026**, logistic +0,007, **RF −0,004**.
-  - `runs.csv`: 153 dòng (run_id, model, params, seed, CV-AP ± std, thời gian, trạng thái).
+  - Random search so với lưới: HGB **+0,026**, logistic +0,007, **RF −0,004**.
+  - `runs.csv`: 113 dòng (logistic 40 · Random Forest 33 · HGB 40; run_id, model, params, seed, CV-AP ± std, thời gian, trạng thái).
 - **④ Kết luận:** Tiêu chí dừng = **không còn cải thiện AP có ý nghĩa trên CV** so với mặc định/lưới; mọi lựa
   chọn mô hình **không bao giờ dùng test**. Việc tinh chỉnh rộng không giúp RF được **báo cáo thay vì che**.
 
@@ -480,7 +479,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 | **0,983 AUROC · 0,991 AP · F1 0,960 · MCC 0,904** | Mô hình được chốt trên test |
 | **0,986 (ticker_prior) · 0,933 (cross-company) · 0,610 (LOCO)** | Ba con số phản biện — mô hình chưa chắc hơn baseline |
 | **p = 0,7546 (DeLong) · CI95 AUROC [0,947; 1,000]** | Độ bất định trên n = 64 |
-| **3/3 định nghĩa nhãn · ~1e-16 (SHAP) · 0 phát hiện / 98.200 phép kiểm tra · 220 test** | Độ vững của kết luận & mức độ tái lập |
+| **3/3 định nghĩa nhãn · ~1e-16 (SHAP) · 0 phát hiện / 98.200 phép kiểm tra · 222 test** | Độ vững của kết luận & mức độ tái lập |
 
 ---
 
@@ -492,7 +491,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 | Cross-company AUROC/AP, LOCO, learning curve | `reports/results/validation_checks.json`, `reports/results/analysis.md` |
 | EDA (skew, VIF, missing, drift, ECDF) | `reports/results/eda_deep.md`, `reports/results/eda.md`, `reports/figures/**` |
 | Winsorize/scaler + ΔAP cross-company | `reports/results/preprocessing_experiment.md` |
-| SMOTE/RUS/Focal Loss, so khớp ma trận test | `reports/results/imbalance_real.md`, `reports/results/class_balance.md` |
+| SMOTE/RUS, so khớp ma trận test | `reports/results/imbalance_real.md`, `reports/results/class_balance.md` |
 | SHAP toàn cục/cục bộ, kiểm chứng efficiency | `reports/results/shap.md` |
 | DeLong + bootstrap, p-value | `reports/results/significance.md` |
 | 4 định nghĩa nhãn, độ nhạy | `reports/results/label_sensitivity.md`, `forecasting/labels.py` |

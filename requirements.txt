@@ -1,19 +1,15 @@
 # Phụ thuộc chạy mã nguồn (không bao gồm pandas — code viết thuần numpy+sklearn)
+# Pipeline chính dùng ĐÚNG 3 họ mô hình thuần scikit-learn: Logistic Regression · Random Forest ·
+# HistGradientBoosting (không cần xgboost/lightgbm).
 numpy==2.5.3
 scipy==1.18.1
 scikit-learn==1.6.0
 matplotlib==3.9.3
-xgboost==2.1.3
 
-# LƯU Ý TƯƠNG THÍCH: cặp xgboost 2.1.3 + scikit-learn 1.6.0 lỗi lúc runtime
-# (`'super' object has no attribute '__sklearn_tags__'`). Pipeline tự bỏ qua
-# xgboost khi lỗi và vẫn chạy với logistic/random_forest/hist_gradient_boosting (+ lightgbm nếu có).
-# Muốn dùng xgboost:
-#   pip install "scikit-learn>=1.7"   (hoặc hạ xgboost xuống <2.1)
-
-# LightGBM: phụ thuộc TUỲ CHỌN nhưng đã nằm trong pipeline chính (`forecasting/models.py`) và trong
-# `scripts/experiment_preprocessing.py` khi môi trường cài sẵn — thiếu thì registry tự bỏ qua:
-#   pip install lightgbm
+# xgboost/lightgbm CHỈ dùng cho 2 lab mất cân bằng (không thuộc pipeline chính):
+#   imbalance_lab/ (Focal Loss = custom objective LightGBM), benchmark_imbalanced.py, imbalance_experiment/
+# Nếu muốn chạy các lab đó thì cài thêm: pip install -r requirements-benchmark.txt
+# (bản thân lab vẫn tự chạy được khi thiếu: kỹ thuật phụ thuộc thư viện sẽ bị bỏ qua và ghi rõ trong log)
 
 # Tùy chọn: vẽ đồ thị đẹp hơn (không bắt buộc — fallback matplotlib thuần)
 # seaborn>=0.13

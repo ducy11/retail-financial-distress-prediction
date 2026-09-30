@@ -1,5 +1,10 @@
 # Benchmark mất cân bằng: **Non-E Mode** vs **E-Mode** (`benchmark_imbalanced.py`)
 
+> **Phạm vi:** script này (và 2 lab `imbalance_lab/`, `imbalance_experiment/`) dùng boosting ngoài
+> — XGBoost/LightGBM — **chỉ làm base learner** cho các nhóm kỹ thuật mất cân bằng (script tự hạ cấp
+> xuống HistGradientBoosting khi thiếu thư viện, ghi rõ backend trong log). **Bộ mô hình của đồ án vẫn
+> đúng 3 họ thuần scikit-learn**: Logistic Regression · Random Forest · HistGradientBoosting.
+
 Script độc lập ở gốc repo — chạy một lệnh, in bảng so sánh trực tiếp ra terminal:
 
 ```powershell

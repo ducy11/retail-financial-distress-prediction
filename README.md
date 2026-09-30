@@ -23,9 +23,11 @@ docs/                      # Tài liệu đề cương, mở rộng dữ liệu,
 
 - Python ≥ 3.11 (dev: 3.13.12, Windows).
 - Cài phụ thuộc: `python -m pip install -r requirements.txt`.
-- Code **không phụ thuộc pandas** — data load thuần `json`, tính năng bằng `numpy`, model bằng `scikit-learn`.
-  `xgboost`/`lightgbm` là **tuỳ chọn**: môi trường đang kiểm thử chạy được LightGBM nhưng bị chặn XGBoost
-  (xung đột phiên bản) nên pipeline **tự bỏ qua** và ghi rõ trong log. Mọi thứ chạy offline.
+- Code **không phụ thuộc pandas** — data load thuần `json`, tính năng bằng `numpy`, **mô hình bằng
+  `scikit-learn`**: đúng **3 họ mô hình** (Logistic Regression · Random Forest · HistGradientBoosting).
+  Pipeline chính **không dùng xgboost/lightgbm**; chỉ module lab mất cân bằng (`imbalance_lab/`,
+  `benchmark_imbalanced.py`, `imbalance_experiment/`) mới dùng boosting ngoài làm base learner cho các
+  kỹ thuật resampling. Mọi thứ chạy offline.
 - **Cảnh báo vô hại của thư viện**: bộ phiên bản đang kiểm thử (scikit-learn 1.6 + scipy 1.18, matplotlib 3.9)
   in `OptimizeWarning: Unknown solver options: iprint` ở **mỗi** lần fit `LogisticRegression` và
   `PyparsingDeprecationWarning` khi vẽ hình. Repo lọc **đúng** hai thông điệp này trong
@@ -58,7 +60,7 @@ python -m unittest discover -s tests -v
 ## Kiểm chứng bổ sung để đạt mức Xuất sắc (mục 9 của báo cáo)
 
 ```powershell
-# 5. Tiền xử lý đuôi nặng: winsorize × scaler × 4 họ mô hình trên dữ liệu THẬT
+# 5. Tiền xử lý đuôi nặng: winsorize × scaler × 3 họ mô hình trên dữ liệu THẬT
 python -m scripts.experiment_preprocessing        # → reports/results/preprocessing_experiment.{json,md}
 # 6. Giải thích mô hình bằng SHAP (KernelSHAP tự cài đặt, có tự kiểm chứng efficiency)
 python -m scripts.explain_model --max-explain 64  # → reports/results/shap.{json,md} + 3 hình
@@ -67,7 +69,7 @@ python -m scripts.significance                    # → reports/results/signific
 # 8. Kỹ thuật xử lý lệch lớp trên DỮ LIỆU THẬT (7 kỹ thuật, GroupKFold theo công ty)
 python -m scripts.experiment_imbalance_real       # → reports/results/imbalance_real.{json,md}
 # 9. Tìm kiếm siêu tham số bằng random search + SỔ THỰC NGHIỆM runs.csv
-python -m scripts.search                          # mặc định 40 trial/mô hình → runs.csv (153 dòng)
+python -m scripts.search                          # mặc định 40 trial/mô hình × 3 mô hình → runs.csv (113 dòng)
 python -m scripts.search --trials 25              # chạy nhanh hơn (sổ sẽ có ít dòng hơn)
 # 10. Độ nhạy của kết luận theo 4 ĐỊNH NGHĨA NHÃN (original, stress_signals, Altman Z'', forward-4Q)
 python -m scripts.label_sensitivity               # → reports/results/label_sensitivity.{json,md}
@@ -94,6 +96,9 @@ chứng → lệnh) và [docs/slide-bao-ve.md](docs/slide-bao-ve.md) (deck bảo
 | `bo-tai-lieu-bao-ve.docx` | **Bộ tài liệu bảo vệ đầy đủ**: factsheet số liệu + dàn 11 slide (có lời thoại) + 8 Q&A phản biện |
 
 ## Benchmark mất cân bằng: Non-E Mode vs E-Mode (`benchmark_imbalanced.py`)
+
+*(Phần này — cùng 2 lab bên dưới — dùng XGBoost/LightGBM **chỉ làm base learner** cho các kỹ thuật mất
+cân bằng; **KHÔNG thuộc bộ mô hình của đồ án** (3 họ thuần scikit-learn ở pipeline chính).)*
 
 Script độc lập, tái lập toàn bộ từ một lệnh, so sánh **11 phương pháp** trên dữ liệu giả lập mất cân
 bằng cao **95/5** (10.000 mẫu, chia Stratified 80/20, test cố định dùng chung cho mọi phương pháp):
@@ -124,6 +129,8 @@ Precision/Recall và **thời gian huấn luyện**. Kết quả ghi vào `repor
 Chi tiết & diễn giải: [docs/benchmark-mat-can-bang.md](docs/benchmark-mat-can-bang.md).
 
 ## Danh mục kỹ thuật mất cân bằng (yêu cầu #2) — `imbalance_lab/techniques.py`
+
+*(Lab độc lập: base learner mặc định là LightGBM — xem ghi chú phạm vi ở mục trên.)*
 
 Lab mất cân bằng (`imbalance_lab/`) có thêm một **danh mục đầy đủ 5 nhóm kỹ thuật** + threshold tuning
 trên đường PR, chạy bằng một lệnh:
@@ -160,6 +167,8 @@ python -m imbalance_lab.techniques --quick --techniques baseline,smote,adasyn,fo
 - Chi tiết & kết quả đo: [docs/cac-ky-thuat-mat-can-bang.md](docs/cac-ky-thuat-mat-can-bang.md).
 
 ## Thực nghiệm: Phương pháp ĐƠN LẺ vs PHƯƠNG PHÁP KẾT HỢP (`imbalance_experiment/`)
+
+*(Lab độc lập: base learner mặc định là LightGBM — xem ghi chú phạm vi ở mục benchmark phía trên.)*
 
 Gói thực nghiệm độc lập so sánh **17 pipeline** trên dataset mất cân bằng **1:50** (tuỳ chọn 1:100 hoặc
 CSV kiểu *Credit Card Fraud Detection*), mọi bước resampling nằm TRONG `imblearn.pipeline.Pipeline`:

@@ -13,8 +13,9 @@ Giao thức (mọi thứ học từ fold-train):
   validation của fold không bị đổi kích thước/giá trị (chống rò rỉ, giống `imbalance_lab/cv.py`).
 - Metric: AP, AUROC trên xác suất out-of-fold + F1 tốt nhất trên đường PR của OOF.
 
-Kỹ thuật: none (đối chứng) · class_weight · RandomUnderSampler · TomekLinks · SMOTE · SMOTE+ENN ·
-Focal Loss (nếu môi trường có LightGBM).
+Kỹ thuật (6, bám sát 3 họ mô hình của đồ án): none (đối chứng) · class_weight ·
+RandomUnderSampler · TomekLinks · SMOTE · SMOTE+ENN.
+(Không đưa Focal Loss vào phần này vì Focal Loss cần custom objective của LightGBM — ngoài bộ 3 mô hình.)
 """
 from __future__ import annotations
 
@@ -75,14 +76,6 @@ def _techniques() -> List[Dict[str, Any]]:
     except Exception as exc:  # pragma: no cover - thiếu imbalanced-learn
         out.append({"name": "resampling_unavailable", "group": "n/a", "kind": "unavailable",
                     "description": f"bỏ qua resampling: {exc}"})
-    try:
-        from imbalance_lab.losses import FocalLossClassifier
-
-        if FocalLossClassifier.available():
-            out.append({"name": "focal_loss", "group": "algorithm-level", "kind": "focal",
-                        "description": "Focal Loss (custom objective LightGBM, gamma=2, alpha=0,75)"})
-    except Exception:  # pragma: no cover - môi trường không có LightGBM
-        pass
     return out
 
 
@@ -94,12 +87,6 @@ def build_estimator(technique: Dict[str, Any], base: str = DEFAULT_BASE) -> Any:
     params = dict(HYPERPARAMS.get(base, {}))
     if technique["kind"] != "class_weight":
         params["class_weight"] = None      # đối chứng & resampling: không thêm trọng số lớp
-    if technique["kind"] == "focal":
-        from imbalance_lab.losses import FocalLossClassifier
-
-        params.pop("class_weight", None)   # Focal Loss tự cân bằng bằng alpha
-        return Pipeline([("impute", SimpleImputer(strategy="median")),
-                         ("model", FocalLossClassifier())])
     if technique["kind"] == "sampler":
         from imblearn.pipeline import Pipeline as ImbPipeline
         from imblearn.over_sampling import SMOTE

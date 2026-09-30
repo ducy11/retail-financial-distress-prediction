@@ -33,8 +33,8 @@ from forecasting.models import MODEL_REGISTRY
 from forecasting.search import (SEARCH_SPACES, compare_with_grid, cross_company_ap, random_search,
                                 write_ledger)
 
-#: Mô hình mặc định đưa vào tìm kiếm (bỏ mô hình thư viện lỗi thời).
-DEFAULT_MODELS = ["logistic", "random_forest", "hist_gradient_boosting", "lightgbm"]
+#: Mô hình mặc định đưa vào tìm kiếm — đúng 3 họ mô hình của đồ án.
+DEFAULT_MODELS = ["logistic", "random_forest", "hist_gradient_boosting"]
 
 
 def _grid_reference(model: str) -> Dict[str, Any] | None:

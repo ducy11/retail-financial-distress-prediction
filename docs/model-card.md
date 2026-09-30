@@ -52,8 +52,8 @@ phối bởi "nhớ mặt công ty" (xem §7).
 ## 5. Kiến trúc & quy trình
 
 - Pipeline sklearn: `median-impute → (StandardScaler cho mô hình tuyến tính) → classifier`;
-  **4 họ mô hình**: Logistic Regression, Random Forest, HistGradientBoosting, LightGBM (XGBoost bị
-  chặn bởi xung đột phiên bản — ghi rõ trong log, pipeline tự bỏ qua).
+  **3 họ mô hình**: Logistic Regression, Random Forest, HistGradientBoosting (đều thuần scikit-learn;
+  đồ án KHÔNG dùng xgboost/lightgbm).
 - **Chọn mô hình theo AP cross-company** (GroupKFold trên train+validation) → best-F1(val) → AP(val)
   → AUROC(val) → gap overfit nhỏ nhất. Quy tắc lưu trong `summary.json::selection_rule`.
 - **Ngưỡng quyết định**: ngưỡng best-F1 trên validation + ngưỡng tối ưu theo chi phí kỳ vọng
@@ -108,7 +108,7 @@ cậy bootstrap).
 | Huấn luyện lại | mỗi năm tài chính mới/có 10-K mới | `python -m scripts.run_all` (tái lập byte-identical cho split; test tự động) |
 | Kiểm chứng số liệu | trước mỗi lần báo cáo | `python -m scripts.audit_data` (98.200 phép kiểm tra, 0 phát hiện) |
 | Kiểm chứng NGUỒN GỐC | trước khi công bố/nộp | `python -m scripts.verify_provenance` — băm SHA-256 snapshot SEC, tra ngược từng fact trong companyfacts, kiểm quy đổi VND (0 lệch / 0 fact thiếu / 0 ô bịa số) |
-| Kiểm thử | mỗi thay đổi code | `python -m unittest discover -s tests -v` (220 test, gồm chống rò rỉ + KernelSHAP + demo predict) |
+| Kiểm thử | mỗi thay đổi code | `python -m unittest discover -s tests -v` (222 test, gồm chống rò rỉ + KernelSHAP + demo predict + `TestThreeModelRegistry`) |
 | Rollback | khi metric test/cross-company giảm | giữ artifact cũ; mọi artifact có SHA-256 trong manifest |
 
 ## 10. Tái lập & truy vết
@@ -116,7 +116,7 @@ cậy bootstrap).
 ```powershell
 python -m scripts.run_all                 # toàn bộ artifact + docs (21 bước)
 python -m scripts.audit_data              # đối chiếu với số liệu thật SEC: 0 phát hiện
-python -m unittest discover -s tests -v   # 220 test
+python -m unittest discover -s tests -v   # 222 test
 python -m imbalance_lab.run               # lab mất cân bằng (kèm hiệu chuẩn + mốc minh hoạ rò rỉ)
 ```
 

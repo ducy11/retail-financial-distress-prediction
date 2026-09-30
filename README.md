@@ -14,7 +14,7 @@ forecasting/               # Gói Python: data pipeline, features, mô hình, đ
 imbalance_lab/             # Lab mất cân bằng 98/2 (resampling, ngưỡng, hiệu chuẩn) — độc lập
 benchmark_imbalanced.py    # Benchmark 1 lệnh: Non-E Mode (resampling/cost-sensitive) vs E-Mode
 scripts/                   # Lệnh CLI chạy bằng `python -m scripts.*`
-notebooks/                 # Khám phá, phân tích EDA
+notebooks/                 # Notebook chỉ ĐỌC artifact của repo (số liệu không thể lệch báo cáo) — xem notebooks/README.md
 reports/                   # Đầu ra (bảng điểm, confusion matrix, figure) — tái tạo được
 docs/                      # Tài liệu đề cương, mở rộng dữ liệu, báo cáo
 ```

@@ -17,7 +17,7 @@ Log CLI/test đã lọc cảnh báo **vô hại** của thư viện (`runtime_wa
 python -m scripts.run_all
 ```
 
-Thứ tự các bước (19): `data → eda → eda_deep → train → baselines → validation → tuning → evaluate → report → analyze → prep_exp → imbalance_real → search → explain → significance → label_sensitivity → relabel → make_report → export_office`. Log chi tiết ở `reports/results/run_all.log` (kèm lý do nếu một bước bị bỏ qua); `train` và `evaluate` là hai bước lõi, các bước còn lại lỗi thì ghi rõ rồi đi tiếp.
+Thứ tự các bước (21): `data → provenance → eda → eda_deep → train → baselines → validation → tuning → evaluate → report → analyze → prep_exp → imbalance_real → search → explain → significance → label_sensitivity → relabel → predict → make_report → export_office`. Log chi tiết ở `reports/results/run_all.log` (kèm lý do nếu một bước bị bỏ qua); `train` và `evaluate` là hai bước lõi, các bước còn lại lỗi thì ghi rõ rồi đi tiếp.
 
 Chạy chọn lọc:
 
@@ -54,6 +54,7 @@ python -m scripts.analyze --quick                        # giảm số lần ho�
 | `python -m scripts.predict --sample-id HD-2024Q2 --explain` | — (in ra màn hình) | Demo MỘT mẫu: P(distress), quyết định theo ngưỡng vận hành, cảnh báo backtest, top-K đóng góp SHAP (dùng cho phần trình bày) |
 | `python -m scripts.make_report` + `export_office` | `docs/BAO-CAO.docx`, `docs/*.pptx` | Báo cáo/Word/2 bộ slide (tự động 14 slide + dàn bảo vệ 11 slide) |
 | `python -m scripts.audit_data` | `reports/results/data_audit.md` | Toàn vẹn số liệu & câu chữ trong báo cáo/slide so với artifact |
+| `python -m scripts.verify_provenance` | `reports/results/provenance.{json,md}` | Kiểm chứng dữ liệu THẬT: SHA-256 snapshot SEC + tra ngược từng fact trong companyfacts + kiểm quy đổi VND (bắt cả lỗi 'điền số cho đủ') |
 
 ## 3. Chạy trên bộ nhãn khác (tùy chọn)
 

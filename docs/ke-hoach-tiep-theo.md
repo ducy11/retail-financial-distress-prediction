@@ -74,7 +74,8 @@ theo AP, ngưỡng theo chi phí, PR-AUC/F1 thay Accuracy). Nút thắt thật n
 | 15 | **Mục "Tài liệu tham khảo" trong báo cáo** | ✅ **ĐÃ LÀM** — 24 mục (Beaver 1966; Altman 1968, 2000; Ohlson 1980; Barboza và cộng sự 2017; Mai và cộng sự 2019; Breiman 2001; Friedman 2001; Ke và cộng sự 2017; Pedregosa và cộng sự 2011; Chawla và cộng sự 2002; He & Garcia 2009; Saito & Rehmsmeier 2015; Brier 1950; DeLong và cộng sự 1988; Efron & Tibshirani 1993; Benjamini & Hochberg 1995; Virtanen và cộng sự 2020; Lundberg & Lee 2017; Kaufman và cộng sự 2012; Roberts và cộng sự 2017; Shumway 2001; Campbell và cộng sự 2008; SEC EDGAR) + cột "dùng ở đâu trong repo" |
 | 16 | **Demo sản phẩm chạy được** | ✅ **ĐÃ LÀM** — `scripts/predict.py` + `tests/test_predict.py` (10 test): dự đoán MỘT quý (`--sample-id` / `--ticker`+`--quarter` / `--input`), quyết định theo **ngưỡng vận hành**, cảnh báo khi mẫu thuộc validation/test (backtest), `--explain` in top-K SHAP. Ví dụ: `HD-2024Q2` → P = 0,7835 < 0,7879 (LỆCH nhãn thật = 1) |
 | 17 | **Bộ tài liệu bảo vệ + checklist đối chiếu** | ✅ **ĐÃ LÀM** — `docs/bo-tai-lieu-bao-ve.md` (factsheet + dàn 11 slide + 8 Q&A phản biện), `docs/slide-bao-ve.md` → `docs/BAO-CAO-slide-bao-ve.pptx` (11 slide), `docs/checklist-doi-chieu-yeu-cau.md` (19 tiêu chí → bằng chứng → lệnh) |
-| 18 | **Đồng bộ con số toàn bộ tài liệu** | ✅ **ĐÃ LÀM** — audit kiểm cả **câu chữ** trong báo cáo/slide (số FN/FP, mô hình được chốt, có mục tham khảo, có deck/checklist); số test 204 → **214**; `preprocessing_experiment` nay kết luận **theo đúng mô hình được chốt** (winsorize +0,13 điểm % ⇒ giữ pipeline không winsorize, thay vì khuyến nghị mâu thuẫn) |
+| 18 | **Đồng bộ con số toàn bộ tài liệu** | ✅ **ĐÃ LÀM** — audit kiểm cả **câu chữ** trong báo cáo/slide (số FN/FP, mô hình được chốt, có mục tham khảo, có deck/checklist); số test 204 → **220**; `preprocessing_experiment` nay kết luận **theo đúng mô hình được chốt** (winsorize +0,13 điểm % ⇒ giữ pipeline không winsorize, thay vì khuyến nghị mâu thuẫn) |
+| 19 | **Kiểm chứng dữ liệu là THẬT (không bịa)** | ✅ **ĐÃ LÀM** — `scripts/verify_provenance.py` + `tests/test_verify_provenance.py`: băm SHA-256 **20 file companyfacts của SEC** và khớp `data/sec/downloads.json`; **tra ngược từng fact** (tag/kỳ/`accn`/`form`) trong snapshot thô ⇒ **4.609/4.609 ô tìm thấy**, 0 fact thiếu; kiểm quy đổi VND theo đúng `method` (`current_ytd_minus_previous_ytd` = hiệu 2 kỳ luỹ kế) ⇒ **0 lỗi**; **0 ô "điền số cho đủ"** (703 ô không có fact ở SEC đều để `null`). Kết quả: `reports/results/provenance.{json,md}`; audit thêm nhóm `provenance` phải ĐẠT |
 
 ## 5. KHÔNG nên làm tiếp (phản khuyến nghị, có căn cứ)
 
@@ -90,8 +91,8 @@ theo AP, ngưỡng theo chi phí, PR-AUC/F1 thay Accuracy). Nút thắt thật n
 ## 6. Truy vết & kiểm chứng
 
 ```powershell
-python -m scripts.audit_data             # 98.185 phép kiểm tra, 0 phát hiện
-python -m unittest discover -s tests -v  # 214 test (chống rò rỉ + KernelSHAP + search + nhãn + demo predict)
+python -m scripts.audit_data             # 98.192 phép kiểm tra, 0 phát hiện
+python -m unittest discover -s tests -v  # 220 test (chống rò rỉ + KernelSHAP + search + nhãn + demo predict)
 python -m scripts.class_balance          # mất cân bằng lớp: counts / % / IR / mức
 python -m scripts.eda                    # EDA cơ bản có nhận xét: thống kê mô tả 14 tỷ số/16 chỉ tiêu,
                                          # tỉ lệ lớp %, tương quan (Pearson/Spearman) + 9 hình (mục 3.1–3.6)

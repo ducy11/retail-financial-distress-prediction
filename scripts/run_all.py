@@ -3,8 +3,8 @@
 Lệnh: python -m scripts.run_all [--skip tune,analysis] [--only train,evaluate]
 
 Vì sao cần: kết quả trong `reports/` phải tái tạo được từ dữ liệu trong repo. Script này chạy
-lần lượt data → eda → eda_deep → train → baselines → validation → tuning → evaluate → report →
-analyze → prep_exp → imbalance_real → search → explain → significance → label_sensitivity →
+lần lượt data → provenance → eda → eda_deep → train → baselines → validation → tuning → evaluate →
+report → analyze → prep_exp → imbalance_real → search → explain → significance → label_sensitivity →
 relabel → predict → make_report → export_office, ghi log vào `reports/results/run_all.log`.
 
 Bước nào lỗi thì ghi rõ trong log và tiếp tục (trừ `train`/`evaluate` là bước lõi).
@@ -25,6 +25,8 @@ from forecasting.config import RESULTS_DIR, ensure_dirs, ensure_utf8_stdio
 #: (nhãn, module, hàm, kwargs, bước lõi?)
 STEPS: List[Tuple[str, str, str, Dict[str, Any], bool]] = [
     ("data (tái tạo split từ retail-expanded)", "forecasting.data", "run", {"force": False}, False),
+    ("provenance (kiểm chứng dữ liệu THẬT từ snapshot SEC)",
+     "scripts.verify_provenance", "run", {}, False),
     ("eda (hình EDA + bảng tổng quan)", "scripts.eda", "run", {}, False),
     ("eda_deep (feature/nhãn/tương quan/drift chuyên sâu)", "scripts.eda_deep", "run", {}, False),
     ("train (4 họ mô hình, chọn theo AP cross-company)", "forecasting.train", "run", {}, True),

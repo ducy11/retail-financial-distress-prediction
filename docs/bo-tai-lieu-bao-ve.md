@@ -2,8 +2,8 @@
 
 *Tài liệu VIẾT TAY (không sinh tự động), dùng để làm slide và ôn phản biện. Mọi số liệu đọc trực tiếp
 từ artifact trong repo: `reports/results/*.json`, `docs/BAO-CAO.md`, `reports/figures/**`.
-Kiểm chứng: `python -m scripts.audit_data` (98.185 phép kiểm tra, 0 phát hiện) và
-`python -m unittest discover -s tests` (214 test PASS).*
+Kiểm chứng: `python -m scripts.audit_data` (98.192 phép kiểm tra, 0 phát hiện) và
+`python -m unittest discover -s tests` (220 test PASS).*
 
 **Cách dùng**
 
@@ -30,6 +30,22 @@ Kiểm chứng: `python -m scripts.audit_data` (98.185 phép kiểm tra, 0 phát
 | **Nhãn (cấp THỰC THỂ)** | **HD/LOW/WMT = 100% nhãn 1**; ORLY 90,7%; DG 54,8%; FIVE 19,4%; DKS 11,6%; **ROST 4,7%** ⇒ **IR tới 20,5**; **41,0% mẫu** thuộc công ty chỉ có một lớp ⇒ **mất cân bằng NGHIÊM TRỌNG** |
 | **Chia tập** | Theo **THỜI GIAN trong từng công ty**: **train 212 / validation 32 / test 64** + **purge 16**. Tỉ lệ dương: train 62,3% · val 65,6% · test 59,4% · purged 68,8% (**lệch tối đa 3,6 điểm %** so với corpus) |
 | **Có Stratified Split?** | **Không dùng stratified-random** (gây rò rỉ thời gian + thực thể). Dùng **chia theo thời gian** (test tự động `test_class_ratio_preserved_across_splits`) và **`StratifiedGroupKFold`** cho mọi bước CV/tuning (giữ tỉ lệ lớp **và** giữ trọn công ty ngoài fold-train) |
+| **Tính xác thực (dữ liệu THẬT, không bịa)** | `python -m scripts.verify_provenance` mở lại **snapshot SEC thô 129 MB**: **20 file** companyfacts băm SHA-256 **khớp registry** (`data/sec/downloads.json`, ghi cả CIK + URL + thời điểm tải); **4.609/4.609 ô** (quý × chỉ tiêu) **tra ngược được** trong companyfacts kèm `accn`/`form`/ngày nộp; **0 lỗi quy đổi VND**; **0 ô "điền số cho đủ"** — 703 ô không có fact ở SEC đều để `null`. Kết quả: `reports/results/provenance.{json,md}` |
+
+**Bằng chứng dữ liệu thật (câu trả lời cho "số liệu ở đâu ra?")**
+
+1. **Raw có thật**: `data/sec/raw/*-companyfacts.json` (**41 file, 128,74 MB**) tải từ API công khai
+   `https://data.sec.gov/api/xbrl/companyfacts/` — mỗi file có `sha256` + `downloaded_at` trong
+   `downloads.json` (ví dụ WMT: CIK 104169, `f4a7691f…84d5d`).
+2. **Hash khớp độc lập**: băm lại bằng cả Python và PowerShell đều ra đúng hash trong registry.
+3. **Từng con số tra ngược được**: mọi fact ghi trong `sources` của
+   `data/retail-expanded/*-16-indicators-vnd.json` (tag, kỳ, `accn`, `form`) tồn tại y hệt trong
+   companyfacts ⇒ không có số liệu nào được sinh/sửa tay.
+4. **Không "điền số cho đủ"**: 703 ô thiếu ở SEC để `null` (chính là nguồn gốc của các chỗ khuyết
+   trong mục 1.2) — đây là phép kiểm bắt lỗi bịa số.
+5. **Đơn vị**: VND chỉ là **phép nhân hằng số 25.000** khai trong `fx_policy` (minh hoạ đơn vị, không
+   phải BCTC Việt Nam, không phải tỷ giá lịch sử) — đã kiểm đúng theo từng `method`, kể cả
+   `current_ytd_minus_previous_ytd` (hiệu 2 kỳ luỹ kế).
 
 ## 1.2. EDA & Tiền xử lý
 
@@ -56,7 +72,7 @@ X (47 features, có NaN)
 
 - **Mã hoá categorical:** không có biến phân loại; **cố ý KHÔNG one-hot `ticker`** (sẽ hợp thức hoá đúng loại rò rỉ thực thể đang đo).
 - **Mất cân bằng:** `class_weight='balanced_subsample'` (RF) / `'balanced'` (HGB, LightGBM) — trọng số **tính trong `fit`** từ nhãn fold-train. **Không** resample ở pipeline chính; SMOTE/RUS/Focal Loss đo riêng (lab 98/2 và thí nghiệm trên dữ liệu thật) — **không cải thiện có ý nghĩa** (`smote_enn` 0,9683 vs đối chứng 0,9588, p = 0,21).
-- **Chống rò rỉ (7 lớp):** split theo thời gian + purge; impute/scale trong Pipeline; CV theo nhóm công ty; test chấm **1 lần**; manifest có SHA-256 nguồn & split; 214 test tự động (gồm `test_no_label_leak_in_features`, `test_main_pipeline_has_no_balancer`).
+- **Chống rò rỉ (7 lớp):** split theo thời gian + purge; impute/scale trong Pipeline; CV theo nhóm công ty; test chấm **1 lần**; manifest có SHA-256 nguồn & split; 220 test tự động (gồm `test_no_label_leak_in_features`, `test_main_pipeline_has_no_balancer`).
 
 ## 1.3. Kiến trúc mô hình & Siêu tham số
 
@@ -184,7 +200,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
   - Dự báo suy giảm tài chính doanh nghiệp bán lẻ Mỹ
   - Dữ liệu SEC XBRL · 8 công ty · 324 mẫu · 47 features
   - Tái lập 100%: seed 42, split byte-identical
-  - Audit 98.185 phép kiểm tra · 214 test tự động
+  - Audit 98.192 phép kiểm tra · 220 test tự động
 - **Speaker notes:** "Đồ án không chỉ dừng ở AUROC 0,983 mà còn chỉ ra vì sao con số đó **chưa** chứng minh năng lực dự báo. Toàn bộ số liệu trên slide đều sinh từ artifact trong repo và tái lập bằng một lệnh, nên nhóm sẵn sàng chạy lại ngay trong buổi bảo vệ nếu thầy/cô yêu cầu."
 
 ### Slide 2 — Đặt vấn đề & Mục tiêu
@@ -337,7 +353,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
   `test_no_label_leak_in_features`, `test_main_pipeline_has_no_balancer`,
   `test_balancing_weights_come_from_fit_labels_only`, `test_cv_folds_are_stratified_and_grouped`;
   thí nghiệm lệch lớp **so khớp ma trận test trước/sau `fit` → PASS cho 7/7 kỹ thuật**;
-  audit **98.185 phép kiểm tra, 0 phát hiện**.
+  audit **98.192 phép kiểm tra, 0 phát hiện**.
 - **④ Kết luận:** Không có rò rỉ thống kê. Rò rỉ **thực thể** (mẫu cùng công ty ở cả train và test) là hiện
   tượng **được đo và báo cáo** (in-domain 0,983 vs cross-company 0,933), không phải điều bị che.
 
@@ -446,7 +462,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 | **0,983 AUROC · 0,991 AP · F1 0,960 · MCC 0,904** | Mô hình được chốt trên test |
 | **0,986 (ticker_prior) · 0,933 (cross-company) · 0,610 (LOCO)** | Ba con số phản biện — mô hình chưa chắc hơn baseline |
 | **p = 0,7546 (DeLong) · CI95 AUROC [0,947; 1,000]** | Độ bất định trên n = 64 |
-| **3/3 định nghĩa nhãn · ~1e-16 (SHAP) · 0 phát hiện / 98.185 phép kiểm tra · 214 test** | Độ vững của kết luận & mức độ tái lập |
+| **3/3 định nghĩa nhãn · ~1e-16 (SHAP) · 0 phát hiện / 98.192 phép kiểm tra · 220 test** | Độ vững của kết luận & mức độ tái lập |
 
 ---
 

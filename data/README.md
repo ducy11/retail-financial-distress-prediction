@@ -17,5 +17,7 @@ Corpus hiện tại: **8 doanh nghiệp, 332 quý, 16 chỉ tiêu** — WMT, HD,
 
 Tái tạo split: `python -m forecasting.data --force` (nhãn `is_distressed` giữ nguyên từ prepared cũ — do pipeline `prepare_sec` gốc sinh ra, không suy ra lại từ 16 chỉ tiêu); train: `python -m forecasting.train`. Hai lệnh chạy offline. Crawl lại: `python -m scripts.crawl_sec --refresh`, rồi `python -m scripts.prepare_sec`. Refresh có thể đổi corpus; cần review báo cáo lọc trước khi dùng.
 
+**Chứng minh dữ liệu là thật:** `python -m scripts.verify_provenance` → `reports/results/provenance.{json,md}`. Script băm SHA-256 toàn bộ snapshot SEC, đối chiếu với `sec/downloads.json`, rồi **tra ngược từng fact** (tag, kỳ, `accn`, `form`) trong `sec/raw/*-companyfacts.json` và kiểm lại phép quy đổi VND — bắt cả trường hợp "điền số cho đủ" ở chỉ tiêu không có fact.
+
 Tiền là chuỗi số nguyên VND, quy đổi minh họa 25.000 VND/USD. Không phải BCTC Việt Nam hoặc tỷ giá lịch sử. Mỗi sample chứa lịch sử và nhãn; lịch sử lặp giữa sample có chủ đích, không phải nhiều quan sát độc lập hơn. 332 quý tạo 324 cặp dự báo. Test là 8 quý cuối mỗi công ty: WMT FY2025–FY2026, các công ty khác cùng cửa sổ hai năm tài chính cuối (xem `test_ranges` trong manifest).
 

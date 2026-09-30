@@ -157,10 +157,19 @@ def _pct(value: Any, digits: int = 1) -> str:
         return "—"
 
 
+def _vi(value: Any) -> str:
+    """Số nguyên kiểu Việt Nam (phân cách nghìn bằng dấu chấm) — dùng cho số đếm lớn."""
+    try:
+        return f"{int(value):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "—"
+
+
 def artifacts() -> Dict[str, Any]:
     """Nạp toàn bộ artifact cần cho báo cáo."""
     return {
         "eda": _json("eda_summary.json"),
+        "provenance": _json("provenance.json"),
         "eda_deep": _json("eda_deep.json"),
         "preprocessing_experiment": _json("preprocessing_experiment.json"),
         "imbalance_real": _json("imbalance_real.json"),
@@ -210,6 +219,7 @@ def section_summary(a: Dict[str, Any]) -> str:
                                    .get("rule_agreement") or {}).items()
                     if not str(k).startswith("stress_signals")]
     simple_span = (f"{min(simple_rules):.0%}–{max(simple_rules):.0%}" if simple_rules else "—")
+    prov = ((a.get("provenance") or {}).get("totals") or {})
     return "\n".join([
         "# Đồ án: Dự báo suy giảm tài chính (financial distress) doanh nghiệp bán lẻ",
         "",
@@ -251,6 +261,13 @@ def section_summary(a: Dict[str, Any]) -> str:
         f"- Nhãn gần như là **thuộc tính của công ty**: "
         f"{', '.join(label.get('companies_all_one', [])) or '—'} có 100% nhãn = 1 trong mọi quý; "
         f"mức khớp của nhãn với quy tắc kế toán đơn giản nhất chỉ {simple_span}.",
+        f"- **Nguồn dữ liệu kiểm chứng được (không sinh/sửa tay):** "
+        f"{_vi(prov.get('n_raw_files_hashed'))} file companyfacts của SEC đã được băm SHA-256 và "
+        f"khớp registry `data/sec/downloads.json` (**{_vi(prov.get('n_hash_mismatch'))} lệch**); "
+        f"**{_vi(prov.get('n_facts_checked'))} ô** (quý × chỉ tiêu) tra ngược được trong companyfacts "
+        f"(kèm `accn`, `form`, ngày nộp) — **{_vi(prov.get('n_facts_missing_in_sec'))} fact thiếu**, "
+        f"**{_vi(prov.get('n_absent_but_filled'))} ô bịa số**; {_vi(prov.get('n_absent_cells'))} ô "
+        f"không có fact ở SEC được để `null`. Chi tiết: `reports/results/provenance.md`.",
     ])
 
 
@@ -1636,6 +1653,9 @@ def section_conclusion(a: Dict[str, Any]) -> str:
         table(["Đường dẫn", "Nội dung"],
               [["`reports/results/eda_summary.json`, `reports/results/eda.md`",
                 "Số liệu EDA + thống kê mô tả + tương quan + nhận xét tự động"],
+               ["`reports/results/provenance.{json,md}`",
+                "**Kiểm chứng nguồn gốc:** SHA-256 20 file SEC + tra ngược từng fact trong "
+                "companyfacts + kiểm quy đổi VND (0 lệch, 0 fact thiếu, 0 ô bịa số)"],
                ["`reports/figures/eda/*.png`", "9 hình EDA"],
                ["`reports/results/eda_deep.{json,md}`",
                 "EDA chuyên sâu: chất lượng feature, entropy/IR nhãn, liên hệ feature–nhãn, "
@@ -1680,6 +1700,8 @@ def section_conclusion(a: Dict[str, Any]) -> str:
                ["`scripts/analyze.py`", "Phân tích chuyên sâu + 7 hình + audit nhãn"],
                ["`scripts/relabel.py`", "Split theo nhãn quy tắc + kiểm chứng độ nhạy"],
                ["`scripts/predict.py`", "Demo: dự đoán MỘT quý/mẫu mới + ngưỡng vận hành + SHAP"],
+               ["`scripts/verify_provenance.py`",
+                "Kiểm chứng dữ liệu THẬT từ snapshot SEC (hash, fact, quy đổi VND)"],
                ["`scripts/eda.py`", "6 hình EDA + bảng tổng quan"],
                ["`scripts/make_report.py`", "Sinh báo cáo markdown từ artifact (file này)"],
                ["`scripts/export_office.py`", "Xuất `.docx` và `.pptx`"],
@@ -1939,11 +1961,11 @@ def repro_doc() -> str:
         "python -m scripts.run_all",
         "```",
         "",
-        "Thứ tự các bước (19): `data → eda → eda_deep → train → baselines → validation → tuning → "
-        "evaluate → report → analyze → prep_exp → imbalance_real → search → explain → significance → "
-        "label_sensitivity → relabel → make_report → export_office`. Log chi tiết ở "
-        "`reports/results/run_all.log` (kèm lý do nếu một bước bị bỏ qua); `train` và `evaluate` là "
-        "hai bước lõi, các bước còn lại lỗi thì ghi rõ rồi đi tiếp.",
+        "Thứ tự các bước (21): `data → provenance → eda → eda_deep → train → baselines → validation → "
+        "tuning → evaluate → report → analyze → prep_exp → imbalance_real → search → explain → "
+        "significance → label_sensitivity → relabel → predict → make_report → export_office`. Log chi "
+        "tiết ở `reports/results/run_all.log` (kèm lý do nếu một bước bị bỏ qua); `train` và `evaluate` "
+        "là hai bước lõi, các bước còn lại lỗi thì ghi rõ rồi đi tiếp.",
         "",
         "Chạy chọn lọc:",
         "",
@@ -2007,7 +2029,10 @@ def repro_doc() -> str:
                ["`python -m scripts.make_report` + `export_office`", "`docs/BAO-CAO.docx`, `docs/*.pptx`",
                 "Báo cáo/Word/2 bộ slide (tự động 14 slide + dàn bảo vệ 11 slide)"],
                ["`python -m scripts.audit_data`", "`reports/results/data_audit.md`",
-                "Toàn vẹn số liệu & câu chữ trong báo cáo/slide so với artifact"]],
+                "Toàn vẹn số liệu & câu chữ trong báo cáo/slide so với artifact"],
+               ["`python -m scripts.verify_provenance`", "`reports/results/provenance.{json,md}`",
+                "Kiểm chứng dữ liệu THẬT: SHA-256 snapshot SEC + tra ngược từng fact trong "
+                "companyfacts + kiểm quy đổi VND (bắt cả lỗi 'điền số cho đủ')"]],
               ["---", "---", "---"]),
         "",
         "## 3. Chạy trên bộ nhãn khác (tùy chọn)",

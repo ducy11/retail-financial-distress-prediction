@@ -70,6 +70,8 @@ python -m scripts.search --trials 25              # → reports/results/search.{
 python -m scripts.label_sensitivity               # → reports/results/label_sensitivity.{json,md}
 # 11. Demo (dùng khi bảo vệ): dự đoán MỘT quý + giải thích SHAP cục bộ
 python -m scripts.predict --sample-id HD-2024Q2 --explain
+# 12. Kiểm chứng dữ liệu là THẬT: băm SHA-256 snapshot SEC + tra ngược từng fact + quy đổi VND
+python -m scripts.verify_provenance             # → reports/results/provenance.{json,md}
 ```
 
 Bộ tài liệu bảo vệ đồ án (factsheet + dàn 11 slide + 8 câu hỏi phản biện kèm kịch bản trả lời) là tài liệu

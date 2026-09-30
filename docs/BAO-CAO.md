@@ -14,6 +14,7 @@
 - Khoảng tin cậy 95% (bootstrap) của AUROC test: [0.947, 1.000] trên n = 64 mẫu.
 - **Phát hiện quan trọng:** baseline *không dùng mô hình* — lấy tỷ lệ nhãn trung bình của chính công ty trong train (`ticker_prior`) — đạt AUROC = 0.986, AP = 0.985, tức **bằng hoặc gần bằng mô hình học máy**. Khi chuyển sang đánh giá **cross-company** (giữ trọn công ty ra khỏi train), AUROC của mô hình còn **0.933** (in-domain: 0.983).
 - Nhãn gần như là **thuộc tính của công ty**: HD, LOW, WMT có 100% nhãn = 1 trong mọi quý; mức khớp của nhãn với quy tắc kế toán đơn giản nhất chỉ 39%–65%.
+- **Nguồn dữ liệu kiểm chứng được (không sinh/sửa tay):** 20 file companyfacts của SEC đã được băm SHA-256 và khớp registry `data/sec/downloads.json` (**0 lệch**); **4.609 ô** (quý × chỉ tiêu) tra ngược được trong companyfacts (kèm `accn`, `form`, ngày nộp) — **0 fact thiếu**, **0 ô bịa số**; 703 ô không có fact ở SEC được để `null`. Chi tiết: `reports/results/provenance.md`.
 
 **Kết luận.** Vì baseline “nhớ mặt công ty” đạt xấp xỉ mô hình, AUROC ≈ 0,98 trong bảng kết quả thông thường **không** chứng minh năng lực dự báo suy giảm. Đóng góp trung thực của đồ án là chỉ ra rò rỉ thông tin ở cấp thực thể, định lượng nó, và đề xuất giao thức đánh giá đúng (cross-company + baseline + khoảng tin cậy). Phần truy vết nhãn ở `docs/dinh-nghia-nhan.md`.
 
@@ -1081,6 +1082,7 @@ Cách chạy riêng từng bước và ý nghĩa từng artifact: `docs/huong-da
 | Đường dẫn | Nội dung |
 |---|---|
 | `reports/results/eda_summary.json`, `reports/results/eda.md` | Số liệu EDA + thống kê mô tả + tương quan + nhận xét tự động |
+| `reports/results/provenance.{json,md}` | **Kiểm chứng nguồn gốc:** SHA-256 20 file SEC + tra ngược từng fact trong companyfacts + kiểm quy đổi VND (0 lệch, 0 fact thiếu, 0 ô bịa số) |
 | `reports/figures/eda/*.png` | 9 hình EDA |
 | `reports/results/eda_deep.{json,md}` | EDA chuyên sâu: chất lượng feature, entropy/IR nhãn, liên hệ feature–nhãn, cụm đa cộng tuyến, drift, rò rỉ, missingness-mang-nhãn |
 | `reports/figures/eda_deep/*.png` | 7 hình EDA chuyên sâu |
@@ -1116,6 +1118,7 @@ Cách chạy riêng từng bước và ý nghĩa từng artifact: `docs/huong-da
 | `scripts/analyze.py` | Phân tích chuyên sâu + 7 hình + audit nhãn |
 | `scripts/relabel.py` | Split theo nhãn quy tắc + kiểm chứng độ nhạy |
 | `scripts/predict.py` | Demo: dự đoán MỘT quý/mẫu mới + ngưỡng vận hành + SHAP |
+| `scripts/verify_provenance.py` | Kiểm chứng dữ liệu THẬT từ snapshot SEC (hash, fact, quy đổi VND) |
 | `scripts/eda.py` | 6 hình EDA + bảng tổng quan |
 | `scripts/make_report.py` | Sinh báo cáo markdown từ artifact (file này) |
 | `scripts/export_office.py` | Xuất `.docx` và `.pptx` |

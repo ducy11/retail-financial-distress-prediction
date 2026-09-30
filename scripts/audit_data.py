@@ -1050,6 +1050,33 @@ def check_label_audit(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]
                  [round(min(simple) * 100), round(max(simple) * 100)])
 
 
+def check_provenance_artifact(a: Auditor) -> None:
+    """`reports/results/provenance.json` phải tồn tại và báo ĐẠT — bằng chứng dữ liệu THẬT.
+
+    Bộ kiểm chứng `scripts/verify_provenance.py` mở lại snapshot SEC thô để chứng minh từng con số
+    đều tra ngược được trong companyfacts (xem mục 3.1 báo cáo).
+    """
+    path = RESULTS_DIR / "provenance.json"
+    if not a.check(path.exists(), "provenance",
+                   "thiếu reports/results/provenance.json — chạy `python -m scripts.verify_provenance`"):
+        return
+    totals = (_read_json(path).get("totals") or {})
+    a.check(bool(totals.get("ok")), "provenance",
+            "provenance.json: kết luận KHÔNG ĐẠT (còn hash lệch / fact thiếu / quy đổi sai / ô bịa số)",
+            totals=totals)
+    downloads = _read_json(DATA_DIR / "sec" / "downloads.json")
+    a.eq("provenance", "provenance.json: số file SEC đã băm khác số mục trong downloads.json",
+         totals.get("n_raw_files_hashed"), len(downloads))
+    a.eq("provenance", "provenance.json: hash lệch registry phải = 0",
+         totals.get("n_hash_mismatch"), 0)
+    a.eq("provenance", "provenance.json: fact không tồn tại trong SEC phải = 0",
+         totals.get("n_facts_missing_in_sec"), 0)
+    a.eq("provenance", "provenance.json: ô bịa số (không có fact mà vẫn có giá trị) phải = 0",
+         totals.get("n_absent_but_filled"), 0)
+    a.eq("provenance", "provenance.json: tổng ô dữ liệu phải = 16 chỉ tiêu × 332 quý",
+         totals.get("n_cells"), 16 * 332)
+
+
 def check_docs_text_consistency(a: Auditor) -> None:
     """Câu chữ trong `docs/slide.md` và `docs/BAO-CAO.md` phải khớp artifact.
 
@@ -1476,6 +1503,7 @@ def run(tickers: Sequence[str] | None = None, skip_sec: bool = False,
     check_feature_artifacts(a)
     check_advanced_artifacts(a, splits)
     check_docs_text_consistency(a)
+    check_provenance_artifact(a)
 
     report = {"generated_by": "scripts.audit_data", **a.summary()}
     if write:

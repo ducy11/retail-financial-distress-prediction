@@ -7,7 +7,8 @@
 
 - Dữ liệu SEC XBRL · 8 công ty · 324 mẫu · 47 feature
 - Train/Validation/Test = 212/32/64, chia theo thời gian
-- Tái lập 1 lệnh · 214 test · 98.185 phép kiểm tra, 0 phát hiện
+- Tái lập 1 lệnh · 220 test · 98.192 phép kiểm tra, 0 phát hiện
+- **Dữ liệu SEC thật:** 20 file hash khớp, 4.609 fact tra ngược, 0 bịa
 - Kết luận trung thực: mô hình **không** chắc hơn baseline
 
 *Đồ án không chỉ dừng ở AUROC 0,983 mà chỉ ra vì sao con số đó chưa chứng minh năng lực dự báo. Mọi số trên slide tái lập được bằng một lệnh.*
@@ -105,7 +106,8 @@
 - 4 định nghĩa nhãn; kết luận giữ nguyên ở 3/3 tái lập được
 - KernelSHAP tự cài: sai số efficiency ~1e-16
 - Demo: `python -m scripts.predict --sample-id HD-2024Q2 --explain`
-- 214 test tự động · audit 98.185 phép kiểm tra, 0 phát hiện
+- Kiểm chứng dữ liệu thật: `python -m scripts.verify_provenance` (0 lệch)
+- 220 test tự động · audit 98.192 phép kiểm tra, 0 phát hiện
 
 ![Trong tập so với cross-company](../reports/figures/analysis/07_in_domain_vs_cross_company.png)
 

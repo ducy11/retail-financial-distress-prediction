@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Outputs của đồ án (tái tạo được bằng python -m scripts.* / forecasting.*)
+reports/results/*
+reports/figures/*
+!reports/results/.gitkeep
+!reports/figures/.gitkeep
+
+# Dữ liệu thô SEC (snapshot lớn, tải lại bằng scripts.crawl_sec)
+data/sec/raw/*
+!data/sec/raw/.gitkeep
+
+# Logs
+*.log

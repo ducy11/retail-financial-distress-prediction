@@ -1,0 +1,224 @@
+{
+  "companies": {
+    "WMT": {
+      "file": "WMT-16-indicators-vnd.json",
+      "name": "WALMART INC.",
+      "quarter_count": 48,
+      "first_fiscal_year": 2015,
+      "last_fiscal_year": 2026,
+      "latest_filing_url": "https://www.sec.gov/Archives/edgar/data/104169/000010416926000055/0000104169-26-000055-index.html"
+    },
+    "HD": {
+      "file": "HD-16-indicators-vnd.json",
+      "name": "The Home Depot, Inc.",
+      "quarter_count": 44,
+      "first_fiscal_year": 2015,
+      "last_fiscal_year": 2025,
+      "latest_filing_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/0001628280-26-019436-index.html"
+    },
+    "LOW": {
+      "file": "LOW-16-indicators-vnd.json",
+      "name": "LOWES COMPANIES INC",
+      "quarter_count": 44,
+      "first_fiscal_year": 2015,
+      "last_fiscal_year": 2025,
+      "latest_filing_url": "https://www.sec.gov/Archives/edgar/data/60667/000006066726000029/0000060667-26-000029-index.html"
+    },
+    "ROST": {
+      "file": "ROST-16-indicators-vnd.json",
+      "name": "Ross Stores, Inc.",
+      "quarter_count": 44,
+      "first_fiscal_year": 2015,
+      "last_fiscal_year": 2025,
+      "latest_filing_url": "https://www.sec.gov/Archives/edgar/data/745732/000074573226000006/0000745732-26-000006-index.html"
+    },
+    "DG": {
+      "file": "DG-16-indicators-vnd.json",
+      "name": "DOLLAR GENERAL CORP",
+      "quarter_count": 32,
+      "first_fiscal_year": 2018,
+      "last_fiscal_year": 2025,
+      "latest_filing_url": "https://www.sec.gov/Archives/edgar/data/29534/000110465926032325/0001104659-26-032325-index.html"
+    },
+    "ORLY": {
+      "file": "ORLY-16-indicators-vnd.json",
+      "name": "O REILLY AUTOMOTIVE INC",
+      "quarter_count": 44,
+      "first_fiscal_year": 2015,
+      "last_fiscal_year": 2025,
+      "latest_filing_url": "https://www.sec.gov/Archives/edgar/data/898173/000089817326000009/0000898173-26-000009-index.html"
+    },
+    "DKS": {
+      "file": "DKS-16-indicators-vnd.json",
+      "name": "DICK’S SPORTING GOODS, INC.",
+      "quarter_count": 44,
+      "first_fiscal_year": 2015,
+      "last_fiscal_year": 2025,
+      "latest_filing_url": "https://www.sec.gov/Archives/edgar/data/1089063/000108906326000007/0001089063-26-000007-index.html"
+    },
+    "FIVE": {
+      "file": "FIVE-16-indicators-vnd.json",
+      "name": "Five Below, Inc.",
+      "quarter_count": 32,
+      "first_fiscal_year": 2018,
+      "last_fiscal_year": 2025,
+      "latest_filing_url": "https://www.sec.gov/Archives/edgar/data/1177609/000117760926000010/0001177609-26-000010-index.html"
+    }
+  },
+  "excluded": {
+    "TGT": "Chỉ 3 năm liên tục đủ 16 chỉ tiêu, cần ít nhất 6; {'2016': 'Quý khác năm: cost_of_sales, chênh lệch 25000000000 VND (có thể đổi phạm vi/restatement)', '2017': 'Quý khác năm: cost_of_sales, chênh lệch -1625000000000 VND (có thể đổi phạm vi/restatement)', '2018': 'Quý khác năm: cost_of_sales, chênh lệch -25000000000 VND (có thể đổi phạm vi/restatement)', '2019': 'Quý khác năm: operating_income, chênh lệch 25000000000 VND (có thể đổi phạm vi/restatement)', '2020': 'Thiếu cost_of_sales: 2020-02-02..2020-05-02, accession 0000027419-20-000014', '2021': 'Thiếu cost_of_sales: 2021-01-31..2021-05-01, accession 0000027419-21-000017', '2022': 'Thiếu cost_of_sales: 2022-01-30..2022-04-30, accession 0000027419-22-000015'}",
+    "TJX": "Thiếu tag doanh thu năm mới nhất kết thúc 2026-01-31",
+    "BBY": "Năm mới nhất 2026 không đạt: Thiếu quý phù hợp Q2",
+    "DLTR": "Năm mới nhất 2025 không đạt: Thiếu inventory: None..2025-05-03, accession 0000935703-25-000026",
+    "AZO": "Năm mới nhất 2025 không đạt: Thiếu inventory: None..2024-11-23, accession 0001558370-24-016435",
+    "COST": "Năm mới nhất 2025 không đạt: 1 validation error for Quarter\n  Value error, Kỳ phải là riêng một quý (70–105 ngày), không phải số lũy kế [type=value_error, input_value={'fiscal_year': 2025, 'fi...vnd': '566250000000000'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/value_error",
+    "KR": "Năm mới nhất 2025 không đạt: Thiếu quý phù hợp Q1",
+    "ULTA": "Thiếu tag doanh thu năm mới nhất kết thúc 2026-01-31",
+    "TSCO": "Năm mới nhất 2025 không đạt: Quý khác năm: revenue, chênh lệch -25000000 VND (có thể đổi phạm vi/restatement)",
+    "BURL": "Năm mới nhất 2025 không đạt: Quý khác năm: net_income, chênh lệch 25000000 VND (có thể đổi phạm vi/restatement)",
+    "AAP": "Năm mới nhất 2026 không đạt: Thiếu quý phù hợp Q1",
+    "AEO": "Chỉ 4 năm liên tục đủ 16 chỉ tiêu, cần ít nhất 6; {'2019': 'Thiếu quý phù hợp Q1', '2020': 'Quý khác năm: net_income, chênh lệch 75000000 VND (có thể đổi phạm vi/restatement)', '2021': 'Quý khác năm: net_income, chênh lệch -75000000 VND (có thể đổi phạm vi/restatement)'}"
+  },
+  "downloads": {
+    "WMT": {
+      "cik": 104169,
+      "entity_name": "WALMART INC.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000104169.json",
+      "sha256": "f4a7691fc4ce8468cbe8f1d778c9780c29e2deb0bba10b9a8f96075f70d84d5d",
+      "downloaded_at": "2026-09-17T00:31:07.910121+00:00"
+    },
+    "HD": {
+      "cik": 354950,
+      "entity_name": "The Home Depot, Inc.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000354950.json",
+      "sha256": "2971649a7ffd4a855b54ebfb48bb33246bd50ca8b52e8f361c67448a6e749a46",
+      "downloaded_at": "2026-09-17T00:31:08.612410+00:00"
+    },
+    "LOW": {
+      "cik": 60667,
+      "entity_name": "LOWES COMPANIES INC",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000060667.json",
+      "sha256": "c83413db31142ea878feb728076c6b954b0595e62f6390f628f23573b04583e2",
+      "downloaded_at": "2026-09-17T00:31:09.443870+00:00"
+    },
+    "TGT": {
+      "cik": 27419,
+      "entity_name": "Target Corporation",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000027419.json",
+      "sha256": "241c309f1c0edeafb74a722f89bae84fb95d217c4596a7b56f121093c449dbaf",
+      "downloaded_at": "2026-09-17T00:31:10.208696+00:00"
+    },
+    "TJX": {
+      "cik": 109198,
+      "entity_name": "The TJX Companies, Inc.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000109198.json",
+      "sha256": "d629979439fb3e0a766208f559533d1f4ab51ce096f9e9f65b2931048cfc0400",
+      "downloaded_at": "2026-09-17T00:31:11.061872+00:00"
+    },
+    "ROST": {
+      "cik": 745732,
+      "entity_name": "Ross Stores, Inc.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000745732.json",
+      "sha256": "b4fd8437791c04f7bc7358e8cca5b1b1f9a326160c35a66cf2c3293b8987f1d7",
+      "downloaded_at": "2026-09-17T00:31:11.943844+00:00"
+    },
+    "BBY": {
+      "cik": 764478,
+      "entity_name": "BEST BUY CO., INC.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000764478.json",
+      "sha256": "8cf3fdc85dda963f2042ee99fa4b16a79b2b068b6337f49a049ce84d3e5e1cf9",
+      "downloaded_at": "2026-09-17T00:34:05.316649+00:00"
+    },
+    "DG": {
+      "cik": 29534,
+      "entity_name": "DOLLAR GENERAL CORP",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000029534.json",
+      "sha256": "d8b3dc0e0332a2325066745cd92501376fb6441b8a3b5396b6e192db0e4c6e0e",
+      "downloaded_at": "2026-09-17T00:34:06.139758+00:00"
+    },
+    "DLTR": {
+      "cik": 935703,
+      "entity_name": "DOLLAR TREE, INC.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000935703.json",
+      "sha256": "5b3cf6ae3f599237d4eda933dcea1a52bc973cfdeec5bc044e0eda69c83a0508",
+      "downloaded_at": "2026-09-17T00:34:06.953069+00:00"
+    },
+    "AZO": {
+      "cik": 866787,
+      "entity_name": "AUTOZONE INC",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000866787.json",
+      "sha256": "f5e0f3c3ab698743923b9a9d08e7e72dddf1eb483140b7fc09036561c62ef475",
+      "downloaded_at": "2026-09-17T00:34:07.788452+00:00"
+    },
+    "ORLY": {
+      "cik": 898173,
+      "entity_name": "O REILLY AUTOMOTIVE INC",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000898173.json",
+      "sha256": "969a8f149a71d99f97d145ff318f5f0e075130d16959f784517dea36d719cdd8",
+      "downloaded_at": "2026-09-17T00:34:08.586896+00:00"
+    },
+    "COST": {
+      "cik": 909832,
+      "entity_name": "COSTCO WHOLESALE CORP /NEW",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000909832.json",
+      "sha256": "b021a234fd823ee055b924813070372b01b4377791c73084de382fdd63f399d7",
+      "downloaded_at": "2026-09-17T00:34:09.256846+00:00"
+    },
+    "KR": {
+      "cik": 56873,
+      "entity_name": "KROGER CO",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000056873.json",
+      "sha256": "02da0edebf216db4aa447fac46b14fc7250613d8cc9d1e1ff893c9b96397115c",
+      "downloaded_at": "2026-09-17T00:34:10.114978+00:00"
+    },
+    "ULTA": {
+      "cik": 1403568,
+      "entity_name": "ULTA BEAUTY, INC.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001403568.json",
+      "sha256": "88f7cce1e056814fe673e7accf8c9efd695f770a8285b64c99cf451f7f0e64e8",
+      "downloaded_at": "2026-09-17T00:34:10.783762+00:00"
+    },
+    "TSCO": {
+      "cik": 916365,
+      "entity_name": "TRACTOR SUPPLY CO /DE/",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000916365.json",
+      "sha256": "5e4b9805b1d5d63a313ccd70f0be9aa9cb5249cb8600554e3fc77a5ac35a3d7a",
+      "downloaded_at": "2026-09-17T00:34:11.448069+00:00"
+    },
+    "DKS": {
+      "cik": 1089063,
+      "entity_name": "DICK’S SPORTING GOODS, INC.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001089063.json",
+      "sha256": "7c272ce470488161efe0301337a860bd191e5b4d928614679f1b0fdf87009608",
+      "downloaded_at": "2026-09-17T00:34:12.363904+00:00"
+    },
+    "BURL": {
+      "cik": 1579298,
+      "entity_name": "BURLINGTON STORES, INC.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001579298.json",
+      "sha256": "f2d3205954f3baa1284efd7028d02897956b7e70d3ea6b037f4bd114fe3899b8",
+      "downloaded_at": "2026-09-17T00:34:13.327314+00:00"
+    },
+    "FIVE": {
+      "cik": 1177609,
+      "entity_name": "Five Below, Inc.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001177609.json",
+      "sha256": "8f2a9ee392a2d142a4b872f3b1b98992f966615db4c5531d1a6ae704947b1b83",
+      "downloaded_at": "2026-09-17T00:34:14.228853+00:00"
+    },
+    "AAP": {
+      "cik": 1158449,
+      "entity_name": "ADVANCE AUTO PARTS, INC.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001158449.json",
+      "sha256": "f4981f5dfc7cbe6c0781817657bcb10b806d720fd1ca43d4845548bb723d027c",
+      "downloaded_at": "2026-09-17T00:34:14.875543+00:00"
+    },
+    "AEO": {
+      "cik": 919012,
+      "entity_name": "American Eagle Outfitters, Inc.",
+      "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000919012.json",
+      "sha256": "ddc332c913a3fc5e0fd02aa1738ed8d4540ba808269ed19019977a211fd88ce7",
+      "downloaded_at": "2026-09-17T00:34:15.760075+00:00"
+    }
+  }
+}

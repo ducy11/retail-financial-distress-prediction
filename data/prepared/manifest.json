@@ -1,0 +1,92 @@
+{
+  "policy": "8 quý cuối mỗi công ty làm test; 4 quý validation; purge ngày công bố toàn cục",
+  "test_is_last_two_fiscal_years_per_company": true,
+  "target": "is_distressed",
+  "label_counts": {
+    "train": {
+      "distressed": 132,
+      "total": 212
+    },
+    "validation": {
+      "distressed": 21,
+      "total": 32
+    },
+    "test": {
+      "distressed": 38,
+      "total": 64
+    },
+    "purged": {
+      "distressed": 11,
+      "total": 16
+    }
+  },
+  "validation_fit_before": "2022-11-08",
+  "final_fit_before": "2024-02-28",
+  "source_sha256": {
+    "corpus.json": "e7587116efad341427eccd25ef825ddfaabfda1e926c287632b085521a547a6a",
+    "WMT-16-indicators-vnd.json": "45c3c821b1dbf5f4f642b25ac8569818cb9ca58443d2affe76c7f51b4ac74e6b",
+    "HD-16-indicators-vnd.json": "34cce344e934ebee30976420ac8b8ae644882371f7000aae44892a4956638aed",
+    "LOW-16-indicators-vnd.json": "36d6786b98d3b440e1b30f689b171ae8a3a80a60e32aaee02a256a2e50934b4c",
+    "ROST-16-indicators-vnd.json": "87e6a2d3f971aff44a23443c826fe6010f778e75cd431f7192b4fe7b8046eec4",
+    "DG-16-indicators-vnd.json": "8c88cdf9251167a22d2859ad2203e52f2e0fd3fbbb4ff1b8ff94c47c2b6f70fc",
+    "ORLY-16-indicators-vnd.json": "37b4c89ad3c03a89bb773d53963a437b610efc3c0043202e3a43d161d05a33e1",
+    "DKS-16-indicators-vnd.json": "d8df19c89fba84f016935cf7ad22e6aad16b03ce30d773c8ca064ce6cb545c18",
+    "FIVE-16-indicators-vnd.json": "775d78969513681bbff0188a4b0853d0034b3418b0d2e2d751f7ad7f386c3281"
+  },
+  "currency": "VND",
+  "demo_vnd_per_usd": "25000",
+  "counts": {
+    "train": 212,
+    "validation": 32,
+    "test": 64,
+    "purged": 16
+  },
+  "test_ranges": {
+    "WMT": {
+      "from": "2024-02-01",
+      "to": "2026-01-31",
+      "count": 8
+    },
+    "HD": {
+      "from": "2024-01-29",
+      "to": "2026-02-01",
+      "count": 8
+    },
+    "LOW": {
+      "from": "2024-02-03",
+      "to": "2026-01-30",
+      "count": 8
+    },
+    "ROST": {
+      "from": "2024-02-04",
+      "to": "2026-01-31",
+      "count": 8
+    },
+    "DG": {
+      "from": "2024-02-03",
+      "to": "2026-01-30",
+      "count": 8
+    },
+    "ORLY": {
+      "from": "2024-01-01",
+      "to": "2025-12-31",
+      "count": 8
+    },
+    "DKS": {
+      "from": "2024-02-04",
+      "to": "2026-01-31",
+      "count": 8
+    },
+    "FIVE": {
+      "from": "2024-02-04",
+      "to": "2026-01-31",
+      "count": 8
+    }
+  },
+  "split_sha256": {
+    "train": "67df7d622968bd37be0c74d950d31d15867af441234d26af06fa6bfa6f15ae93",
+    "validation": "98fbcb70e28bc89950b31049b1dd9faf9828fe4e5e968673f8427bd45d0ed7b1",
+    "test": "7ca5135e3111725ea73ef55fe8fa94887da54859c1db83c5f1997a07986809c7",
+    "purged": "33a1f0a3def170629fb06ec06410b3949c6cc1c845c41cb9d389d0bb9160bd66"
+  }
+}

@@ -1,0 +1,18 @@
+key,group,name,status,reason,is_resampling,n_train_after,fit_seconds_per_fold,resample_seconds_per_fold,total_seconds,pr_auc,roc_auc,f1,macro_f1,balanced_accuracy,recall,fpr,precision,mcc
+baseline,baseline,Baseline (không xử lý),ok,,False,,1.029,,6.56,0.947382,0.990347,0.871429,0.934569,0.886076,0.772152,0.0,1.0,0.876712
+ros,single-data,RandomOverSampler,ok,,True,18822.8,1.399,0.0044,8.84,0.950226,0.992762,0.90411,0.951164,0.917594,0.835443,0.000255,0.985075,0.905517
+smote,single-data,SMOTE,ok,,True,18822.8,1.449,0.0196,9.11,0.953763,0.994118,0.940397,0.969625,0.94924,0.898734,0.000255,0.986111,0.940303
+borderline_smote,single-data,Borderline-SMOTE,ok,,True,18822.8,1.451,0.0149,9.17,0.950631,0.990509,0.926174,0.962387,0.936581,0.873418,0.000255,0.985714,0.926535
+adasyn,single-data,ADASYN,ok,,True,18805.0,1.439,0.0145,9.05,0.95439,0.989941,0.927152,0.962875,0.942783,0.886076,0.00051,0.972222,0.926789
+rus,single-data,RandomUnderSampler,ok,,True,753.6,0.302,0.0029,2.04,0.916965,0.989217,0.771739,0.883183,0.945031,0.898734,0.008671,0.67619,0.774612
+tomek,single-data,Tomek Links (cleaning),ok,,True,12796.6,1.252,0.1888,8.85,0.951156,0.993266,0.879433,0.938635,0.892405,0.78481,0.0,1.0,0.883981
+enn,single-data,Edited Nearest Neighbours (cleaning),ok,,True,12768.6,1.231,0.1654,8.59,0.947658,0.990638,0.879433,0.938635,0.892405,0.78481,0.0,1.0,0.883981
+class_weight,single-algorithm,Class Weights (balanced),ok,,False,,1.118,,7.08,0.951501,0.992384,0.918919,0.958695,0.930252,0.860759,0.000255,0.985507,0.919579
+focal_loss,single-algorithm,Focal Loss (custom objective),ok,,False,,1.35,,8.54,0.948352,0.991694,0.902778,0.950498,0.911392,0.822785,0.0,1.0,0.90546
+balanced_rf,single-ensemble,Balanced Random Forest,ok,,False,,0.415,,2.7,0.883186,0.991845,0.581673,0.784062,0.949401,0.924051,0.025249,0.424419,0.61649
+easy_ensemble,single-ensemble,EasyEnsemble,ok,,False,,1.462,,9.07,0.640921,0.959139,0.371353,0.670131,0.913964,0.886076,0.058148,0.234899,0.43871
+balanced_bagging,single-ensemble,Balanced Bagging,ok,,False,,0.617,,3.94,0.876129,0.983232,0.647619,0.81906,0.922346,0.860759,0.016067,0.519084,0.660352
+smote_tomek,hybrid,HYBRID SMOTE + Tomek Links,ok,,True,18822.8,1.768,0.3856,13.11,0.953763,0.994118,0.940397,0.969625,0.94924,0.898734,0.000255,0.986111,0.940303
+smote_enn,hybrid,HYBRID SMOTE + ENN,ok,,True,18699.4,1.789,0.3935,13.42,0.95711,0.994044,0.934211,0.966468,0.949112,0.898734,0.00051,0.972603,0.933694
+smote_class_weight,hybrid,HYBRID SMOTE + Class Weights,ok,,True,18822.8,1.396,0.0083,9.0,0.953083,0.994609,0.934211,0.966468,0.949112,0.898734,0.00051,0.972603,0.933694
+rusboost,hybrid,HYBRID RUSBoost (undersampling + boosting),ok,,False,,0.204,,1.4,0.827748,0.984186,0.514085,0.7481,0.945193,0.924051,0.033665,0.356098,0.561833

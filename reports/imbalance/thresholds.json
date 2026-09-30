@@ -1,0 +1,26 @@
+{
+  "baseline": {
+    "best_f1": 0.093032723271041,
+    "best_cost": 0.02984208377589715,
+    "min_precision": 0.0026832699107508058,
+    "fixed_0.5": 0.5
+  },
+  "cost_sensitive": {
+    "best_f1": 0.3868623657079365,
+    "best_cost": 0.07647344645824448,
+    "min_precision": 0.009115477350512057,
+    "fixed_0.5": 0.5
+  },
+  "resampling": {
+    "best_f1": 0.8898714697145486,
+    "best_cost": 0.5,
+    "min_precision": 0.0847130704877732,
+    "fixed_0.5": 0.5
+  },
+  "resampling_calibrated": {
+    "best_f1": 0.4745953009150415,
+    "best_cost": 0.15518024132090855,
+    "min_precision": 0.03074284991357364,
+    "fixed_0.5": 0.5
+  }
+}

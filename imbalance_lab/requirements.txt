@@ -1,0 +1,9 @@
+# Phụ thuộc cho lab xử lý mất cân bằng (imbalance_lab).
+# Cài: python -m pip install -r imbalance_lab/requirements.txt
+#
+# Bản đang kiểm thử trong repo: Python 3.13, sklearn 1.6.0, lightgbm 4.7.0, numpy 2.5.3.
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.6.0
+lightgbm==4.7.0          # bộ phân loại chính (boosting). Có thể thay bằng xgboost>=2.1
+imbalanced-learn>=0.13   # BẮT BUỘC để dùng imblearn.pipeline.Pipeline (đường chính)

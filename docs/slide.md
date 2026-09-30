@@ -6,7 +6,7 @@
 
 - Dự báo quý kế tiếp: doanh nghiệp bán lẻ có rơi vào suy giảm tài chính (`is_distressed`)?
 - Dữ liệu: 8 chuỗi bán lẻ Mỹ, 332 quý, 324 mẫu
-- RQ1 ba họ mô hình · RQ2 đặc trưng quyết định · RQ3 công ty chưa từng thấy · RQ4 định nghĩa nhãn
+- RQ1 bốn họ mô hình · RQ2 đặc trưng quyết định · RQ3 công ty chưa từng thấy · RQ4 định nghĩa nhãn
 
 ## 2. Dữ liệu và cách tạo mẫu
 
@@ -46,6 +46,7 @@
 - Logistic · Random Forest · HistGradientBoosting · LightGBM (XGBoost bị bỏ do xung đột phiên bản)
 - GridSearchCV với StratifiedGroupKFold theo mã cổ phiếu; refit theo AP
 - Chọn mô hình: AP cross-company (GroupKFold) → best-F1(val) → AP → AUROC → gap nhỏ nhất
+- Mô hình TRIỂN KHAI giữ cấu hình MẶC ĐỊNH (tinh chỉnh chỉ +0,003 CV-AP ⇒ dưới mức nhiễu)
 
 ![Các họ mô hình và tinh chỉnh](../reports/figures/validation_pr_curves.png)
 
@@ -81,8 +82,9 @@
 
 ## 11. Đặc trưng quyết định và đa cộng tuyến
 
-- Permutation importance: nhóm cấu trúc vốn/thanh khoản dẫn đầu
-- Nhiều cột VIF > 10 ⇒ không diễn giải hệ số Logistic như quan hệ nhân quả
+- Permutation importance (mô hình RF): `gross_margin_latest`, `receivables_to_sales_latest`, `working_capital_to_assets` dẫn đầu
+- ΔAUROC rất nhỏ (max 0.008) ⇒ không có 'cột quyết định'
+- Nhiều cột VIF > 10 (33) ⇒ không diễn giải hệ số Logistic như quan hệ nhân quả
 - Ablation: bỏ nhóm YoY/tăng trưởng gần như không giảm chất lượng
 
 ![Đặc trưng quyết định và đa cộng tuyến](../reports/figures/analysis/02_feature_importance.png)
@@ -106,5 +108,6 @@
 ## 14. Kết luận và hướng phát triển
 
 - Đóng góp: phát hiện + định lượng rò rỉ cấp thực thể; bộ đánh giá chuẩn hoá, tái lập được
-- Cross-company AUROC còn 0.933; LOCO chỉ tính được AUROC trên 8/8 công ty (nhãn đơn lớp ở phần còn lại)
+- Cross-company AUROC còn 0.933;
+- LOCO tính được AUROC trên cả 8/8 công ty (trung bình 0.610)
 - Hướng đi: thêm 50–100 công ty, nhãn công khai có cơ sở học thuật, walk-forward/survival

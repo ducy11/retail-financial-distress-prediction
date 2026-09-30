@@ -23,7 +23,9 @@ docs/                      # Tài liệu đề cương, mở rộng dữ liệu,
 
 - Python ≥ 3.11 (dev: 3.13.12, Windows).
 - Cài phụ thuộc: `python -m pip install -r requirements.txt`.
-- Code **không phụ thuộc pandas** — data load thuần `json`, tính năng bằng `numpy`, model bằng `scikit-learn` / `xgboost`. Mọi thứ chạy offline.
+- Code **không phụ thuộc pandas** — data load thuần `json`, tính năng bằng `numpy`, model bằng `scikit-learn`.
+  `xgboost`/`lightgbm` là **tuỳ chọn**: môi trường đang kiểm thử chạy được LightGBM nhưng bị chặn XGBoost
+  (xung đột phiên bản) nên pipeline **tự bỏ qua** và ghi rõ trong log. Mọi thứ chạy offline.
 - **Cảnh báo vô hại của thư viện**: bộ phiên bản đang kiểm thử (scikit-learn 1.6 + scipy 1.18, matplotlib 3.9)
   in `OptimizeWarning: Unknown solver options: iprint` ở **mỗi** lần fit `LogisticRegression` và
   `PyparsingDeprecationWarning` khi vẽ hình. Repo lọc **đúng** hai thông điệp này trong
@@ -41,7 +43,7 @@ python -m forecasting.data --force
 # 1. Huấn luyện + đánh giá trên validation, chọn mô hình & threshold
 python -m forecasting.train
 
-# 2. Đánh giá chốt trên test (chỉ chạy 1 lần, giữ nguyên hyperparameter)
+# 2. Đánh giá trên test với mô hình/ngưỡng đã CỐ ĐỊNH (test KHÔNG dùng để chọn mô hình/ngưỡng)
 python -m forecasting.evaluate
 
 # 3. Xuất bảng dự báo chi tiết từng mẫu + biểu đồ phân phối xác suất
@@ -65,7 +67,8 @@ python -m scripts.significance                    # → reports/results/signific
 # 8. Kỹ thuật xử lý lệch lớp trên DỮ LIỆU THẬT (7 kỹ thuật, GroupKFold theo công ty)
 python -m scripts.experiment_imbalance_real       # → reports/results/imbalance_real.{json,md}
 # 9. Tìm kiếm siêu tham số bằng random search + SỔ THỰC NGHIỆM runs.csv
-python -m scripts.search --trials 25              # → reports/results/search.{json,md} + runs.csv
+python -m scripts.search                          # mặc định 40 trial/mô hình → runs.csv (153 dòng)
+python -m scripts.search --trials 25              # chạy nhanh hơn (sổ sẽ có ít dòng hơn)
 # 10. Độ nhạy của kết luận theo 4 ĐỊNH NGHĨA NHÃN (original, stress_signals, Altman Z'', forward-4Q)
 python -m scripts.label_sensitivity               # → reports/results/label_sensitivity.{json,md}
 # 11. Demo (dùng khi bảo vệ): dự đoán MỘT quý + giải thích SHAP cục bộ
@@ -178,8 +181,8 @@ python -m imbalance_experiment.main --data data/creditcard.csv --target Class
 
 - Mỗi công ty: 8 quý cuối → test, 4 quý trước đó → validation, còn lại → train.
 - Purge: các sample có nhãn công bố sau một mốc toàn cục bị loại để tránh rò rỉ thứ tự công bố.
-- **Giữ tỉ lệ lớp (stratified):** tỉ lệ dương của train/validation/test lệch ≤ 3,6 điểm % so với toàn bộ
-  (62,0%); CV tinh chỉnh dùng `StratifiedGroupKFold` — vừa giữ tỉ lệ lớp vừa giữ TRỌN công ty ngoài
+- **Giữ tỉ lệ lớp (stratified):** tỉ lệ dương của train/validation/test lệch ≤ 3,3 điểm % so với toàn bộ
+  (62,3%); CV tinh chỉnh dùng `StratifiedGroupKFold` — vừa giữ tỉ lệ lớp vừa giữ TRỌN công ty ngoài
   fold-train. Kiểm thử: `tests/test_pipeline.py::TestSplits.test_class_ratio_preserved_across_splits`.
 - **Cân bằng/tiền xử lý chỉ trên train:** pipeline chính KHÔNG resample (chỉ `class_weight='balanced*'`
   do sklearn tính trong `fit`); impute/scale nằm trong `Pipeline` nên chỉ học thống kê từ train;

@@ -233,15 +233,21 @@ def section_summary(a: Dict[str, Any]) -> str:
         f"**{eda.get('n_quarters', '—')} quý** → **{eda.get('n_samples', '—')} mẫu** dự báo, chia "
         f"train/validation/test = {sp.get('train', {}).get('total', '—')}/"
         f"{sp.get('validation', {}).get('total', '—')}/{sp.get('test', {}).get('total', '—')} "
-        f"(kèm dải purge chống rò rỉ theo ngày công bố).",
+        f"(= **{sum(sp.get(k, {}).get('total', 0) or 0 for k in ('train', 'validation', 'test'))} mẫu "
+        f"dùng để huấn luyện/đánh giá**) + **{sp.get('purged', {}).get('total', '—')} mẫu purge** "
+        f"không thuộc ba tập (dải đệm chống rò rỉ theo ngày công bố); "
+        f"{sum(sp.get(k, {}).get('total', 0) or 0 for k in ('train', 'validation', 'test', 'purged'))} "
+        f"= tổng số mẫu.",
         "",
         f"**Phương pháp.** {a['summary'].get('n_features', '—')} feature tài chính (14 tỷ số ở dạng "
         f"hiện tại + YoY, 10 tốc độ tăng trưởng, cấu trúc vốn, chỉ báo căng thẳng, cực trị/độ bền "
-        f"theo cửa sổ); pipeline `[winsorize] → median-impute → [scaler] → model` "
+        f"theo cửa sổ); pipeline chính `median-impute → [scaler cho mô hình tuyến tính] → model` "
+        "(**winsorize không dùng ở pipeline chính** — chỉ được thử nghiệm ở mục 9.1), " 
         "đặt trong `Pipeline` của scikit-learn; **4 họ mô hình** (Logistic Regression, Random "
         "Forest, HistGradientBoosting, **LightGBM**); đánh giá in-domain **và cross-company "
-        "(GroupKFold/LOCO)**; chọn mô hình theo **AP cross-company** (quy tắc đầy đủ ở mục 5.2) rồi "
-        "chốt trên test đúng một lần.",
+        "(GroupKFold/LOCO)**; chọn mô hình theo **AP cross-company** (quy tắc đầy đủ ở mục 5.2; "
+        "mô hình triển khai giữ **cấu hình mặc định** — xem mục 5.3) rồi đánh giá trên test "
+        "(**test không tham gia chọn mô hình/ngưỡng**).",
         "",
         "**Kết quả chính.**",
         "",
@@ -293,7 +299,7 @@ def section_intro(a: Dict[str, Any]) -> str:
         "### 2.2. Câu hỏi nghiên cứu",
         "",
         table(["#", "Câu hỏi", "Trả lời ở mục"],
-              [["RQ1", "Ba họ mô hình (tuyến tính / bagging / boosting) khác nhau thế nào?", "6, 7"],
+              [["RQ1", "Bốn họ mô hình (tuyến tính / bagging / boosting) khác nhau thế nào?", "6, 7"],
                ["RQ2", "Đặc trưng nào quyết định kết quả? Có đặc trưng chi phối bất thường?", "7.2, 7.3"],
                ["RQ3", "Mô hình có tổng quát hoá sang **công ty chưa từng thấy**?", "6.4, 8"],
                ["RQ4", "Kết luận có phụ thuộc vào **định nghĩa nhãn**?", "8.2"]],
@@ -825,6 +831,37 @@ def section_models(a: Dict[str, Any]) -> str:
                         "CV-AP mặc định", "Chênh lệch"],
                        tune_rows, ["---", "---", "---:", "---:", "---:", "---:", "---:"])
 
+    # Công bố TRUNG THỰC cấu hình đang chạy: `best.joblib` fit bằng cấu hình nào? (đọc artifact)
+    # Lưu ý: khối này chỉ đọc `a[...]` (không dùng `summary`/`candidates` định nghĩa ở dưới).
+    best_name = a["summary"].get("best_model")
+    best_row = next((m for m in a["summary"].get("models", []) if m.get("model") == best_name), {})
+    tuned_best = next((r for r in a["tuning"].get("results", []) if r.get("model") == best_name), {})
+    if best_row.get("params"):
+        deployed_txt = f"`{best_row['params']}` (đọc từ `summary.json`)"
+    else:
+        deployed_txt = ("**cấu hình mặc định** trong `forecasting/models.py::HYPERPARAMS`: "
+                        f"`{HYPERPARAMS.get(best_name, {})}` "
+                        "(artifact ghi `params = null` cho mọi mô hình ⇒ `forecasting/train.py` fit "
+                        "bằng cấu hình mặc định)")
+    default_ref = (tuned_best.get("default_cv_reference") or {}).get("mean_average_precision")
+    tuned_cv = tuned_best.get("best_cv_average_precision")
+    cv_gap = None if (tuned_cv is None or default_ref is None) else tuned_cv - default_ref
+    tuned_note = (
+        (f"⇒ Đọc cho đúng: bảng trên là **thí nghiệm so sánh trên CV** — cấu hình tốt nhất theo CV "
+         f"(`{tuned_best.get('best_params')}`, CV-AP {_n(tuned_cv)}) **KHÔNG nằm trong mô hình chốt**; "
+         f"mô hình chốt giữ nguyên cấu hình mặc định"
+         + (f" vì chênh lệch chỉ {_n(cv_gap)} CV-AP — dưới mức nhiễu của 212 mẫu train"
+            if cv_gap is not None else "")
+         + ". Muốn đổi mặc định cần **thêm dữ liệu/thực thể**, không phải thêm cấu hình.")
+        if tuned_best else
+        "⇒ Chưa có `tuning.json` để đối chiếu cấu hình tinh chỉnh.")
+    deployed_note = "\n".join([
+        f"**Cấu hình THẬT của mô hình đã triển khai** (`reports/models/best.joblib` = "
+        f"{PRETTY.get(best_name, best_name)}): {deployed_txt}.",
+        "",
+        tuned_note,
+    ])
+
     summary = a["summary"]
     select_rule = summary.get("selection_rule", "—")
     candidates = summary.get("models", [])
@@ -842,13 +879,15 @@ def section_models(a: Dict[str, Any]) -> str:
         "### 5.1. Bốn họ mô hình",
         "",
         params_table, "",
-        f"Registry có {len(MODEL_REGISTRY)} mô hình chạy được; script tự bỏ mô hình nào lỗi ở môi "
-        f"trường hiện tại và ghi lý do vào log (`reports/results/run_all.log`). Như vậy yêu cầu "
+        f"Registry có {len(MODEL_REGISTRY)} họ mô hình; script **thử lần lượt** và tự bỏ mô hình nào lỗi ở "
+        f"môi trường hiện tại (ghi lý do vào log `reports/results/run_all.log`) ⇒ lần chạy này huấn "
+        f"luyện thành công **{len(a['summary'].get('models', []))} mô hình**. Như vậy yêu cầu "
         f"“≥ 3 mô hình khác nhau” được đáp ứng bằng **tuyến tính + bagging + boosting**.",
         "",
         "### 5.2. Quy trình chọn mô hình và ngưỡng",
         "",
-        "1. Fit cả 3 mô hình trên `train` (212 mẫu).",
+        f"1. Fit **các họ mô hình có trong registry** ({len(MODEL_REGISTRY)} họ ở môi trường này) "
+        f"trên `train` ({a['eda'].get('splits', {}).get('train', {}).get('total', '—')} mẫu).",
         "2. Tính metric in-domain trên `validation` (32 mẫu): AUROC, AP, F1 và đường PR → ngưỡng tối "
         "đa F1. **Đồng thời** tính **AP out-of-fold theo công ty** (GroupKFold trên train+validation, "
         "test không tham gia).",
@@ -857,11 +896,18 @@ def section_models(a: Dict[str, Any]) -> str:
         f"công ty chưa từng thấy.",
         "",
         select_table, "",
+        "*Quy ước đọc:* cột **AP/AUROC cross-company** ở bảng trên = xác suất **out-of-fold trên "
+        "train+validation** với **cấu hình mặc định** (thô, 244 mẫu). Đừng nhầm với các con số "
+        "“cross-company” ở mục 9.3 (độ nhạy theo định nghĩa nhãn, dữ liệu khác) và mục 9.4 (thí nghiệm "
+        "kỹ thuật lệch lớp) — cùng tên chỉ số nhưng **khác dữ liệu/nhãn**, không so trực tiếp được.",
         f"4. Ngưỡng vận hành = ngưỡng best-F1 của mô hình được chọn trên validation "
         f"({_n(summary.get('best_threshold'))}); ngoài ra tính thêm ngưỡng tối ưu theo chi phí kỳ "
         f"vọng ({_n(summary.get('best_threshold_cost_optimal'))}, giả định FN đắt gấp 5 lần FP).",
-        "5. **Chốt trên test đúng một lần** với mô hình/ngưỡng đã cố định "
-        "(`python -m forecasting.evaluate`), không tinh chỉnh gì thêm trên test.",
+        "5. **Đánh giá cuối trên `test`** với mô hình/ngưỡng đã cố định "
+        "(`python -m forecasting.evaluate`); **test KHÔNG tham gia chọn mô hình hay ngưỡng** — mọi "
+        "quyết định đều dựa trên validation + AP cross-company out-of-fold. (Nhiều hệ thống vẫn được "
+        "chấm trên **cùng** 64 mẫu test để so sánh công bằng — mục 6.1 và 9.3 — nhưng không dùng để "
+        "chọn cấu hình.)",
         "",
         "### 5.3. Tinh chỉnh siêu tham số (CV chia theo công ty)",
         "",
@@ -871,6 +917,7 @@ def section_models(a: Dict[str, Any]) -> str:
         "**average precision (AP)** vì AP không phụ thuộc ngưỡng.",
         "",
         tune_table, "",
+        deployed_note, "",
         "Cột “CV-AP mặc định” là điểm của cấu hình trong `HYPERPARAMS` trên **cùng** splitter, để "
         "trả lời câu hỏi “tinh chỉnh có thật sự cải thiện hay không” thay vì chỉ nói rằng đã chạy "
         "GridSearch. Kết quả từng cấu hình: `reports/results/tuning.md`.",
@@ -1004,20 +1051,26 @@ def section_results(a: Dict[str, Any]) -> str:
         "",
         "### 6.6. Vì sao mô hình này vượt mô hình kia?",
         "",
-        table(["So sánh", "Bằng chứng định lượng", "Giải thích"],
+        "*Lưu ý phương pháp:* phần “Giải thích” dưới đây là **giả thuyết có số liệu kèm theo**, không "
+        "phải kết luận nhân quả — đồ án không chạy thí nghiệm cô lập từng cơ chế (ví dụ: quét độ sâu "
+        "cây để tách riêng tác động của phương sai). Cột “Bằng chứng định lượng” mới là phần kiểm chứng được.",
+        "",
+        table(["So sánh", "Bằng chứng định lượng", "Giải thích (giả thuyết)"],
               [["Logistic vs Random Forest",
                 f"AUROC train {_n(ov.get('logistic', {}).get('train_auroc'))} vs "
                 f"{_n(ov.get('random_forest', {}).get('train_auroc'))}; gap AUROC "
                 f"{_n(ov.get('logistic', {}).get('gap_auroc'))} vs "
                 f"{_n(ov.get('random_forest', {}).get('gap_auroc'))} (bảng 7.1)",
-                "Cây chia được tới khi tách hoàn hảo tập train (212 mẫu, nhiều chiều) → gap dương; "
-                "Logistic bị ràng buộc tuyến tính + L2 nên gap nhỏ nhất"],
+                "Giả thuyết: cây chia tới khi gần tách hoàn hảo tập train (212 mẫu, 47 chiều) → gap "
+                "dương; Logistic bị ràng buộc tuyến tính + L2 nên gap nhỏ nhất. Chưa có thí nghiệm "
+                "quét độ sâu để khẳng định"],
                ["Logistic vs HistGradientBoosting",
                 f"Val AP {_n(ov.get('logistic', {}).get('val_ap'))} vs "
                 f"{_n(ov.get('hist_gradient_boosting', {}).get('val_ap'))}; gap AUROC HGB = "
                 f"{_n(ov.get('hist_gradient_boosting', {}).get('gap_auroc'))}",
-                "Ba mô hình đồng hạng ở best-F1 trên validation; quy tắc chọn (mục 5.2) phân định "
-                "theo **AP cross-company**, rồi mới tới best-F1/AP/AUROC trên validation"],
+                "Các mô hình gần như đồng hạng ở best-F1 trên validation (chênh AP val ≤ 0,002); quy "
+                "tắc chọn (mục 5.2) phân định bằng **AP cross-company**, rồi mới tới "
+                "best-F1/AP/AUROC trên validation"],
                ["Mô hình vs baseline ticker-prior",
                 f"AUROC test {_n(test.get('auroc'))} (mô hình) vs {_n(base_auroc)} (ticker-prior, "
                 f"không dùng feature nào)",
@@ -1030,6 +1083,54 @@ def section_results(a: Dict[str, Any]) -> str:
               ["---", "---", "---"]),
         "",
     ])
+
+
+def _n_model_registry() -> int:
+    """Số họ mô hình chạy được trong môi trường hiện tại (đọc từ `forecasting.models`)."""
+    try:
+        from forecasting.models import MODEL_REGISTRY
+
+        return len(MODEL_REGISTRY)
+    except Exception:  # pragma: no cover - thiếu phụ thuộc tuỳ chọn
+        return 0
+
+
+def _ablation_notes(rows: List[Dict[str, Any]], low_abl: Dict[str, Any]) -> str:
+    """Sinh 3 kết luận ablation **đọc trực tiếp từ artifact** (bỏ câu chữ hard-code).
+
+    Vì sao: trước đây câu “bỏ nhóm `ratios_latest` làm AUROC giảm mạnh nhất” được viết cứng — khi
+    phân tích chuyển sang đúng mô hình đã chốt (Random Forest) thì kết luận đó có thể sai. Nay báo
+    cáo tự xác định biến thể làm giảm test AUROC nhiều nhất từ chính bảng ablation.
+    """
+    base = next((r for r in rows if not r.get("drop") and not r.get("min_history")), None)
+    base_auc = ((base or {}).get("test") or {}).get("auroc")
+    lines: List[str] = []
+    ranked = []
+    for row in rows:
+        if not row.get("drop"):
+            continue
+        auc = (row.get("test") or {}).get("auroc")
+        if auc is not None and base_auc is not None:
+            ranked.append((base_auc - auc, row))
+    if ranked:
+        drop, row = max(ranked, key=lambda t: t[0])
+        lines.append(f"1. Biến thể làm **test AUROC giảm mạnh nhất**: *{row['variant']}* "
+                     f"(ΔAUROC = {_n(-drop)} so với dùng tất cả feature) ⇒ nhóm đặc trưng này đóng "
+                     f"góp thực; các biến thể còn lại xem bảng ở mục 4.5.")
+    low = low_abl.get("drop") or []
+    lines.append(f"2. Biến thể “bỏ cột có độ phủ < 50%” có **{len(low)} cột** để bỏ (trước đây 4): "
+                 f"sau khi `debt_to_assets`/`debt_to_equity` dùng **nợ suy ra từ `A = L + E`**, không "
+                 f"tỷ số nào còn phụ thuộc tag thưa `liabilities`; các chỉ tiêu thưa khác "
+                 f"(`receivables`, `short_term_investments`) vẫn chỉ có nghĩa ở một phần mẫu và được "
+                 f"impute trong pipeline.")
+    youth = next((r for r in rows if r.get("min_history")), None)
+    if youth is not None and base_auc is not None:
+        auc = (youth.get("test") or {}).get("auroc")
+        delta = None if auc is None else auc - base_auc
+        lines.append(f"3. Lọc mẫu có < {youth.get('min_history')} quý lịch sử: test AUROC "
+                     f"{_n(auc)} so với {_n(base_auc)} (Δ = {_n(delta)}) ⇒ mức ảnh hưởng "
+                     f"{'nhỏ' if delta is None or abs(delta) < 0.02 else 'đáng kể'}.")
+    return "\n".join(lines)
 
 
 def section_analysis(a: Dict[str, Any]) -> str:
@@ -1056,7 +1157,10 @@ def section_analysis(a: Dict[str, Any]) -> str:
                          if t["feature"] == item["feature"]), None)
         imp_rows.append([str(i), f"`{item['feature']}`", _n(item["mean_decrease_auroc"]),
                          _n(test_val), _n(coefs.get(item["feature"]), 2)])
-    imp_table = table(["#", "Feature", "Val ΔAUROC", "Test ΔAUROC", "Hệ số Logistic"],
+    imp_table = table(["#", "Feature", "Val ΔAUROC", "Test ΔAUROC",
+                       (f"Hệ số {PRETTY.get(imp.get('coefficient_model'), imp.get('coefficient_model'))}"
+                        if imp.get("coefficient_model") else
+                        "Hệ số (n/a — mô hình cây không có hệ số)")],
                       imp_rows, ["---:", "---", "---:", "---:", "---:"])
 
     vif_table = table(["Feature", "VIF"], [[f"`{v['feature']}`", _n(v["vif"], 1)]
@@ -1101,17 +1205,31 @@ def section_analysis(a: Dict[str, Any]) -> str:
         "",
         "### 7.2. Đặc trưng ảnh hưởng nhiều nhất",
         "",
+        f"*Phép đo: **permutation importance** (mức giảm AUROC khi hoán vị một cột) trên mô hình "
+        f"`{imp.get('model')}` — **đúng mô hình đã chốt** trong `summary.json` (trước đây script "
+        f"hard-code `logistic`, gây mâu thuẫn với `best.joblib`). Cột hệ số chỉ xuất hiện khi mô hình "
+        f"được chốt là **tuyến tính**; với mô hình cây (Random Forest) báo cáo bỏ cột này vì cây "
+        f"không có hệ số — và cũng đừng đọc hệ số tuyến tính như “độ quan trọng nhân quả”.*",
+        "",
         imp_table, "",
         fig("reports/figures/analysis/02_feature_importance.png",
             "Permutation importance trên validation và test"),
         "",
-        "**Diễn giải.** Các cột dẫn đầu là **đặc trưng cấu trúc vốn / thanh khoản** mang tính bền "
-        "theo công ty (`current_ratio_latest`, `working_capital_to_assets`, các biến liên quan "
-        "`total_liabilities`) và nhóm `path` (`current_ratio_min_window`). Điều này khớp với phát "
-        "hiện ở mục 3.2, 3.4–3.5: mô hình đang tách nhóm công ty theo cấu trúc tài chính ổn định, chứ "
-        "chưa học được “động lực suy giảm” của từng quý. Lưu ý tích cực: nhóm dựa trên nợ **không "
-        "còn bị thiếu dữ liệu** — `total_liabilities` phủ 100% mẫu nhờ suy ra từ `A = L + E` "
-        "(mục 4.5), nên các cột đứng đầu không còn bị chi phối bởi giá trị impute.",
+        f"**Diễn giải.** Ba đặc trưng dẫn đầu theo permutation importance (mô hình "
+        f"`{imp.get('model')}`, đọc từ artifact): "
+        + ", ".join(f"`{i['feature']}`" for i in (imp.get("val") or [])[:3] or []) + ". "
+        + (f"**Độ lớn RẤT NHỎ:** ΔAUROC lớn nhất trên validation chỉ "
+           f"{_n(((imp.get('val') or [{}])[0] or {}).get('mean_decrease_auroc'))} ⇒ với mô hình cây, "
+           f"hoán vị một cột gần như không làm giảm AUROC (tín hiệu phân tán trên nhiều cột tương "
+           f"quan do đa cộng tuyến), nên bảng này dùng để **định vị nhóm thông tin** chứ không dùng "
+           f"để khẳng định tầm quan trọng nhân quả. ")
+        + "Đây là các chỉ số **biên lợi nhuận / vòng quay / cấu trúc vốn-thanh khoản** (xem nhóm đặc "
+        "trưng ở mục 4.5); lưu ý thứ hạng này **khác** thứ hạng theo hệ số tuyến tính, minh hoạ đúng "
+        "cảnh báo ở mục 7.3: đừng đọc hệ số/độ quan trọng như quan hệ nhân quả. Điều này khớp với "
+        "phát hiện ở mục 3.2, 3.4–3.5: mô hình tách nhóm công ty theo cấu trúc tài chính ổn định, "
+        "chứ chưa học được “động lực suy giảm” của từng quý. Lưu ý tích cực: nhóm dựa trên nợ "
+        "**không còn bị thiếu dữ liệu** — `total_liabilities` phủ 100% mẫu nhờ suy ra từ `A = L + E` "
+        "(mục 4.5), nên các cột đứng đầu không bị chi phối bởi giá trị impute.",
         "",
         "### 7.3. Đa cộng tuyến (VIF)",
         "",
@@ -1126,18 +1244,10 @@ def section_analysis(a: Dict[str, Any]) -> str:
         "",
         "### 7.4. Ablation — yếu tố nào ảnh hưởng thật?",
         "",
-        "Bảng ablation đầy đủ ở mục 4.5. Ba kết luận:",
+        f"Bảng ablation đầy đủ ở mục 4.5 (tính trên **cùng mô hình đã chốt: `{an.get('importance', {}).get('model')}`**, "
+        f"cấu hình mặc định). Ba kết luận **đọc trực tiếp từ artifact** (không nhập tay):",
         "",
-        "1. Bỏ **nhóm tỷ số `latest`** làm test AUROC giảm mạnh nhất ⇒ tín hiệu tập trung ở **mức độ "
-        "cấu trúc hiện tại**, còn nhóm `ratios_yoy` / `growth` gần như không đóng góp thêm.",
-        f"2. Biến thể “bỏ cột độ phủ < 50%” nay **không còn cột nào để bỏ** "
-        f"({len(low_abl.get('drop', []))} cột; trước đây là 4): sau khi `debt_to_assets` / "
-        f"`debt_to_equity` dùng **nợ suy ra từ `A = L + E`**, không tỷ số nào còn phụ thuộc tag thưa "
-        f"`liabilities` nữa. Vì thế kết luận cũ “chất lượng không phụ thuộc các chỉ tiêu thưa” không "
-        f"còn được kiểm chứng bằng biến thể này — thay vào đó: chỉ tiêu thưa (`receivables`, "
-        f"`short_term_investments`) vẫn chỉ có nghĩa ở một phần mẫu và được impute trong pipeline.",
-        "3. Lọc bỏ mẫu có < 5 quý lịch sử làm thay đổi kết quả ở mức nhỏ ⇒ các mẫu “non” không phải "
-        "nguyên nhân chính của kết quả cao, tuy nhiên vẫn nên lọc khi có nhiều dữ liệu hơn.",
+        _ablation_notes(an.get("ablation", []), low_abl),
         "",
         # --- PLACEHOLDER_ANALYSIS_B ---
         "### 7.5. Phân tích lỗi (Error Analysis)",
@@ -1175,6 +1285,11 @@ def section_analysis(a: Dict[str, Any]) -> str:
         "chi phí kỳ vọng tối thiểu) hoặc rà soát thủ công các mẫu ở vùng xác suất trung bình.",
         "",
         "### 7.6. Ngưỡng quyết định: F1 vs chi phí kỳ vọng",
+        "",
+        f"*Mô hình dùng cho bảng và hình dưới đây: **`{(an.get('threshold') or {}).get('model')}`** "
+        f"(đọc từ `analysis.json.threshold.model` — nay là **cùng mô hình đã chốt**). Ngưỡng vận hành "
+        f"chính thức trong `test_evaluation.json` là **{_n(a['test'].get('threshold'))}**; khác nhau "
+        f"chỉ vì cách chọn (best-F1 trên validation vs tối ưu chi phí kỳ vọng), không phải khác mô hình.*",
         "",
         table(["Tập", "Ngưỡng best-F1", "F1 tại đó", "Ngưỡng tối ưu chi phí", "Chi phí kỳ vọng"],
               [[tag, _n(v["best_f1"]["threshold"]), _n(v["best_f1"]["f1"]),
@@ -1231,7 +1346,7 @@ def section_analysis(a: Dict[str, Any]) -> str:
                ["5", "**Ngưỡng quyết định**", "Trung bình",
                 "mục 7.6: đổi ngưỡng đưa recall từ 0,84 lên 1,0 mà không đổi mô hình"],
                ["6", "**Thuật toán** (logistic / RF / boosting)", "Thấp",
-                f"mục 6.1 và 6.4: ba họ mô hình cho kết quả test gần nhau "
+                f"mục 6.1 và 6.4: các họ mô hình cho kết quả test gần nhau "
                 f"(in-domain AUROC {_n(min(in_dom.values())) if in_dom else '—'}–"
                 f"{_n(max(in_dom.values())) if in_dom else '—'})"],
                ["7", "**Mẫu quá non (<5 quý lịch sử)**", "Thấp",
@@ -1395,9 +1510,14 @@ def section_robustness(a: Dict[str, Any]) -> str:
                   f"{_n(check.get('max_abs_efficiency_gap'), 12)} (tương đối "
                   f"{_n(check.get('relative_efficiency_gap'), 12)}); công thức còn được đối chiếu "
                   f"giải tích cho hàm tuyến tính trong `tests/test_explain.py`.",
-                  f"- **Đối chiếu permutation importance** (phương pháp độc lập): Spearman = "
+                  f"- **Đối chiếu permutation importance TRÊN CÙNG MÔ HÌNH** "
+                  f"(`{shap.get('model')}` = `best.joblib`; `scripts/explain_model.py` tự tính lại "
+                  f"importance trên chính mô hình này, độc lập với `analysis.json`): Spearman = "
                   f"{_n(agreement.get('spearman'), 3)}, trùng top-{agreement.get('top_k')} = "
-                  f"{_n(agreement.get('top_overlap'), 3)}.",
+                  f"{_n(agreement.get('top_overlap'), 3)}. Mức đồng thuận này **thấp–trung bình** — "
+                  f"hai phép đo trả lời hai câu hỏi khác nhau (SHAP = đóng góp cục bộ có cộng tính, "
+                  f"permutation = mức giảm AUROC khi hoán vị), nên báo cáo nêu cả hai thay vì coi "
+                  f"chúng là bằng chứng thay thế cho nhau.",
                   "",
                   table(["#", "Feature", "mean |φ|"],
                         [[i + 1, r["feature"], _n(r["mean_abs_shap"], 4)]
@@ -1612,7 +1732,7 @@ def section_conclusion(a: Dict[str, Any]) -> str:
                ["4", "Mô hình chuỗi thời gian / mô hình survival (Cox, discrete-time hazard)",
                 "Tận dụng cấu trúc dọc của dữ liệu thay vì vector hoá 8 quý"],
                ["5", "Bổ sung feature phi tài chính (giá, sở hữu, tin tức)",
-                "Ba họ mô hình cho kết quả gần nhau (6.1) ⇒ giới hạn nằm ở dữ liệu, không ở thuật toán"],
+                "Các họ mô hình cho kết quả gần nhau (6.1) ⇒ giới hạn nằm ở dữ liệu, không ở thuật toán"],
                ["6", "Quy trình ra quyết định theo chi phí thực tế của tổ chức",
                 "Mục 7.6: ngưỡng là biến quyết định mạnh, miễn phí để cải thiện recall/F1"],
                ["7", "Thêm chỉ tiêu XBRL đã đo được độ phủ (`scripts/probe_tags.py`): "
@@ -1691,7 +1811,8 @@ def section_conclusion(a: Dict[str, Any]) -> str:
                ["`forecasting/data_loader.py`", "Nạp split/manifest, tiện ích chuyển kiểu an toàn"],
                ["`forecasting/features.py`",
                 f"{a['summary'].get('n_features', '—')} feature + nhóm feature + bộ lọc lịch sử"],
-               ["`forecasting/models.py`", "Registry 3 họ mô hình + HYPERPARAMS (một nguồn duy nhất)"],
+               ["`forecasting/models.py`",
+                f"Registry {_n_model_registry() or '—'} họ mô hình + HYPERPARAMS (một nguồn duy nhất)"],
                ["`forecasting/evaluation.py`", "Metric đầy đủ, đường PR, ngưỡng theo F1 và theo chi phí"],
                ["`forecasting/baselines.py`", "Dummy, ticker-prior, single-feature"],
                ["`forecasting/validation.py`", "GroupKFold, LOCO, bootstrap CI, agreement"],
@@ -1758,7 +1879,7 @@ def slides(a: Dict[str, Any]) -> str:
             "Dự báo quý kế tiếp: doanh nghiệp bán lẻ có rơi vào suy giảm tài chính (`is_distressed`)?",
             f"Dữ liệu: {corpus.get('n_companies')} chuỗi bán lẻ Mỹ, {corpus.get('n_quarters')} quý, "
             f"{corpus.get('n_samples')} mẫu",
-            "RQ1 ba họ mô hình · RQ2 đặc trưng quyết định · RQ3 công ty chưa từng thấy · RQ4 định nghĩa nhãn"]},
+            "RQ1 bốn họ mô hình · RQ2 đặc trưng quyết định · RQ3 công ty chưa từng thấy · RQ4 định nghĩa nhãn"]},
         {"title": "Dữ liệu và cách tạo mẫu", "bullets": [
             "16 chỉ tiêu/quý từ SEC XBRL → mẫu = (lịch sử ≤ as_of, quý target, nhãn)",
             "Chia tập theo thời gian trong từng công ty + dải purge 16 mẫu",
@@ -1788,7 +1909,8 @@ def slides(a: Dict[str, Any]) -> str:
         {"title": "Các họ mô hình và tinh chỉnh", "bullets": [
             "Logistic · Random Forest · HistGradientBoosting · LightGBM (XGBoost bị bỏ do xung đột phiên bản)",
             "GridSearchCV với StratifiedGroupKFold theo mã cổ phiếu; refit theo AP",
-            "Chọn mô hình: AP cross-company (GroupKFold) → best-F1(val) → AP → AUROC → gap nhỏ nhất"],
+            "Chọn mô hình: AP cross-company (GroupKFold) → best-F1(val) → AP → AUROC → gap nhỏ nhất",
+            "Mô hình TRIỂN KHAI giữ cấu hình MẶC ĐỊNH (tinh chỉnh chỉ +0,003 CV-AP ⇒ dưới mức nhiễu)"],
          "image": "reports/figures/validation_pr_curves.png"},
         {"title": "So sánh có BASELINE — điểm khác biệt của đồ án", "bullets": [
             f"Baseline ticker-prior (không học gì): AUROC = {_n(base_auc)}",
@@ -1826,8 +1948,11 @@ def slides(a: Dict[str, Any]) -> str:
             "Learning curve chưa bão hoà ⇒ nút thắt là số lượng công ty"],
          "image": "reports/figures/analysis/01_overfit_train_vs_val.png"},
         {"title": "Đặc trưng quyết định và đa cộng tuyến", "bullets": [
-            "Permutation importance: nhóm cấu trúc vốn/thanh khoản dẫn đầu",
-            "Nhiều cột VIF > 10 ⇒ không diễn giải hệ số Logistic như quan hệ nhân quả",
+            "Permutation importance (mô hình RF): " + ", ".join(
+                f"`{i['feature']}`" for i in ((a["analysis"].get("importance") or {}).get("val") or [])[:3])
+            + " dẫn đầu",
+            f"ΔAUROC rất nhỏ (max {_n((((a['analysis'].get('importance') or {}).get('val') or [{}])[0] or {}).get('mean_decrease_auroc'))}) ⇒ không có 'cột quyết định'",
+            f"Nhiều cột VIF > 10 ({((a['analysis'].get('vif') or {}).get('n_vif_above_10'))}) ⇒ không diễn giải hệ số Logistic như quan hệ nhân quả",
             "Ablation: bỏ nhóm YoY/tăng trưởng gần như không giảm chất lượng"],
          "image": "reports/figures/analysis/02_feature_importance.png"},
         {"title": "Ngưỡng, chi phí và hiệu chuẩn", "bullets": [
@@ -1843,9 +1968,12 @@ def slides(a: Dict[str, Any]) -> str:
          "image": "reports/figures/analysis/07_in_domain_vs_cross_company.png"},
         {"title": "Kết luận và hướng phát triển", "bullets": [
             "Đóng góp: phát hiện + định lượng rò rỉ cấp thực thể; bộ đánh giá chuẩn hoá, tái lập được",
-            f"Cross-company AUROC còn {_n((checks.get('cross_company_oof_auroc') or {}).get(best))}; "
-            f"LOCO chỉ tính được AUROC trên {checks.get('loco_n_evaluable')}/"
-            f"{corpus.get('n_companies')} công ty (nhãn đơn lớp ở phần còn lại)",
+            f"Cross-company AUROC còn {_n((checks.get('cross_company_oof_auroc') or {}).get(best))};",
+            (f"LOCO tính được AUROC trên cả {checks.get('loco_n_evaluable')}/"
+             f"{corpus.get('n_companies')} công ty (trung bình {_n(checks.get('loco_mean_auroc'))})"
+             if checks.get("loco_n_evaluable") == corpus.get("n_companies") else
+             f"LOCO chỉ tính được AUROC trên {checks.get('loco_n_evaluable')}/"
+             f"{corpus.get('n_companies')} công ty (nhãn đơn lớp ở phần còn lại)"),
             "Hướng đi: thêm 50–100 công ty, nhãn công khai có cơ sở học thuật, walk-forward/survival"]},
     ]
     out = ["# Slide thuyết trình — Dự báo suy giảm tài chính doanh nghiệp bán lẻ", "",
@@ -1997,7 +2125,8 @@ def repro_doc() -> str:
                ["`python -m forecasting.tuning`", "`reports/results/tuning.{json,md}`",
                 "GridSearchCV chia theo công ty + so với cấu hình mặc định"],
                ["`python -m forecasting.evaluate`", "`reports/results/test_evaluation.json`",
-                "Chốt trên test đúng một lần, confusion matrix tại ngưỡng vận hành"],
+                "Đánh giá cuối trên test (test KHÔNG dùng để chọn mô hình/ngưỡng), confusion matrix "
+                "tại ngưỡng vận hành"],
                ["`python -m forecasting.report`", "`reports/results/test_predictions.csv`",
                 "Xác suất từng mẫu test + histogram"],
                ["`python -m scripts.analyze`", "`reports/results/analysis.{json,md}`, 7 hình",

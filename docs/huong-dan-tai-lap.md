@@ -39,7 +39,7 @@ python -m scripts.analyze --quick                        # giảm số lần ho�
 | `python -m forecasting.baselines` | `reports/results/baselines.json` | Dummy, ticker-prior, single-feature (đối chứng bắt buộc) |
 | `python -m forecasting.validation` | `reports/results/validation_checks.json` | GroupKFold, LOCO, bootstrap CI, tương quan hạng |
 | `python -m forecasting.tuning` | `reports/results/tuning.{json,md}` | GridSearchCV chia theo công ty + so với cấu hình mặc định |
-| `python -m forecasting.evaluate` | `reports/results/test_evaluation.json` | Chốt trên test đúng một lần, confusion matrix tại ngưỡng vận hành |
+| `python -m forecasting.evaluate` | `reports/results/test_evaluation.json` | Đánh giá cuối trên test (test KHÔNG dùng để chọn mô hình/ngưỡng), confusion matrix tại ngưỡng vận hành |
 | `python -m forecasting.report` | `reports/results/test_predictions.csv` | Xác suất từng mẫu test + histogram |
 | `python -m scripts.analyze` | `reports/results/analysis.{json,md}`, 7 hình | Overfit, importance, VIF, ablation, audit nhãn, lỗi, ngưỡng, calibration |
 | `python -m scripts.relabel` | `data/prepared-rule/*`, `reports/results/relabel.*` | Nhãn quy tắc tái lập được + kiểm chứng độ nhạy |

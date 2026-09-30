@@ -2,7 +2,7 @@
 
 Lệnh: python -m scripts.significance [--n-boot 2000] [--no-write]
 
-So trên **cùng 64 mẫu test** (đúng một lần, không dùng để chọn cấu hình):
+So trên **cùng 64 mẫu test** (test KHÔNG dùng để chọn mô hình/ngưỡng; chỉ để báo cáo và so sánh):
 - `model[<tên>]` — mô hình đã chốt (`reports/models/best.joblib`);
 - `ticker_prior` — baseline "nhớ mặt công ty" (tỉ lệ nhãn trung bình theo công ty trong train);
 - `single_feature[debt_to_assets_latest]` — logistic một đặc trưng (đối chứng tối thiểu);

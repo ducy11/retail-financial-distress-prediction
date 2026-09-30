@@ -4,7 +4,7 @@ Lệnh: python -m scripts.experiment_imbalance_real [--folds 4] [--no-write] [--
 
 Vì sao cần: `imbalance_lab/` và `benchmark_imbalanced.py` đã so 15 kỹ thuật nhưng trên **dữ liệu
 tổng hợp** (98/2 và 95/5). Yêu cầu #2 của đề bài muốn thấy so sánh trên chính bộ dữ liệu đồ án —
-nơi mất cân bằng ở cấp MẪU chỉ nhẹ (IR 1,66) nhưng ở cấp CÔNG TY rất nặng (HD/LOW/WMT 100% nhãn 1).
+nơi mất cân bằng ở cấp MẪU chỉ nhẹ (IR toàn corpus 1,66; train 1,65) nhưng ở cấp CÔNG TY rất nặng (HD/LOW/WMT 100% nhãn 1).
 Script này trả lời: *trên dữ liệu thật, có kỹ thuật nào cải thiện AP/AUROC không?*
 
 Giao thức (mọi thứ học từ fold-train):

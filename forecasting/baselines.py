@@ -26,7 +26,7 @@ from .config import GROUP_KEY, RANDOM_SEED, RESULTS_DIR, ensure_dirs, ensure_utf
 from .data_loader import load_prepared
 from .evaluation import evaluate_proba
 from .features import build_feature_matrix, extract_labels, feature_names
-from .models import make_model, predict_proba
+from .models import MODEL_REGISTRY, make_model, predict_proba
 
 #: Feature đơn lẻ dùng cho baseline "1 chỉ tiêu".
 SINGLE_FEATURE = "debt_to_assets_latest"
@@ -112,7 +112,9 @@ def run() -> Dict[str, Any]:
         (f"single_feature[{SINGLE_FEATURE}]",
          predict_proba(single, X_va[:, [j]]), predict_proba(single, X_te[:, [j]])),
     ]
-    for name in ("logistic", "random_forest", "hist_gradient_boosting"):
+    for name in ("logistic", "random_forest", "hist_gradient_boosting", "lightgbm"):
+        if name not in MODEL_REGISTRY:  # lightgbm/xgboost là phụ thuộc tuỳ chọn của môi trường
+            continue
         model = make_model(name)
         model.fit(build_feature_matrix(train_s), y_tr)
         predictors.append((f"model[{name}]", predict_proba(model, X_va), predict_proba(model, X_te)))

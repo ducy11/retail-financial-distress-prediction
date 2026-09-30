@@ -1077,6 +1077,57 @@ def check_provenance_artifact(a: Auditor) -> None:
          totals.get("n_cells"), 16 * 332)
 
 
+def check_model_report_alignment(a: Auditor) -> None:
+    """Chặn tái phát 4 lỗi kiểm toán: trộn mô hình, giấu cấu hình đang chạy, thiếu mô hình, câu chữ test.
+
+    1. Mọi phân tích trong `analysis.json` phải thuộc **mô hình đã chốt** (`summary.best_model`) —
+       trước đây `scripts/analyze.py` hard-code `"logistic"` nên bảng ngưỡng + permutation importance
+       + hình `04_threshold_curves.png` nói về mô hình khác với `best.joblib`.
+    2. Báo cáo phải **công bố cấu hình THẬT đang chạy** (mặc định) chứ không để bảng tinh chỉnh gây
+       hiểu là đã triển khai cấu hình CV tốt nhất.
+    3. Bảng so sánh §6.1 phải có **đủ các mô hình** đã huấn luyện (gồm LightGBM khi môi trường có).
+    4. Không được nói "chốt test đúng một lần" (test được chấm cho nhiều hệ thống; điều đúng là test
+       KHÔNG tham gia chọn mô hình/ngưỡng).
+    """
+    summary = _read_json(RESULTS_DIR / "summary.json")
+    best = summary.get("best_model")
+    analysis = _read_json(RESULTS_DIR / "analysis.json")
+    if analysis and best:
+        for section in ("importance", "threshold", "calibration"):
+            block = analysis.get(section) or {}
+            a.eq("report_numbers",
+                 f"analysis.json: {section}.model phải là mô hình đã chốt (không trộn mô hình)",
+                 block.get("model"), best)
+    report = DOCS_DIR / "BAO-CAO.md"
+    if report.exists():
+        text = report.read_text(encoding="utf-8")
+        flat = re.sub(r"\s+", " ", text)
+        a.check("KHÔNG nằm trong mô hình chốt" in flat, "report_numbers",
+                "docs/BAO-CAO.md §5.3: thiếu công bố 'cấu hình CV tốt nhất KHÔNG nằm trong mô hình chốt'")
+        a.check("Cấu hình THẬT của mô hình đã triển khai" in flat, "report_numbers",
+                "docs/BAO-CAO.md §5.3: thiếu công bố cấu hình thật đang chạy")
+        a.check("Chốt trên test đúng một lần" not in flat, "report_numbers",
+                "docs/BAO-CAO.md: còn câu 'chốt trên test đúng một lần' (không khớp artifact)")
+        a.check("không thuộc ba tập" in flat, "report_numbers",
+                "docs/BAO-CAO.md §1: thiếu câu giải thích 16 mẫu purge không thuộc 3 tập")
+        models_in_registry = [m for m in ("logistic", "random_forest", "hist_gradient_boosting",
+                                          "lightgbm") if m in _model_registry()]
+        missing = [m for m in models_in_registry if f"model[{m}]" not in text]
+        a.eq("report_numbers",
+             "docs/BAO-CAO.md: thiếu mô hình trong bảng so sánh (mọi mô hình đã huấn luyện phải có)",
+             missing, [])
+
+
+def _model_registry() -> set:
+    """Tên các mô hình mà môi trường hiện tại chạy được (đọc từ `forecasting.models`)."""
+    try:
+        from forecasting.models import MODEL_REGISTRY
+
+        return set(MODEL_REGISTRY)
+    except Exception:  # pragma: no cover - thiếu phụ thuộc tuỳ chọn
+        return {"logistic", "random_forest", "hist_gradient_boosting"}
+
+
 def check_docs_text_consistency(a: Auditor) -> None:
     """Câu chữ trong `docs/slide.md` và `docs/BAO-CAO.md` phải khớp artifact.
 
@@ -1503,6 +1554,7 @@ def run(tickers: Sequence[str] | None = None, skip_sec: bool = False,
     check_feature_artifacts(a)
     check_advanced_artifacts(a, splits)
     check_docs_text_consistency(a)
+    check_model_report_alignment(a)
     check_provenance_artifact(a)
 
     report = {"generated_by": "scripts.audit_data", **a.summary()}

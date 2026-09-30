@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -27,18 +28,34 @@ from forecasting.config import (COST_FN, COST_FP, FIGURES_DIR, GROUP_KEY, MIN_HI
                                 MODELS_DIR, RANDOM_SEED, RESULTS_DIR, ensure_dirs,
                                 ensure_utf8_stdio)
 from forecasting.data_loader import load_prepared
-from forecasting.evaluation import metrics_at_threshold
+from forecasting.evaluation import best_f1_point, cost_optimal_threshold, metrics_at_threshold
 from forecasting.features import (build_feature_matrix, extract_labels, feature_groups,
                                   feature_names, feature_rows, filter_by_history)
-from forecasting.models import make_model, predict_proba
+from forecasting.models import MODEL_REGISTRY, make_model, predict_proba
 
 ANALYSIS_DIR = FIGURES_DIR / "analysis"
-MODEL = "logistic"  # mô hình được chọn trong train (xem reports/results/summary.json)
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
     """Đọc JSON nếu có, ngược lại trả {} (để script chạy được khi thiếu artifact phụ)."""
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def chosen_model() -> str:
+    """Tên mô hình ĐƯỢC CHỐT, đọc từ `reports/results/summary.json` (KHÔNG hard-code).
+
+    Vì sao: trước đây hằng số này hard-code `"logistic"`, nên bảng ngưỡng + permutation importance
+    thuộc **mô hình khác** với mô hình được triển khai (`best.joblib` = random_forest) ⇒ số liệu
+    giữa các mục của báo cáo mâu thuẫn (0,37 vs 0,788) và hình minh hoạ không phải của mô hình
+    đang dùng. Nay MỌI phân tích (ngưỡng, importance, ablation) dùng đúng mô hình đã chốt, với
+    cấu hình mặc định giống `best.joblib` (xem `forecasting/models.py::HYPERPARAMS`).
+    """
+    name = _load_json(RESULTS_DIR / "summary.json").get("best_model")
+    return name if name in MODEL_REGISTRY else "logistic"
+
+
+#: Mô hình dùng cho mọi phân tích trong script = mô hình đã chốt (đọc từ artifact, không nhập tay).
+MODEL = chosen_model()
 
 
 def artifacts() -> Dict[str, Any]:
@@ -120,10 +137,19 @@ def feature_importance(train_s, val_s, test_s, path: Path, n_repeats: int = 20
         out[tag] = [{"feature": names[i], "mean_decrease_auroc": float(pi.importances_mean[i]),
                      "std": float(pi.importances_std[i])} for i in order[:15]]
 
-    coefs = model.named_steps["model"].coef_.ravel()
-    order = np.argsort(-np.abs(coefs))
-    out["logistic_coefficients_standardized"] = [
-        {"feature": names[i], "coef": float(coefs[i])} for i in order[:15]]
+    # Hệ số chỉ tồn tại với mô hình tuyến tính; với mô hình cây (RF) thì BỎ QUA thay vì lỗi.
+    # (Trước đây `MODEL` hard-code "logistic" nên dòng này luôn chạy được — sau khi chuyển sang
+    #  đúng mô hình đã chốt là random_forest thì phải kiểm tra thuộc tính trước khi đọc.)
+    estimator = model.named_steps["model"]
+    if hasattr(estimator, "coef_"):
+        coefs = np.asarray(estimator.coef_).ravel()
+        order = np.argsort(-np.abs(coefs))
+        out["coefficient_model"] = MODEL
+        out["logistic_coefficients_standardized"] = [
+            {"feature": names[i], "coef": float(coefs[i])} for i in order[:15]]
+    else:
+        out["coefficient_model"] = None
+        out["logistic_coefficients_standardized"] = []
 
     fig, axes = plt.subplots(1, 2, figsize=(12.5, 5))
     for ax, tag in zip(axes, ("val", "test")):
@@ -271,8 +297,12 @@ def threshold_curve(train_s, val_s, test_s, path: Path) -> Dict[str, Any]:
         X, y = build_feature_matrix(samples), extract_labels(samples)
         proba = predict_proba(model, X)
         rows = [metrics_at_threshold(y, proba, float(t)) for t in grid]
-        out[tag] = {"best_f1": max(rows, key=lambda r: r["f1"]),
-                    "cost_optimal": min(rows, key=lambda r: r["expected_cost"])}
+        # Dùng ĐÚNG hai hàm mà bước chốt mô hình dùng (`forecasting.evaluation`) để số ngưỡng trong
+        # mục 7.6 khớp tuyệt đối với `summary.json` (best-F1 trên validation) và
+        # `test_evaluation.json` (best-F1/ngưỡng tối ưu chi phí trên test) — trước đây script tự quét
+        # lưới riêng nên có thể ra ngưỡng khác (0,33 so với 0,788) trên cùng một mô hình.
+        out[tag] = {"best_f1": best_f1_point(y, proba) or max(rows, key=lambda r: r["f1"]),
+                    "cost_optimal": cost_optimal_threshold(y, proba)}
         ax = axes[0, col]
         ax.plot(grid, [r["precision"] for r in rows], label="Precision")
         ax.plot(grid, [r["recall"] for r in rows], label="Recall")
@@ -343,10 +373,15 @@ def learning_curve_figure(train_s, path: Path, n_splits: int = 4) -> Dict[str, A
     """Learning curve với GroupKFold: thêm dữ liệu còn giúp được nữa không?"""
     X, y = build_feature_matrix(train_s), extract_labels(train_s)
     groups = np.asarray([s[GROUP_KEY] for s in train_s])
-    sizes, train_scores, val_scores = learning_curve(
-        make_model(MODEL), X, y, groups=groups, cv=GroupKFold(n_splits=n_splits),
-        scoring="roc_auc", train_sizes=np.linspace(0.35, 1.0, 5), random_state=RANDOM_SEED,
-        n_jobs=1)
+    with warnings.catch_warnings():
+        # Vài fold chỉ có MỘT lớp (vì chia theo CÔNG TY: HD/LOW/WMT toàn nhãn 1) nên sklearn không
+        # tính được AUROC và in traceback dạng cảnh báo. Ta tắt cảnh báo để log sạch, NHƯNG đếm số
+        # điểm bị NaN và ghi vào artifact — báo cáo trung thực, không che dữ liệu thiếu.
+        warnings.simplefilter("ignore")
+        sizes, train_scores, val_scores = learning_curve(
+            make_model(MODEL), X, y, groups=groups, cv=GroupKFold(n_splits=n_splits),
+            scoring="roc_auc", train_sizes=np.linspace(0.35, 1.0, 5), random_state=RANDOM_SEED,
+            n_jobs=1)
     tr_means, tr_std = np.nanmean(train_scores, axis=1), np.nanstd(train_scores, axis=1)
     va_means, va_std = np.nanmean(val_scores, axis=1), np.nanstd(val_scores, axis=1)
 
@@ -366,7 +401,11 @@ def learning_curve_figure(train_s, path: Path, n_splits: int = 4) -> Dict[str, A
     return {"train_sizes": [int(s) for s in sizes],
             "train_auroc_mean": [float(v) for v in tr_means],
             "val_auroc_mean": [float(v) for v in va_means],
-            "gap_at_full_data": float(tr_means[-1] - va_means[-1])}
+            "gap_at_full_data": float(tr_means[-1] - va_means[-1]),
+            "n_nan_folds": {"train": int(np.isnan(np.asarray(train_scores, dtype=float)).sum()),
+                            "val": int(np.isnan(np.asarray(val_scores, dtype=float)).sum())},
+            "note": ("Ô NaN = fold mà tập con chỉ có MỘT lớp (nhãn gần như là thuộc tính công ty) nên "
+                     "AUROC không xác định; giá trị trung bình bỏ qua các ô đó (`np.nanmean`).")}
 
 
 def headline(arts: Dict[str, Any]) -> Dict[str, Any]:
@@ -517,8 +556,10 @@ def _markdown(out: Dict[str, Any]) -> str:
                      f"{_n(r['gap_auroc'])} | {_n(r['train_f1'])} | {_n(r['val_f1'])} | "
                      f"{_n(r['gap_f1'])} | {_n(r['val_ap'])} | {_n(r['brier_val'])} |")
 
+    coef_name = (out["importance"].get("coefficient_model") or "").strip()
+    coef_header = f"Hệ số {coef_name}" if coef_name else "Hệ số (n/a — mô hình cây)"
     lines += ["", "## 2. Feature quan trọng nhất (permutation, ΔAUROC khi hoán vị)", "",
-              "| # | Feature | Val ΔAUROC | Test ΔAUROC | Hệ số logistic |",
+              f"| # | Feature | Val ΔAUROC | Test ΔAUROC | {coef_header} |",
               "|---:|---|---:|---:|---:|"]
     coefs = {c["feature"]: c["coef"] for c in out["importance"]["logistic_coefficients_standardized"]}
     for i, item in enumerate(out["importance"]["val"][:10], start=1):

@@ -19,5 +19,5 @@ Các file trong thư mục này mô tả quyết định lớn và kết quả �
 
 `BAO-CAO.md` (báo cáo đầy đủ) · `slide.md` (dàn slide tự động) · `dinh-nghia-nhan.md` ·
 `huong-dan-tai-lap.md`. Xuất Word/PowerPoint: `python -m scripts.export_office` → `BAO-CAO.docx`,
-`BAO-CAO-slide.pptx`.
+`BAO-CAO-slide.pptx` (slide tự động) và `BAO-CAO-slide-bao-ve.pptx` (deck bảo vệ 11 slide).
 

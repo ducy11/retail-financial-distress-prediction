@@ -7,7 +7,7 @@
 
 - Dữ liệu SEC XBRL · 8 công ty · 324 mẫu · 47 feature
 - Train/Validation/Test = 212/32/64, chia theo thời gian
-- Tái lập 1 lệnh · 220 test · 98.192 phép kiểm tra, 0 phát hiện
+- Tái lập 1 lệnh · 220 test · 98.200 phép kiểm tra, 0 phát hiện
 - **Dữ liệu SEC thật:** 20 file hash khớp, 4.609 fact tra ngược, 0 bịa
 - Kết luận trung thực: mô hình **không** chắc hơn baseline
 
@@ -23,7 +23,7 @@
 
 ## 3. Phát hiện then chốt: nhãn là thuộc tính của CÔNG TY
 
-- Nhãn dương 62,3% ở cấp mẫu (IR = 1,66)
+- Nhãn dương 62,3% ở cấp mẫu (IR toàn corpus = 1,66; train = 1,65)
 - Nhưng HD/LOW/WMT = 100% nhãn 1; ROST chỉ 4,7%
 - IR ở cấp công ty lên tới **20,5**; 41% mẫu thuộc công ty đơn lớp
 - Baseline chỉ dùng mã công ty đạt AUROC **0,986**
@@ -51,14 +51,15 @@
 - Không resample; cố ý KHÔNG one-hot mã cổ phiếu
 - 7 lớp kiểm soát rò rỉ + dải purge 16 mẫu
 
-*Đây là slide chống rò rỉ. Winsorize, impute và scale đều nằm trong Pipeline nên mỗi fold học thống kê của riêng nó. Nhóm cố ý không one-hot mã cổ phiếu vì làm vậy sẽ hợp thức hoá đúng loại rò rỉ đang đo.*
+*Đây là slide chống rò rỉ. Impute và scale nằm trong Pipeline nên mỗi fold học thống kê của riêng nó. Nhóm cố ý không one-hot mã cổ phiếu vì làm vậy sẽ hợp thức hoá đúng loại rò rỉ đang đo. Winsorize không được đưa vào pipeline chính vì lợi ích đo được nằm trong khoảng nhiễu.*
 
 ## 6. Bốn họ mô hình và cách chọn
 
 - Logistic · Random Forest · HistGradientBoosting · LightGBM
 - GridSearchCV + StratifiedGroupKFold, refit theo AP
+- **Mô hình triển khai giữ cấu hình MẶC ĐỊNH** (tinh chỉnh chỉ +0,003 CV-AP ⇒ nhiễu)
 - Chọn theo **AP cross-company**, không theo F1 in-domain
-- Random search + sổ thực nghiệm `runs.csv` (98 dòng)
+- Random search + sổ thực nghiệm `runs.csv` (153 dòng)
 - XGBoost bị chặn phiên bản, đã ghi cách sửa
 
 ![Đường Precision-Recall trên validation](../reports/figures/validation_pr_curves.png)
@@ -81,7 +82,8 @@
 
 - @0,5: TN 23 · FP 3 · FN 1 · TP 37
 - @0,788: TN 25 · FP 1 · FN 2 · TP 36 (P 0,973)
-- Chi phí kỳ vọng giảm 8,0 → 6,0 tại ngưỡng 0,783
+- @0,783 (tính trên test để phân tích): TN 25 · FP 1 · FN 1 · TP 37
+- Chi phí kỳ vọng giảm 8,0 → 6,0; **ngưỡng vận hành = 0,788** (chọn trên validation)
 - FN đắt gấp 5 lần FP (tham số nghiệp vụ)
 - Ngưỡng là biến cấu hình, không hardcode
 
@@ -107,7 +109,7 @@
 - KernelSHAP tự cài: sai số efficiency ~1e-16
 - Demo: `python -m scripts.predict --sample-id HD-2024Q2 --explain`
 - Kiểm chứng dữ liệu thật: `python -m scripts.verify_provenance` (0 lệch)
-- 220 test tự động · audit 98.192 phép kiểm tra, 0 phát hiện
+- 220 test tự động · audit 98.200 phép kiểm tra, 0 phát hiện
 
 ![Trong tập so với cross-company](../reports/figures/analysis/07_in_domain_vs_cross_company.png)
 

@@ -4,7 +4,7 @@
 
 ## 1. Nhãn gốc đến từ đâu?
 
-Nhãn trong `data/prepared/*.json` **được giữ nguyên** từ pipeline sinh dữ liệu ban đầu (`scripts.prepare_sec` — hiện **chưa được port**, hàm `main` trả mã lỗi 2 và ghi rõ “CHƯA CÀI ĐẶT”). `forecasting/data.py::_build_samples` chỉ dùng heuristic `net_income < 0` cho mẫu **hoàn toàn mới**; với dữ liệu hiện có, nhãn được đọc lại theo `sample_id`.
+Nhãn trong `data/prepared/*.json` **được giữ nguyên** từ pipeline sinh dữ liệu ban đầu. Pipeline đó **nay đã được port** (`scripts/prepare_sec.py`): đọc `data/sec/raw/*-companyfacts.json`, tái tạo 16 chỉ tiêu theo 4 phương pháp kỳ của bản gốc và đối chiếu ngược với bảng đang dùng cho báo cáo — **99,92% ô khớp** (`reports/results/etl_verify.md`); phần chưa khớp được liệt kê từng ô trong file đó. `forecasting/data.py::_build_samples` chỉ dùng heuristic `net_income < 0` cho mẫu **hoàn toàn mới**; với dữ liệu hiện có, nhãn được đọc lại theo `sample_id` (nên bước tái tạo ô ở trên KHÔNG thay đổi nhãn đang dùng cho kết quả).
 
 ## 2. Nhãn gốc có tái tạo được không? — KHÔNG
 

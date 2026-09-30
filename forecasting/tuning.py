@@ -24,7 +24,7 @@ from .config import GROUP_KEY, RANDOM_SEED, RESULTS_DIR, ensure_dirs, ensure_utf
 from .data_loader import load_prepared
 from .evaluation import evaluate_proba
 from .features import build_feature_matrix, extract_labels
-from .models import MODEL_REGISTRY, make_model, predict_proba
+from .models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model, predict_proba
 
 #: Lưới đầy đủ (20–40 cấu hình/mô hình tuỳ máy).
 GRIDS: Dict[str, Dict[str, List[Any]]] = {
@@ -36,6 +36,8 @@ GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "hist_gradient_boosting": {"model__learning_rate": [0.03, 0.1],
                                "model__max_depth": [2, 3],
                                "model__max_iter": [200, 400]},
+    "mlp": {"model__hidden_layer_sizes": [32, 64],
+            "model__alpha": [1e-4, 1e-3, 1e-2]},
 }
 
 #: Lưới rút gọn cho máy yếu (--quick).
@@ -43,6 +45,7 @@ QUICK_GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "logistic": {"model__C": [0.1, 1.0]},
     "random_forest": {"model__max_depth": [3, 6], "model__min_samples_leaf": [2]},
     "hist_gradient_boosting": {"model__learning_rate": [0.05], "model__max_depth": [3]},
+    "mlp": {"model__alpha": [1e-3]},
 }
 
 #: Hai metric chấm điểm CV: AUROC (xếp hạng) và AP (quan trọng khi lớp dương là lớp cần bắt).
@@ -91,8 +94,7 @@ def run(models: List[str] | None = None, quick: bool = False,
         n_splits: int = 4) -> Dict[str, Any]:
     """Tinh chỉnh các mô hình trên train bằng CV chia theo công ty, xác nhận lại trên validation."""
     ensure_dirs()
-    names = [m for m in (models or ["logistic", "random_forest", "hist_gradient_boosting"])
-             if m in MODEL_REGISTRY]
+    names = [m for m in (models or DEFAULT_MODEL_ORDER) if m in MODEL_REGISTRY]
     train_s, val_s = load_prepared("train"), load_prepared("validation")
     X, y = build_feature_matrix(train_s), extract_labels(train_s)
     groups = np.asarray([s[GROUP_KEY] for s in train_s])

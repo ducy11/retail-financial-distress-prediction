@@ -18,6 +18,7 @@ import numpy as np
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from forecasting.baselines import altman_z_probability  # noqa: E402
 from forecasting.labels import (ALTMAN_DISTRESS_BELOW, FORWARD_HORIZON_QUARTERS, LABEL_RULES,  # noqa: E402
                                 altman_z_double_prime, label_by_rule, label_forward_stress)
 from forecasting.search import (SEARCH_SPACES, compare_with_grid, random_search, sample_params,  # noqa: E402
@@ -181,3 +182,28 @@ class TestRandomSearchAndLedger(unittest.TestCase):
         comparison = compare_with_grid(result, 0.9)
         self.assertAlmostEqual(comparison["delta_vs_grid"],
                                result["best"]["cv_average_precision"] - 0.9, places=9)
+class TestAltmanRuleBaseline(unittest.TestCase):
+    """Baseline QUY TẮC Altman Z'' (mục 6.1 của báo cáo) — không học tham số từ dữ liệu."""
+
+    #: Bảng cân đối "khoẻ" (đơn vị VND, chỉ cần đúng tỷ lệ).
+    HEALTHY = {"total_assets_vnd": "1000", "current_assets_vnd": "600",
+               "current_liabilities_vnd": "200", "retained_earnings_vnd": "400",
+               "operating_income_vnd": "150", "stockholders_equity_vnd": "700"}
+
+    def _prob(self, row):
+        sample = {"ticker": "X", "request": {"history": [row]}}
+        return float(altman_z_probability([sample])[0])
+
+    def test_weaker_balance_sheet_gives_higher_risk(self):
+        weak = {**self.HEALTHY, "current_assets_vnd": "100", "retained_earnings_vnd": "-300"}
+        self.assertLess(self._prob(self.HEALTHY), self._prob(weak))
+
+    def test_missing_components_return_neutral_half(self):
+        self.assertAlmostEqual(self._prob({}), 0.5, places=9)
+
+    def test_rule_baseline_has_no_fitted_parameter(self):
+        """Không có tham số học ⇒ đổi thứ tự mẫu không đổi kết quả (khác mọi baseline fit)."""
+        rows = [self.HEALTHY, {}, {**self.HEALTHY, "current_liabilities_vnd": "900"}]
+        forward = [self._prob(row) for row in rows]
+        backward = [self._prob(row) for row in reversed(rows)][::-1]
+        self.assertEqual(forward, backward)

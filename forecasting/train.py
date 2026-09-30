@@ -31,7 +31,7 @@ from .features import build_feature_matrix, extract_labels, feature_names
 from .models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model, predict_proba
 from .validation import bootstrap_ci
 
-#: Mô hình mặc định = 3 họ mô hình của đồ án (logistic · random forest · hist gradient boosting).
+#: Mô hình mặc định = 4 họ mô hình của đồ án (logistic · random forest · hist gradient boosting · MLP).
 DEFAULT_MODELS = [m for m in DEFAULT_MODEL_ORDER if m in MODEL_REGISTRY]
 
 

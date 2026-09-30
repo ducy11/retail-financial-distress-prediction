@@ -1,8 +1,10 @@
 """Nhãn thay thế TÁI LẬP ĐƯỢC cho kiểm chứng độ nhạy của kết luận.
 
 Vì sao cần: nhãn gốc `is_distressed` trong `data/prepared` không tái tạo được từ dữ liệu công bố
-(xem `docs/dinh-nghia-nhan.md`): pipeline sinh nhãn gốc chưa được port, và không quy tắc kế toán
+(xem `docs/dinh-nghia-nhan.md`): không quy tắc kế toán
 đơn giản nào khớp >65%. Module này định nghĩa một nhãn THAY THẾ có công thức công khai.
+(Pipeline sinh nhãn gốc nay ĐÃ được port thành `scripts/prepare_sec.py` và đối chiếu ngược 99,92% số ô
+— nhưng công thức nhãn vẫn không nằm trong dữ liệu công bố, nên vẫn cần nhãn thay thế ở đây.)
 
 Nguyên tắc chống rò rỉ: nhãn được tính trên **quý target** (quý mà mô hình phải dự báo). Dữ liệu
 của quý target chỉ được công bố ở `label_available_on` (sau `as_of`), nên không nằm trong feature.

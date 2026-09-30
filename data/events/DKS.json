@@ -1,0 +1,28 @@
+[
+  {
+    "ticker": "DKS",
+    "kind": "distress_item_4.02",
+    "form": "8-K",
+    "filing_date": "2007-06-05",
+    "items": [
+      "2.02",
+      "4.02",
+      "9.01"
+    ],
+    "accession": "0000950152-07-004926",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/1089063/000095015207004926/0000950152-07-004926-index.html"
+  },
+  {
+    "ticker": "DKS",
+    "kind": "distress_item_2.06",
+    "form": "8-K",
+    "filing_date": "2009-02-05",
+    "items": [
+      "2.02",
+      "2.06",
+      "9.01"
+    ],
+    "accession": "0000950152-09-001022",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/1089063/000095015209001022/0000950152-09-001022-index.html"
+  }
+]

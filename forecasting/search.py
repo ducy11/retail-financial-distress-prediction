@@ -49,6 +49,12 @@ SEARCH_SPACES: Dict[str, Dict[str, Tuple[Any, ...]]] = {
         "max_iter": ("choice", (200, 300, 400, 600)),
         "l2_regularization": ("loguniform", 1e-3, 10.0),
     },
+    "mlp": {
+        "hidden_layer_sizes": ("choice", (16, 32, 64)),
+        "alpha": ("loguniform", 1e-5, 1e-1),
+        "learning_rate_init": ("loguniform", 1e-4, 1e-2),
+        "max_iter": ("choice", (1000, 3000)),
+    },
 }
 
 

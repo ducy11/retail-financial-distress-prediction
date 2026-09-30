@@ -7,12 +7,14 @@ Mô tả ĐÚNG như code thực thi (tránh docstring sai so với hành vi):
 - Đánh giá khả năng tổng quát hoá sang công ty CHƯA TỪNG THẤY nằm ở `forecasting.validation`
   (GroupKFold / Leave-One-Company-Out) và baseline `ticker_prior` ở `forecasting.baselines`.
 
-Model registry (3 họ chạy được offline, thuần scikit-learn):
-- `logistic` — tuyến tính (tuyến tính trên log-odds của 47 feature đã scale);
+Model registry (4 họ chạy được offline, thuần scikit-learn — khác nhau về CƠ CHẾ học):
+- `logistic` — tuyến tính (log-odds của 47 feature đã scale);
 - `random_forest` — bagging cây quyết định;
-- `hist_gradient_boosting` — boosting cây.
+- `hist_gradient_boosting` — boosting cây;
+- `mlp` — mạng nơ-ron nhiều lớp (`MLPClassifier`): họ PHI TUYẾN **không dựa trên cây**, nên bổ sung
+  một giả thuyết khác hẳn (mặt quyết định trơn) và bắt buộc phải scale.
 
-Đồ án **chỉ dùng 3 họ mô hình này** (không dùng `xgboost`/`lightgbm`): mọi script, báo cáo và slide đều
+Đồ án **chỉ dùng 4 họ mô hình này** (không dùng `xgboost`/`lightgbm`): mọi script, báo cáo và slide đều
 lấy danh sách từ `MODEL_REGISTRY`/`HYPERPARAMS` dưới đây nên chỉ cần sửa ở MỘT chỗ là toàn repo nhất quán.
 
 Pipeline chuẩn: [`Winsorizer`] → `SimpleImputer(median)` → [`scaler`] → estimator, trong đó scaler
@@ -29,6 +31,7 @@ import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -49,22 +52,27 @@ HYPERPARAMS: Dict[str, Dict[str, Any]] = {
                       "class_weight": "balanced_subsample", "n_jobs": 1},
     "hist_gradient_boosting": {"max_iter": 300, "learning_rate": 0.05, "max_depth": 3,
                                "l2_regularization": 1.0, "class_weight": "balanced"},
+    # MLPClassifier KHÔNG có `class_weight` ⇒ mất cân bằng lớp xử lý bằng ngưỡng/cost-sensitive
+    # (mục 9.4 của báo cáo), không nhồi trọng số giả vào mô hình.
+    "mlp": {"hidden_layer_sizes": 32, "alpha": 1e-3, "learning_rate_init": 1e-3,
+            "max_iter": 3000, "early_stopping": True, "n_iter_no_change": 30},
 }
 
 MODEL_REGISTRY = {
     "logistic": LogisticRegression,
     "random_forest": RandomForestClassifier,
     "hist_gradient_boosting": HistGradientBoostingClassifier,
+    "mlp": MLPClassifier,
 }
 
-#: Thứ tự thử nghiệm mặc định — đúng 3 họ mô hình của đồ án.
-DEFAULT_MODEL_ORDER = ["logistic", "random_forest", "hist_gradient_boosting"]
+#: Thứ tự thử nghiệm mặc định — đúng 4 họ mô hình của đồ án (tuyến tính → bagging → boosting → MLP).
+DEFAULT_MODEL_ORDER = ["logistic", "random_forest", "hist_gradient_boosting", "mlp"]
 
-#: Mô hình cần scale (tuyến tính).
-NEEDS_SCALING = {"logistic"}
+#: Mô hình cần scale (dựa trên độ dốc/khoảng cách: logistic và MLP).
+NEEDS_SCALING = {"logistic", "mlp"}
 
-#: Scaler mặc định theo họ mô hình: tuyến tính cần scale, mô hình cây không cần.
-DEFAULT_SCALER = {"logistic": "standard"}
+#: Scaler mặc định theo họ mô hình: tuyến tính & MLP cần scale, mô hình cây không cần.
+DEFAULT_SCALER = {"logistic": "standard", "mlp": "standard"}
 
 
 def make_model(name: str, scaler: str | None = None, winsorize: str = "none", **overrides: Any):
@@ -84,6 +92,9 @@ def make_model(name: str, scaler: str | None = None, winsorize: str = "none", **
     elif name == "random_forest":
         # random_state áp cho cả rừng; n_jobs=1 để output ổn định giữa các máy
         estimator = RandomForestClassifier(**params)
+    elif name == "mlp":
+        # Họ phi tuyến KHÔNG dựa trên cây; `early_stopping` chống overfit trên 212 mẫu train.
+        estimator = MLPClassifier(**params)
     else:  # hist_gradient_boosting — họ boosting duy nhất được dùng trong đồ án
         estimator = HistGradientBoostingClassifier(**params)
 

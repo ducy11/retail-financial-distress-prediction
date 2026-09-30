@@ -13,9 +13,10 @@ Giao thức (mọi thứ học từ fold-train):
   validation của fold không bị đổi kích thước/giá trị (chống rò rỉ, giống `imbalance_lab/cv.py`).
 - Metric: AP, AUROC trên xác suất out-of-fold + F1 tốt nhất trên đường PR của OOF.
 
-Kỹ thuật (6, bám sát 3 họ mô hình của đồ án): none (đối chứng) · class_weight ·
+Kỹ thuật (6, bám sát 4 họ mô hình của đồ án): none (đối chứng) · class_weight ·
 RandomUnderSampler · TomekLinks · SMOTE · SMOTE+ENN.
-(Không đưa Focal Loss vào phần này vì Focal Loss cần custom objective của LightGBM — ngoài bộ 3 mô hình.)
+(Không đưa Focal Loss vào phần này vì Focal Loss cần custom objective của LightGBM — ngoài bộ mô hình
+chính của đồ án; Focal Loss được khảo sát riêng trong `imbalance_lab/`.)
 """
 from __future__ import annotations
 

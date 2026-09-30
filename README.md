@@ -24,10 +24,11 @@ docs/                      # Tài liệu đề cương, mở rộng dữ liệu,
 - Python ≥ 3.11 (dev: 3.13.12, Windows).
 - Cài phụ thuộc: `python -m pip install -r requirements.txt`.
 - Code **không phụ thuộc pandas** — data load thuần `json`, tính năng bằng `numpy`, **mô hình bằng
-  `scikit-learn`**: đúng **3 họ mô hình** (Logistic Regression · Random Forest · HistGradientBoosting).
+  `scikit-learn`**: đúng **4 họ mô hình** (Logistic Regression · Random Forest · HistGradientBoosting ·
+  **MLP** — tuyến tính / bagging / boosting / mạng nơ-ron phi tuyến không dựa trên cây).
   Pipeline chính **không dùng xgboost/lightgbm**; chỉ module lab mất cân bằng (`imbalance_lab/`,
   `benchmark_imbalanced.py`, `imbalance_experiment/`) mới dùng boosting ngoài làm base learner cho các
-  kỹ thuật resampling. Mọi thứ chạy offline.
+  kỹ thuật resampling. Mọi thứ chạy offline (trừ `scripts.fetch_events` — tuỳ chọn, cần Internet).
 - **Cảnh báo vô hại của thư viện**: bộ phiên bản đang kiểm thử (scikit-learn 1.6 + scipy 1.18, matplotlib 3.9)
   in `OptimizeWarning: Unknown solver options: iprint` ở **mỗi** lần fit `LogisticRegression` và
   `PyparsingDeprecationWarning` khi vẽ hình. Repo lọc **đúng** hai thông điệp này trong
@@ -42,6 +43,11 @@ docs/                      # Tài liệu đề cương, mở rộng dữ liệu,
 #    Nhãn is_distressed được giữ nguyên từ prepared cũ (sinh bởi pipeline prepare_sec gốc).
 python -m forecasting.data --force
 
+# 0b. PORT ETL: tái tạo 16 chỉ tiêu TỪ SNAPSHOT SEC và đối chiếu ngược bảng đang dùng
+#     (99,92% ô khớp; phần lệch được liệt kê từng ô) + sinh quý cho công ty mới
+python -m scripts.prepare_sec          # → reports/results/etl_verify.{json,md}, data/retail-expanded-rebuilt/
+python -m scripts.prepare_sec --verify # chỉ đối chiếu, không ghi bảng tái tạo
+
 # 1. Huấn luyện + đánh giá trên validation, chọn mô hình & threshold
 python -m forecasting.train
 
@@ -54,13 +60,16 @@ python -m forecasting.report
 # 4. EDA nhanh + EDA chuyên sâu + kiểm thử pipeline
 python -m scripts.eda            # 9 hình + thống kê mô tả + tương quan + nhận xét (mục 3.1–3.6)
 python -m scripts.eda_deep       # kiểm tra 47 feature, nhãn, tương quan, drift + 7 hình (mục 3.7)
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v      # 234 test (registry 4 mô hình, chống rò rỉ, ETL, walk-forward)
+
+# 4b. Nhãn SỰ KIỆN từ SEC (tuỳ chọn — cần Internet): có phá sản thật (8-K item 1.03) hay không?
+python -m scripts.fetch_events   # → data/events/*.json, reports/results/events.{json,md}
 ```
 
 ## Kiểm chứng bổ sung để đạt mức Xuất sắc (mục 9 của báo cáo)
 
 ```powershell
-# 5. Tiền xử lý đuôi nặng: winsorize × scaler × 3 họ mô hình trên dữ liệu THẬT
+# 5. Tiền xử lý đuôi nặng: winsorize × scaler × 4 họ mô hình trên dữ liệu THẬT
 python -m scripts.experiment_preprocessing        # → reports/results/preprocessing_experiment.{json,md}
 # 6. Giải thích mô hình bằng SHAP (KernelSHAP tự cài đặt, có tự kiểm chứng efficiency)
 python -m scripts.explain_model --max-explain 64  # → reports/results/shap.{json,md} + 3 hình
@@ -69,7 +78,7 @@ python -m scripts.significance                    # → reports/results/signific
 # 8. Kỹ thuật xử lý lệch lớp trên DỮ LIỆU THẬT (7 kỹ thuật, GroupKFold theo công ty)
 python -m scripts.experiment_imbalance_real       # → reports/results/imbalance_real.{json,md}
 # 9. Tìm kiếm siêu tham số bằng random search + SỔ THỰC NGHIỆM runs.csv
-python -m scripts.search                          # mặc định 40 trial/mô hình × 3 mô hình → runs.csv (113 dòng)
+python -m scripts.search                          # mặc định 40 trial/mô hình × 4 mô hình → runs.csv (153 dòng)
 python -m scripts.search --trials 25              # chạy nhanh hơn (sổ sẽ có ít dòng hơn)
 # 10. Độ nhạy của kết luận theo 4 ĐỊNH NGHĨA NHÃN (original, stress_signals, Altman Z'', forward-4Q)
 python -m scripts.label_sensitivity               # → reports/results/label_sensitivity.{json,md}
@@ -79,7 +88,7 @@ python -m scripts.predict --sample-id HD-2024Q2 --explain
 python -m scripts.verify_provenance             # → reports/results/provenance.{json,md}
 ```
 
-Bộ tài liệu bảo vệ đồ án (factsheet + dàn 11 slide + 8 câu hỏi phản biện kèm kịch bản trả lời) là tài liệu
+Bộ tài liệu bảo vệ đồ án (factsheet + dàn 11 slide + 10 câu hỏi phản biện kèm kịch bản trả lời) là tài liệu
 viết tay: [docs/bo-tai-lieu-bao-ve.md](docs/bo-tai-lieu-bao-ve.md) — kèm
 [docs/checklist-doi-chieu-yeu-cau.md](docs/checklist-doi-chieu-yeu-cau.md) (đối chiếu tiêu chí → bằng
 chứng → lệnh) và [docs/slide-bao-ve.md](docs/slide-bao-ve.md) (deck bảo vệ, xuất được `.pptx` bằng

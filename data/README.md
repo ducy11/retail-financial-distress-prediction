@@ -4,6 +4,9 @@ Corpus hiện tại: **8 doanh nghiệp, 332 quý, 16 chỉ tiêu** — WMT, HD,
 
 - `retail-expanded/corpus.json`: công ty được chọn và lý do loại 12 công ty còn lại.
 - `retail-expanded/*-16-indicators-vnd.json`: dữ liệu tiền VND, provenance từng chỉ tiêu, đối soát quý/năm.
+- `retail-expanded-rebuilt/`: bảng chỉ tiêu **tái tạo từ snapshot SEC** bằng `python -m scripts.prepare_sec`
+  (bản port của pipeline gốc) — dùng để đối chiếu ngược, không thay thế dữ liệu đang chạy pipeline.
+- `events/`: sự kiện 8-K (item 1.03 = phá sản; 2.06/4.02/4.01 = tín hiệu kiệt quệ) theo từng công ty.
 - `sec/downloads.json`: URL SEC, CIK, tên pháp nhân, thời điểm tải, SHA-256 của 20 snapshot.
 - `sec/raw/`: snapshot thô lưu local, bị loại khỏi Git và Docker context để giữ repo nhỏ.
 
@@ -15,7 +18,9 @@ Corpus hiện tại: **8 doanh nghiệp, 332 quý, 16 chỉ tiêu** — WMT, HD,
 | [purged.json](prepared/purged.json) | 16 | Bảo vệ thứ tự công bố toàn cục, 2 quý/công ty bao 2 bên validation |
 | [manifest.json](prepared/manifest.json) | — | Khoảng thời gian, chính sách, SHA-256 nguồn và split |
 
-Tái tạo split: `python -m forecasting.data --force` (nhãn `is_distressed` giữ nguyên từ prepared cũ — do pipeline `prepare_sec` gốc sinh ra, không suy ra lại từ 16 chỉ tiêu); train: `python -m forecasting.train`. Hai lệnh chạy offline. Crawl lại: `python -m scripts.crawl_sec --refresh`, rồi `python -m scripts.prepare_sec`. Refresh có thể đổi corpus; cần review báo cáo lọc trước khi dùng.
+Tái tạo split: `python -m forecasting.data --force` (nhãn `is_distressed` giữ nguyên từ prepared cũ — do pipeline `prepare_sec` gốc sinh ra, không suy ra lại từ 16 chỉ tiêu); train: `python -m forecasting.train`. Hai lệnh chạy offline. Crawl lại: `python -m scripts.crawl_sec --refresh`, rồi `python -m scripts.prepare_sec`.
+
+**ETL đã port & đối chiếu ngược:** `python -m scripts.prepare_sec` → `reports/results/etl_verify.{json,md}`. Script tái tạo lại **từng ô** của 8 bảng chỉ tiêu từ `sec/raw/*-companyfacts.json` bằng đúng quy tắc của pipeline gốc (thứ tự ưu tiên tag + 4 phương pháp kỳ `instant`/`reported_quarter`/`reported_first_quarter`/`current_ytd_minus_previous_ytd` + bản công bố sớm nhất), rồi so với bảng đang dùng: **5.308/5.312 ô khớp (99,92%)**; 4 ô lệch còn lại (DKS) được liệt kê cụ thể. Đường sinh tự động (`discover_periods`, không dùng bảng gốc làm khung) tìm được 51–69 quý/công ty — đủ để chạy ETL cho công ty MỚI.
 
 **Chứng minh dữ liệu là thật:** `python -m scripts.verify_provenance` → `reports/results/provenance.{json,md}`. Script băm SHA-256 toàn bộ snapshot SEC, đối chiếu với `sec/downloads.json`, rồi **tra ngược từng fact** (tag, kỳ, `accn`, `form`) trong `sec/raw/*-companyfacts.json` và kiểm lại phép quy đổi VND — bắt cả trường hợp "điền số cho đủ" ở chỉ tiêu không có fact.
 

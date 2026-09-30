@@ -34,10 +34,11 @@ sys.path.insert(0, str(ROOT))
 import forecasting.features as features  # noqa: E402
 from forecasting.data_loader import load_prepared, to_float  # noqa: E402
 from forecasting.features import build_feature_matrix, extract_labels, feature_names  # noqa: E402
-from forecasting.models import make_model, predict_proba  # noqa: E402
+from forecasting.models import DEFAULT_MODEL_ORDER, make_model, predict_proba  # noqa: E402
 
 SPLITS = ("train", "validation", "test", "purged")
-MODELS = ("logistic", "random_forest", "hist_gradient_boosting")
+#: Công cụ khảo sát (không thuộc run_all): dùng đúng danh sách mô hình của registry.
+MODELS = tuple(DEFAULT_MODEL_ORDER)
 LOOKBACK = 8
 SUF = "_vnd"
 
@@ -46,6 +47,7 @@ NESTED_GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "logistic": {"model__C": [0.03, 0.1, 0.3, 1.0]},
     "random_forest": {"model__max_depth": [3, 6], "model__min_samples_leaf": [2, 4]},
     "hist_gradient_boosting": {"model__learning_rate": [0.03, 0.1], "model__max_depth": [2, 3]},
+    "mlp": {"model__alpha": [1e-3]},
 }
 
 

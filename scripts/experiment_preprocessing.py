@@ -37,7 +37,7 @@ from forecasting.data_loader import load_prepared
 from forecasting.eda import markdown_table
 from forecasting.evaluation import best_f1_point, evaluate_proba
 from forecasting.features import build_feature_matrix, extract_labels
-from forecasting.models import MODEL_REGISTRY, make_model
+from forecasting.models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model
 
 #: Cấu hình tham chiếu = pipeline chính hiện tại (logistic + StandardScaler, không winsorize).
 REFERENCE = {"model": "logistic", "scaler": "standard", "winsorize": "none"}
@@ -53,8 +53,8 @@ def _variants(models: Sequence[str], quick: bool = False) -> List[Dict[str, str]
     winsorizers = ("none", "iqr") if quick else WINSORIZERS
     out: List[Dict[str, str]] = []
     for name in models:
-        scalers = ("standard", "robust") if name == "logistic" else TREE_SCALERS
-        if quick and name != "logistic":
+        scalers = ("standard", "robust") if name in ("logistic", "mlp") else TREE_SCALERS
+        if quick and name not in ("logistic", "mlp"):
             scalers = ("none",)
         for scaler in scalers:
             for winsorize in winsorizers:
@@ -238,8 +238,7 @@ def run(write: bool = True, quick: bool = False, out_dir: Path | None = None,
     out = Path(out_dir) if out_dir else RESULTS_DIR
     figs = Path(fig_dir) if fig_dir else (RESULTS_DIR.parent / "figures" / "preprocessing")
     splits = {name: load_prepared(name) for name in ("train", "validation", "test")}
-    models = [m for m in ("logistic", "random_forest", "hist_gradient_boosting")
-              if m in MODEL_REGISTRY]
+    models = [m for m in DEFAULT_MODEL_ORDER if m in MODEL_REGISTRY]
     variants = _variants(models, quick=quick)
     rows = [evaluate_variant(variant, splits) for variant in variants]
     reference = _reference_row(rows)

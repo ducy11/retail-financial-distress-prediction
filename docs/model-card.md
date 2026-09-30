@@ -33,7 +33,7 @@ phối bởi "nhớ mặt công ty" (xem §7).
 | Corpus | **8 công ty, 332 quý → 324 mẫu** (WMT, HD, LOW, ROST, DG, ORLY, DKS, FIVE) |
 | Chia tập | test = 8 quý cuối/công ty (64), validation = 4 quý trước đó (32), purge = 2 quý (16), còn lại train (212) |
 | Chống rò rỉ thời gian | mọi dòng lịch sử có `available_on <= as_of`; dải purge 2 quý |
-| Nhãn | `is_distressed` **giữ nguyên từ pipeline gốc** (`scripts/prepare_sec.py` chưa port) — không tái tạo được từ dữ liệu công bố |
+| Nhãn | `is_distressed` **giữ nguyên từ pipeline gốc** — pipeline đó **đã được port** thành `scripts/prepare_sec.py` và đối chiếu ngược **99,92% ô** (`reports/results/etl_verify.md`); nhãn vẫn không tái tạo được từ dữ liệu công bố (mức khớp cao nhất với quy tắc đơn giản = 74,7%) ⇒ dùng kèm **nhãn quy tắc** (`stress_signals`/`altman_z`/`forward_4q`) và **nhãn sự kiện** (`scripts/fetch_events.py`) |
 | Cân bằng lớp | toàn bộ 202/122 (62,3%/37,7%, IR 1,66); train IR 1,65; test 38/26; **theo công ty rất lệch**: HD/LOW/WMT 100% nhãn 1, ROST 4,7% (IR 20,5) — `reports/results/class_balance.md` |
 
 ## 4. Đặc trưng (features)
@@ -51,9 +51,11 @@ phối bởi "nhớ mặt công ty" (xem §7).
 
 ## 5. Kiến trúc & quy trình
 
-- Pipeline sklearn: `median-impute → (StandardScaler cho mô hình tuyến tính) → classifier`;
-  **3 họ mô hình**: Logistic Regression, Random Forest, HistGradientBoosting (đều thuần scikit-learn;
-  đồ án KHÔNG dùng xgboost/lightgbm).
+- Pipeline sklearn: `median-impute → (StandardScaler cho mô hình tuyến tính/MLP) → classifier`;
+  **4 họ mô hình**: Logistic Regression, Random Forest, HistGradientBoosting, **MLP** (mạng nơ-ron phi
+  tuyến, không dựa trên cây) — đều thuần scikit-learn; đồ án KHÔNG dùng xgboost/lightgbm.
+- **Bốn baseline đối chứng**: dummy (lớp đa số), `ticker_prior` (nhớ mặt công ty), logistic 1 chỉ tiêu,
+  và **quy tắc Altman Z'' < 1,1** (công thức công khai, không học tham số từ dữ liệu).
 - **Chọn mô hình theo AP cross-company** (GroupKFold trên train+validation) → best-F1(val) → AP(val)
   → AUROC(val) → gap overfit nhỏ nhất. Quy tắc lưu trong `summary.json::selection_rule`.
 - **Ngưỡng quyết định**: ngưỡng best-F1 trên validation + ngưỡng tối ưu theo chi phí kỳ vọng
@@ -108,15 +110,15 @@ cậy bootstrap).
 | Huấn luyện lại | mỗi năm tài chính mới/có 10-K mới | `python -m scripts.run_all` (tái lập byte-identical cho split; test tự động) |
 | Kiểm chứng số liệu | trước mỗi lần báo cáo | `python -m scripts.audit_data` (98.200 phép kiểm tra, 0 phát hiện) |
 | Kiểm chứng NGUỒN GỐC | trước khi công bố/nộp | `python -m scripts.verify_provenance` — băm SHA-256 snapshot SEC, tra ngược từng fact trong companyfacts, kiểm quy đổi VND (0 lệch / 0 fact thiếu / 0 ô bịa số) |
-| Kiểm thử | mỗi thay đổi code | `python -m unittest discover -s tests -v` (222 test, gồm chống rò rỉ + KernelSHAP + demo predict + `TestThreeModelRegistry`) |
+| Kiểm thử | mỗi thay đổi code | `python -m unittest discover -s tests -v` (**234 test**, gồm chống rò rỉ + KernelSHAP + demo predict + `TestModelRegistry` chặn quay lại 3 mô hình + walk-forward/cluster bootstrap + ETL port) |
 | Rollback | khi metric test/cross-company giảm | giữ artifact cũ; mọi artifact có SHA-256 trong manifest |
 
 ## 10. Tái lập & truy vết
 
 ```powershell
-python -m scripts.run_all                 # toàn bộ artifact + docs (21 bước)
+python -m scripts.run_all                 # toàn bộ artifact + docs (22 bước, gồm PORT ETL ở bước 2)
 python -m scripts.audit_data              # đối chiếu với số liệu thật SEC: 0 phát hiện
-python -m unittest discover -s tests -v   # 222 test
+python -m unittest discover -s tests -v   # 234 test (registry 4 mô hình, chống rò rỉ, ETL, walk-forward)
 python -m imbalance_lab.run               # lab mất cân bằng (kèm hiệu chuẩn + mốc minh hoạ rò rỉ)
 ```
 

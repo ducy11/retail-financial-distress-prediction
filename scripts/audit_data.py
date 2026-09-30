@@ -1110,8 +1110,7 @@ def check_model_report_alignment(a: Auditor) -> None:
                 "docs/BAO-CAO.md: còn câu 'chốt trên test đúng một lần' (không khớp artifact)")
         a.check("không thuộc ba tập" in flat, "report_numbers",
                 "docs/BAO-CAO.md §1: thiếu câu giải thích 16 mẫu purge không thuộc 3 tập")
-        models_in_registry = [m for m in ("logistic", "random_forest", "hist_gradient_boosting")
-                              if m in _model_registry()]
+        models_in_registry = sorted(_model_registry())
         missing = [m for m in models_in_registry if f"model[{m}]" not in text]
         a.eq("report_numbers",
              "docs/BAO-CAO.md: thiếu mô hình trong bảng so sánh (mọi mô hình đã huấn luyện phải có)",
@@ -1125,7 +1124,7 @@ def _model_registry() -> set:
 
         return set(MODEL_REGISTRY)
     except Exception:  # pragma: no cover - thiếu phụ thuộc tuỳ chọn
-        return {"logistic", "random_forest", "hist_gradient_boosting"}
+        return {"logistic", "random_forest", "hist_gradient_boosting", "mlp"}
 
 
 def check_docs_text_consistency(a: Auditor) -> None:

@@ -2,15 +2,15 @@
 
 *Tài liệu VIẾT TAY (không sinh tự động), dùng để làm slide và ôn phản biện. Mọi số liệu đọc trực tiếp
 từ artifact trong repo: `reports/results/*.json`, `docs/BAO-CAO.md`, `reports/figures/**`.
-Kiểm chứng: `python -m scripts.audit_data` (98.200 phép kiểm tra, 0 phát hiện) và
-`python -m unittest discover -s tests` (222 test PASS).*
+Kiểm chứng: `python -m scripts.audit_data` (98.200+ phép kiểm tra, 0 phát hiện) và
+`python -m unittest discover -s tests` (234 test PASS).*
 
 **Cách dùng**
 
 - **Phần 1 (Factsheet):** số liệu nền để trả lời mọi câu hỏi "số này ở đâu ra".
 - **Phần 2 (Dàn slide):** 11 slide, mỗi slide có tiêu đề · takeaway · bullet hiển thị · lời thoại.
-- **Phần 3 (Mock defense):** 8 câu hỏi phản biện kèm kịch bản 4 bước (thừa nhận → kỹ thuật → số liệu → kết luận).
-- **Đi kèm:** `docs/checklist-doi-chieu-yeu-cau.md` (đối chiếu 19 tiêu chí → bằng chứng → lệnh),
+- **Phần 3 (Mock defense):** 10 câu hỏi phản biện kèm kịch bản 4 bước (thừa nhận → kỹ thuật → số liệu → kết luận).
+- **Đi kèm:** `docs/checklist-doi-chieu-yeu-cau.md` (đối chiếu 21 tiêu chí → bằng chứng → lệnh),
   `docs/slide-bao-ve.md` (deck 11 slide), `python -m scripts.predict` (demo dự đoán
   1 quý + SHAP), `docs/BAO-CAO.md` §11 (tài liệu tham khảo 24 mục gắn vị trí dùng thật).
 - **Bản xuất để nộp / làm slide** (`python -m scripts.export_office`): `docs/BAO-CAO.docx` (báo cáo
@@ -82,7 +82,7 @@ X (47 features, có NaN)
 
 - **Mã hoá categorical:** không có biến phân loại; **cố ý KHÔNG one-hot `ticker`** (sẽ hợp thức hoá đúng loại rò rỉ thực thể đang đo).
 - **Mất cân bằng:** `class_weight='balanced_subsample'` (RF) / `'balanced'` (HGB) — trọng số **tính trong `fit`** từ nhãn fold-train. **Không** resample ở pipeline chính; SMOTE/RUS đo riêng (lab 98/2 và thí nghiệm trên dữ liệu thật) — **không cải thiện có ý nghĩa** (`smote_enn` 0,9683 vs đối chứng 0,9588, p = 0,21).
-- **Chống rò rỉ (7 lớp):** split theo thời gian + purge; impute/scale trong Pipeline; CV theo nhóm công ty; **test KHÔNG tham gia chọn mô hình/ngưỡng** (chỉ dùng để báo cáo & so sánh nhiều hệ thống trên cùng 64 mẫu); manifest có SHA-256 nguồn & split; 222 test tự động (gồm `test_no_label_leak_in_features`, `test_main_pipeline_has_no_balancer`, `TestThreeModelRegistry`).
+- **Chống rò rỉ (7 lớp):** split theo thời gian + purge; impute/scale trong Pipeline; CV theo nhóm công ty; **test KHÔNG tham gia chọn mô hình/ngưỡng** (chỉ dùng để báo cáo & so sánh nhiều hệ thống trên cùng 64 mẫu); manifest có SHA-256 nguồn & split; **234 test tự động** (gồm `test_no_label_leak_in_features`, `test_main_pipeline_has_no_balancer`, `TestModelRegistry` chặn quay lại 3 mô hình, test cho walk-forward/cluster bootstrap và ETL port).
 
 ## 1.3. Kiến trúc mô hình & Siêu tham số
 
@@ -100,8 +100,8 @@ X (47 features, có NaN)
 
 **Cách tối ưu (bài bản, có lưu vết):**
 
-- `GridSearchCV` (8–18 cấu hình/mô hình) + **`StratifiedGroupKFold(4)`** + **`refit="average_precision"`**; luôn in kèm điểm của cấu hình mặc định trên cùng splitter ⇒ trả lời "tinh chỉnh có thật sự cải thiện không".
-- Bổ sung **random search** (40 trial/mô hình — đúng tham số mặc định mà `scripts.run_all` dùng: 40 trial logistic, **33** Random Forest, 40 HGB, mẫu log-uniform cho tham số scale) + **sổ thực nghiệm** `reports/results/runs.csv` (**113 dòng**; mỗi dòng = 1 trial với run_id, model, params, seed, CV-AP, ±std, thời gian, trạng thái).
+- `GridSearchCV` (6–18 cấu hình/mô hình: 8 logistic · 18 Random Forest · 8 HGB · 6 MLP) + **`StratifiedGroupKFold(4)`** + **`refit="average_precision"`**; luôn in kèm điểm của cấu hình mặc định trên cùng splitter ⇒ trả lời "tinh chỉnh có thật sự cải thiện không".
+- Bổ sung **random search** (40 trial/mô hình — đúng tham số mặc định mà `scripts.run_all` dùng: 40 trial logistic, **33** Random Forest, 40 HGB, 40 MLP; mẫu log-uniform cho tham số scale) + **sổ thực nghiệm** `reports/results/runs.csv` (**153 dòng**; mỗi dòng = 1 trial với run_id, model, params, seed, CV-AP, ±std, thời gian, trạng thái).
 - Δ random search vs GridSearchCV: HGB **+0,026**, logistic +0,007, **Random Forest −0,004** ⇒ mô hình được chốt không hưởng lợi thêm từ tìm kiếm rộng hơn (kết quả âm được báo cáo).
 - **Tiêu chí dừng:** không còn cải thiện AP cross-company có ý nghĩa; **không bao giờ dùng test** để chọn cấu hình.
 
@@ -128,7 +128,7 @@ X (47 features, có NaN)
 **Mô hình chiến thắng & chênh lệch**
 
 - Chốt **Random Forest** theo **quy tắc công bố trước**: `max AP cross-company (GroupKFold) → best-F1(val) → AP(val) → AUROC(val) → gap overfit nhỏ nhất`.
-- AP cross-company (OOF trên train+validation, 244 mẫu): RF **0,9577** > HGB 0,9569 > logistic 0,9232 ⇒ RF chỉ hơn HGB **0,0008** (≈0, dưới mọi mức nhiễu) và thắng nhờ **tie-break cuối cùng** trong quy tắc công bố trước (gap overfit F1: RF +0,009 so với HGB +0,024). Nói cách khác: **ba họ mô hình gần như tương đương**, đây là điều phải nói rõ thay vì hô "RF tốt nhất".
+- AP cross-company (OOF trên train+validation, 244 mẫu): RF **0,9577** > HGB 0,9569 > logistic 0,9232 ⇒ RF chỉ hơn HGB **0,0008** (≈0, dưới mọi mức nhiễu) và thắng nhờ **tie-break cuối cùng** trong quy tắc công bố trước (gap overfit F1: RF +0,009 so với HGB +0,024). Nói cách khác: **bốn họ mô hình gần như tương đương** ở chế độ in-domain/cross-company (riêng MLP yếu hơn rõ khi kiểm chứng theo thời gian — mục 6.7), đây là điều phải nói rõ thay vì hô "RF tốt nhất".
 - Hơn logistic: ΔAP test +0,002; **Δcross-company AUROC +0,021**. Hơn HGB: ΔAP +0,004; Δcross-company +0,007.
 - **Đối chiếu trung thực:** các họ mô hình chênh nhau **< 0,01 AUROC** trên test ⇒ *thuật toán không phải nút thắt*; `ticker_prior` (không dùng feature) vẫn **cao hơn mô hình 0,003 AUROC**.
 
@@ -138,7 +138,7 @@ X (47 features, có NaN)
 1. **Dữ liệu nhỏ + nhiều cột đa cộng tuyến** (VIF > 10 ở 33/47): RF (bagging + `max_features` ngẫu nhiên) giảm phương sai và **bền với cột trùng thông tin**; boosting dễ dồn importance vào vài cột mạnh.
 2. **Đuôi nặng/outlier** (skew tới −14,9; 30,6% giá trị `debt_to_equity_latest` ngoài IQR): mô hình cây **bất biến đơn vị** nên ít bị ngoại lai kéo, trong khi logistic phụ thuộc scaler — bằng chứng: đổi scaler cho logistic làm kết quả **xấu đi rõ** (`robust` = 0,8676 AP cross-company so với `standard` = 0,9232, mục 9.1), còn mô hình cây không cần scaler.
 3. Quan sát (không phải thí nghiệm cô lập): cấu hình trọng số khác nhau — RF dùng `class_weight='balanced_subsample'`, HGB dùng `'balanced'` — và RF cho precision 0,925 so với 0,902 của HGB ở cùng recall 0,974. Vì hai mô hình khác nhau về bản chất, **không thể quy chênh lệch 0,023 này cho riêng `class_weight`**; muốn kết luận cần ablation đổi trọng số trên cùng một mô hình.
-4. **Thí nghiệm tiền xử lý (mục 9.1):** `random_forest + winsorize IQR` đạt AP cross-company **0,9590** — cao nhất trong 18 cấu hình (tham chiếu `logistic + StandardScaler` = 0,9232). Nhưng so **cùng mô hình được chốt**: winsorize chỉ **+0,13 điểm %** (0,9590 vs 0,9577) ⇒ nằm trong khoảng nhiễu của 244 mẫu out-of-fold, nên **pipeline chính giữ không winsorize** cho đơn giản; lợi ích thật nằm ở mô hình **tuyến tính** (+1,85 điểm % với `p1p99`).
+4. **Thí nghiệm tiền xử lý (mục 9.1):** `random_forest + winsorize IQR` đạt AP cross-company **0,9590** — cao nhất trong 24 cấu hình (tham chiếu `logistic + StandardScaler` = 0,9232). Nhưng so **cùng mô hình được chốt**: winsorize chỉ **+0,13 điểm %** (0,9590 vs 0,9577) ⇒ nằm trong khoảng nhiễu của 244 mẫu out-of-fold, nên **pipeline chính giữ không winsorize** cho đơn giản; lợi ích thật nằm ở mô hình **tuyến tính** (+1,85 điểm % với `p1p99`).
 5. **Kiểm định thống kê nói thật:** RF vs `ticker_prior`: ΔAUROC = −0,0030, **p = 0,7546** (DeLong); ΔAP = +0,0061, CI95 [−0,0048; +0,0215], p = 0,344.
 
 ## 1.5. Phân tích chuyên sâu (Confusion Matrix · Error Analysis · Overfit)
@@ -212,7 +212,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
   - Dự báo suy giảm tài chính doanh nghiệp bán lẻ Mỹ
   - Dữ liệu SEC XBRL · 8 công ty · 324 mẫu · 47 features
   - Tái lập 100%: seed 42, split byte-identical
-  - Audit 98.200 phép kiểm tra · 222 test tự động
+  - Audit 98.200+ phép kiểm tra · **234 test tự động** (registry 4 mô hình, ETL, walk-forward)
 - **Speaker notes:** "Đồ án không chỉ dừng ở AUROC 0,983 mà còn chỉ ra vì sao con số đó **chưa** chứng minh năng lực dự báo. Toàn bộ số liệu trên slide đều sinh từ artifact trong repo và tái lập bằng một lệnh, nên nhóm sẵn sàng chạy lại ngay trong buổi bảo vệ nếu thầy/cô yêu cầu."
 
 ### Slide 2 — Đặt vấn đề & Mục tiêu
@@ -265,14 +265,15 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 
 ### Slide 6 — Thuật toán & Tinh chỉnh siêu tham số
 
-- **Takeaway:** 3 họ mô hình; chọn theo AP cross-company, không theo F1 in-domain.
+- **Takeaway:** 4 họ mô hình (tuyến tính / bagging / boosting / mạng nơ-ron); chọn theo AP cross-company, không theo F1 in-domain.
 - **Hiển thị:** bảng siêu tham số + sơ đồ quy tắc chọn mô hình.
 - **Bullets:**
-  - Logistic Regression · Random Forest · HGB (3 họ, thuần scikit-learn)
-  - GridSearchCV 8–18 cấu hình + StratifiedGroupKFold
+  - Logistic Regression · Random Forest · HGB · MLP (4 họ, thuần scikit-learn)
+  - GridSearchCV 6–18 cấu hình + StratifiedGroupKFold
   - refit = average_precision (không phụ thuộc ngưỡng)
-  - Random search 40 trial/mô hình + sổ `runs.csv` 113 dòng
-  - Chỉ 3 họ mô hình thuần scikit-learn (KHÔNG xgboost/lightgbm); đổi mô hình chỉ cần sửa 1 registry
+  - Random search 40 trial/mô hình + sổ `runs.csv` (mọi trial của 4 họ mô hình)
+  - Chỉ 4 họ mô hình thuần scikit-learn (KHÔNG xgboost/lightgbm); đổi mô hình chỉ cần sửa 1 registry
+  - Baseline quy tắc **Altman Z'' < 1,1** (không học tham số) + **walk-forward theo thời gian** (mục 6.7)
 - **Speaker notes:** "Điểm khác biệt là tiêu chí chọn: nhóm xếp hạng theo AP cross-company, nghĩa là mô hình phải chịu được công ty chưa từng thấy. GridSearchCV chạy trên StratifiedGroupKFold và refit theo AP; nhóm còn chạy random search và ghi mọi trial vào sổ để so sánh công bằng với lưới cũ — kết quả âm cũng được lưu."
 
 ### Slide 7 — Bảng so sánh hiệu năng (Test set)
@@ -336,7 +337,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 
 ---
 
-# PHẦN 3 — 8 CÂU HỎI PHẢN BIỆN & KỊCH BẢN TRẢ LỜI XUẤT SẮC
+# PHẦN 3 — 10 CÂU HỎI PHẢN BIỆN & KỊCH BẢN TRẢ LỜI XUẤT SẮC
 
 > Khuôn 4 bước cho MỌI câu: **① Thừa nhận** → **② Luận điểm kỹ thuật** → **③ Số liệu** → **④ Kết luận**.
 
@@ -382,7 +383,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
   - Cross-company OOF AUROC: RF **0,933** > HGB 0,926 > logistic 0,912.
   - AP cross-company: RF **0,958** > HGB 0,957 > logistic 0,923.
   - Test AP 0,991 (RF) vs 0,989 (logistic); precision 0,925 vs HGB 0,902 ở cùng recall 0,974.
-  - `random_forest + winsorize IQR` = **0,9590 AP cross-company**, cao nhất trong 18 cấu hình
+  - `random_forest + winsorize IQR` = **0,9590 AP cross-company**, cao nhất trong 24 cấu hình
     (tham chiếu `logistic + StandardScaler` = 0,9232).
   - Ablation (mục 7.4): bỏ nhóm `ratios_latest` làm AUROC test giảm mạnh nhất ⇒ tín hiệu tập trung ở nhóm cấu trúc vốn/thanh khoản hiện tại.
 - **④ Kết luận:** RF là lựa chọn **theo quy tắc công bố trước** (max AP cross-company) và hợp lý về bias–variance;
@@ -429,7 +430,7 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 - **③ Số liệu:**
   - Lưới so với mặc định: logistic **+0,026**, HGB +0,015, RF +0,003.
   - Random search so với lưới: HGB **+0,026**, logistic +0,007, **RF −0,004**.
-  - `runs.csv`: 113 dòng (logistic 40 · Random Forest 33 · HGB 40; run_id, model, params, seed, CV-AP ± std, thời gian, trạng thái).
+  - `runs.csv`: 153 dòng (logistic 40 · Random Forest 33 · HGB 40 · MLP 40; run_id, model, params, seed, CV-AP ± std, thời gian, trạng thái).
 - **④ Kết luận:** Tiêu chí dừng = **không còn cải thiện AP có ý nghĩa trên CV** so với mặc định/lưới; mọi lựa
   chọn mô hình **không bao giờ dùng test**. Việc tinh chỉnh rộng không giúp RF được **báo cáo thay vì che**.
 
@@ -468,6 +469,32 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
   SHA-256 trong manifest; (3) **log quyết định** từng hồ sơ; (4) tái huấn luyện khi có công ty/nhãn mới và
   **chốt lại định nghĩa nhãn** trước khi dùng cho bất kỳ quyết định tín dụng nào.
 
+### Q9. Dữ liệu này có phá sản THẬT không — hay chỉ là trạng thái kế toán?
+
+- **① Thừa nhận:** "Đây là điểm yếu gốc của đề tài và nhóm **chủ động đo nó** trước khi bị hỏi."
+- **② Luận điểm kỹ thuật:** nhãn `is_distressed` là **trạng thái kế toán của quý target** (không phải sự
+  kiện phá sản), nay đã được kiểm tra bằng ba lớp: (a) **nhãn quy tắc tái lập được** (3 định nghĩa),
+  (b) **nhãn sự kiện công khai** (`scripts/fetch_events.py` đọc trường `items` của 8-K), (c) **ETL port**
+  chứng minh bảng chỉ tiêu tái tạo được 99,92% từ snapshot SEC.
+- **③ Số liệu:** `reports/results/events.md` — tra **8/8 công ty**: **0 sự kiện 8-K item 1.03 (phá sản)**,
+  **11 filing tín hiệu kiệt quệ** (LOW 7 · DG 2 · DKS 2; FIVE/HD/ORLY/ROST/WMT = 0); nhãn gốc không tái
+  tạo được (khớp tối đa **74,7%**); ETL port **5.308/5.312 ô (99,92%)**.
+- **④ Kết luận:** đề tài được định vị là **dự báo suy giảm tài chính (financial distress)** — nhất quán
+  với tên báo cáo; muốn làm "dự báo phá sản" phải mở rộng universe sang doanh nghiệp đã nộp 8-K item 1.03
+  (đã ghi trong `docs/ke-hoach-tiep-theo.md`).
+
+### Q10. Đánh giá theo THỜI GIAN thì sao, hay chỉ chia theo công ty?
+
+- **① Thừa nhận:** "Chia theo công ty (GroupKFold/LOCO) không trả lời câu hỏi 'giai đoạn mới'."
+- **② Luận điểm kỹ thuật:** báo cáo bổ sung **walk-forward** (expanding window, cắt theo `target_period_end`,
+  purge theo ngày công bố nhãn) — câu hỏi *"công ty CŨ, GIAI ĐOẠN mới"*, song song với LOCO *"công ty MỚI,
+  giai đoạn cũ"*; CI cũng được tính lại **theo cụm công ty** (không chỉ theo mẫu).
+- **③ Số liệu:** `reports/results/walk_forward.json` + hình `figures/analysis/08_walk_forward.png`; bảng
+  mục 6.7 của báo cáo in AUROC/AP từng fold cho **cả 4 họ mô hình**, kèm số fold bị bỏ qua (train quá nhỏ
+  hoặc test đơn lớp) — không im lặng che.
+- **④ Kết luận:** ba phép đo (in-domain · cross-company · walk-forward) được in **cạnh nhau** trong báo cáo;
+  không con số nào được trình bày đơn lẻ.
+
 ---
 
 ## PHỤ LỤC — 6 con số "đinh" nên nhớ để phản biện
@@ -479,7 +506,8 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 | **0,983 AUROC · 0,991 AP · F1 0,960 · MCC 0,904** | Mô hình được chốt trên test |
 | **0,986 (ticker_prior) · 0,933 (cross-company) · 0,610 (LOCO)** | Ba con số phản biện — mô hình chưa chắc hơn baseline |
 | **p = 0,7546 (DeLong) · CI95 AUROC [0,947; 1,000]** | Độ bất định trên n = 64 |
-| **3/3 định nghĩa nhãn · ~1e-16 (SHAP) · 0 phát hiện / 98.200 phép kiểm tra · 222 test** | Độ vững của kết luận & mức độ tái lập |
+| **3/3 định nghĩa nhãn · ~1e-16 (SHAP) · 0 phát hiện / 98.200+ phép kiểm tra · bộ test tự động** | Độ vững của kết luận & mức độ tái lập |
+| **5.308/5.312 ô (99,92%) · 0 sự kiện 8-K item 1.03** | **ETL port tái tạo được** + dữ liệu **không có phá sản thật** (định vị đề tài) |
 
 ---
 
@@ -497,6 +525,9 @@ thế (AP 0,46–0,61 so với 0,958) ⇒ phải nêu trong hạn chế.
 | 4 định nghĩa nhãn, độ nhạy | `reports/results/label_sensitivity.md`, `forecasting/labels.py` |
 | Grid/random search, sổ trial | `reports/results/tuning.md`, `reports/results/search.md`, `reports/results/runs.csv` |
 | Tổng hợp & kết luận toàn đồ án | `reports/results/summary.json`, `reports/results/tuning.md`, `docs/BAO-CAO.md` |
+| **ETL tái tạo 16 chỉ tiêu từ snapshot SEC** | `reports/results/etl_verify.md`, `scripts/prepare_sec.py` |
+| **Sự kiện phá sản/kiệt quệ (8-K)** | `reports/results/events.md`, `data/events/*.json` |
+| **Walk-forward theo thời gian + CI theo cụm** | `reports/results/walk_forward.json`, `reports/results/validation_checks.json` |
 | Kiểm tra dữ liệu & toàn vẹn | `reports/results/data_audit.md`, `scripts/audit_data.py` |
 
 > Lệnh tái lập toàn bộ: `python -m scripts.run_all` · kiểm định: `python -m unittest discover -s tests`

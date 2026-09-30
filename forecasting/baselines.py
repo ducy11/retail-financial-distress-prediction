@@ -1,17 +1,21 @@
 """Baseline đối chứng — không được thiếu khi báo cáo metric.
 
-Ba baseline theo thứ tự mạnh dần:
+Bốn baseline theo thứ tự mạnh dần:
 1. `dummy_most_frequent` — luôn dự đoán lớp đa số (thước đo "không học gì").
 2. `ticker_prior` — xác suất = tỷ lệ distress trung bình của CHÍNH công ty đó trong train.
    Baseline mạnh nhất, cần thiết vì nhãn có thể gần như là thuộc tính của công ty: nếu mô
    hình không vượt được baseline này thì nó chỉ đang "nhớ mặt công ty".
 3. `single_feature[debt_to_assets_latest]` — logistic trên 1 feature duy nhất.
+4. `rule[altman_z_double_prime<1.1]` — **quy tắc tài chính công khai (Altman 1968/2000)**, KHÔNG
+   học tham số từ dữ liệu: điểm Z'' của quý mới nhất đã công bố đổi qua sigmoid. Đây là baseline
+   truyền thống mà mọi báo cáo dự báo kiệt quệ phải có để so (xem §6.1 của báo cáo).
 
 Lệnh: python -m forecasting.baselines  → ghi reports/results/baselines.json
 """
 from __future__ import annotations
 
 import json
+import math
 import sys
 from typing import Any, Dict, List, Tuple
 
@@ -26,10 +30,14 @@ from .config import GROUP_KEY, RANDOM_SEED, RESULTS_DIR, ensure_dirs, ensure_utf
 from .data_loader import load_prepared
 from .evaluation import evaluate_proba
 from .features import build_feature_matrix, extract_labels, feature_names
-from .models import make_model, predict_proba
+from .labels import ALTMAN_DISTRESS_BELOW, altman_z_double_prime
+from .models import DEFAULT_MODEL_ORDER, make_model, predict_proba
 
 #: Feature đơn lẻ dùng cho baseline "1 chỉ tiêu".
 SINGLE_FEATURE = "debt_to_assets_latest"
+
+#: Độ dốc sigmoid đổi Z'' → xác suất "thô" (để tính AUROC/AP cùng thang 0..1, KHÔNG học tham số).
+ALTMAN_SLOPE = 0.5
 
 
 def ticker_prior(samples: List[Dict[str, Any]], labels: np.ndarray) -> Dict[str, float]:
@@ -44,6 +52,25 @@ def predict_ticker_prior(samples: List[Dict[str, Any]], prior: Dict[str, float],
                          default: float = 0.5) -> np.ndarray:
     """Xác suất dự đoán = tỷ lệ distress của công ty đó trong train."""
     return np.asarray([prior.get(s[GROUP_KEY], default) for s in samples], dtype=float)
+
+
+def altman_z_probability(samples: List[Dict[str, Any]]) -> np.ndarray:
+    """Điểm Altman Z'' (quý mới nhất ĐÃ CÔNG BỐ) → xác suất rủi ro — quy tắc công khai.
+
+    Vì sao: mọi báo cáo dự báo kiệt quệ đều phải so với ngưỡng cổ điển Altman (1968/2000).
+    Ở đây KHÔNG học tham số: Z'' → sigmoid((Z'' − ngưỡng)/độ dốc) nên đây là baseline thật sự
+    "không dùng dữ liệu".
+
+    Dùng đúng cửa sổ như `forecasting.features`: `history[-1]` là quý mới nhất có
+    `available_on ≤ as_of` ⇒ KHÔNG lộ dữ liệu của quý target. Thiếu thành phần ⇒ 0,5 (trung tính,
+    không thổi phồng metric).
+    """
+    out: List[float] = []
+    for sample in samples:
+        z = altman_z_double_prime(sample["request"]["history"][-1])
+        out.append(0.5 if z is None else
+                   1.0 / (1.0 + math.exp((z - ALTMAN_DISTRESS_BELOW) / ALTMAN_SLOPE)))
+    return np.asarray(out, dtype=float)
 
 
 def fit_dummy(samples: List[Dict[str, Any]], labels: np.ndarray):
@@ -111,12 +138,14 @@ def run() -> Dict[str, Any]:
         ("ticker_prior", predict_ticker_prior(val_s, prior), predict_ticker_prior(test_s, prior)),
         (f"single_feature[{SINGLE_FEATURE}]",
          predict_proba(single, X_va[:, [j]]), predict_proba(single, X_te[:, [j]])),
+        # Baseline QUY TẮC (không học tham số): Altman Z'' của quý mới nhất đã công bố.
+        ("rule[altman_z_double_prime<1.1]",
+         altman_z_probability(val_s), altman_z_probability(test_s)),
     ]
-    for name in ("logistic", "random_forest", "hist_gradient_boosting"):
+    for name in DEFAULT_MODEL_ORDER:
         model = make_model(name)
         model.fit(build_feature_matrix(train_s), y_tr)
         predictors.append((f"model[{name}]", predict_proba(model, X_va), predict_proba(model, X_te)))
-
     rows = [{"baseline": tag,
              "val": _metric_block(y_va, p_va),
              "test": _metric_block(y_te, p_te)}

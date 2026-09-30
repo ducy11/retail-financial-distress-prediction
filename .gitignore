@@ -28,5 +28,9 @@ _*
 data/sec/raw/*
 !data/sec/raw/.gitkeep
 
+# Bảng chỉ tiêu TÁI TẠO từ snapshot SEC (tái tạo bằng `python -m scripts.prepare_sec`)
+# — giữ lại bản gốc `data/retail-expanded/` đang dùng cho pipeline, không commit bản tái tạo.
+data/retail-expanded-rebuilt/
+
 # Logs
 *.log

@@ -29,12 +29,12 @@ from forecasting.config import GROUP_KEY, RESULTS_DIR, RANDOM_SEED, ensure_dirs,
 from forecasting.data_loader import load_prepared
 from forecasting.eda import markdown_table
 from forecasting.features import build_feature_matrix, extract_labels
-from forecasting.models import MODEL_REGISTRY
+from forecasting.models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY
 from forecasting.search import (SEARCH_SPACES, compare_with_grid, cross_company_ap, random_search,
                                 write_ledger)
 
-#: Mô hình mặc định đưa vào tìm kiếm — đúng 3 họ mô hình của đồ án.
-DEFAULT_MODELS = ["logistic", "random_forest", "hist_gradient_boosting"]
+#: Mô hình mặc định đưa vào tìm kiếm — lấy từ registry (nguồn duy nhất: `forecasting.models`).
+DEFAULT_MODELS = list(DEFAULT_MODEL_ORDER)
 
 
 def _grid_reference(model: str) -> Dict[str, Any] | None:

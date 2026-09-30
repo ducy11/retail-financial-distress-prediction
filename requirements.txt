@@ -1,6 +1,6 @@
 # Phụ thuộc chạy mã nguồn (không bao gồm pandas — code viết thuần numpy+sklearn)
-# Pipeline chính dùng ĐÚNG 3 họ mô hình thuần scikit-learn: Logistic Regression · Random Forest ·
-# HistGradientBoosting (không cần xgboost/lightgbm).
+# Pipeline chính dùng ĐÚNG 4 họ mô hình thuần scikit-learn: Logistic Regression · Random Forest ·
+# HistGradientBoosting · MLP (không cần xgboost/lightgbm).
 numpy==2.5.3
 scipy==1.18.1
 scikit-learn==1.6.0

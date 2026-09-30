@@ -8,15 +8,17 @@ kiểm chứng; và để nhóm tự rà trước khi nộp. Mọi đường d�
 | # | Tiêu chí | Đã làm gì | Bằng chứng trong repo | Lệnh kiểm chứng |
 |---|---|---|---|---|
 | 1 | Xác định bài toán, mục tiêu, phạm vi | Phân loại nhị phân 1 quý tới + xếp hạng rủi ro; 4 câu hỏi nghiên cứu; nêu rõ ngoài phạm vi | `docs/BAO-CAO.md` §1–2; `docs/bo-tai-lieu-bao-ve.md` §1.1 | `python -m scripts.make_report` |
-| 2 | Nguồn dữ liệu công khai + provenance | SEC XBRL company-facts; mỗi chỉ tiêu có nguồn; SHA-256 nguồn & từng split | `data/README.md`, `data/prepared/manifest.json`, `scripts/crawl_sec.py`, `scripts/prepare_sec.py` | `python -m scripts.audit_data` |
+| 2 | Nguồn dữ liệu công khai + provenance | SEC XBRL company-facts; mỗi chỉ tiêu có nguồn; **ETL đã PORT** (`scripts/prepare_sec.py`, tái tạo 99,92% số ô từ snapshot SEC); SHA-256 nguồn & từng split | `data/README.md`, `data/prepared/manifest.json`, `scripts/crawl_sec.py`, `scripts/prepare_sec.py`, `reports/results/etl_verify.md` | `python -m scripts.audit_data`, `python -m scripts.prepare_sec` |
 | 2b | **Dữ liệu THẬT, không bịa** | **20 file SEC** băm SHA-256 khớp registry; **4.609/4.609 ô** tra ngược được trong companyfacts (kèm `accn`/`form`); **0 lỗi quy đổi VND**; **0 ô điền số cho đủ** (703 ô thiếu ở SEC để `null`) | `scripts/verify_provenance.py`, `tests/test_verify_provenance.py`, `reports/results/provenance.{json,md}` | `python -m scripts.verify_provenance` |
 | 3 | Tiền xử lý & chống rò rỉ | Impute median + scaler **trong** `Pipeline`; winsorize nghiên cứu riêng; 7 lớp kiểm soát rò rỉ | `forecasting/preprocessing.py`, `forecasting/models.py`, `docs/BAO-CAO.md` §4.6, §9.1 | `python -m unittest tests.test_preprocessing tests.test_pipeline` |
 | 4 | Xây dựng đặc trưng có căn cứ | 47 feature: 14 tỷ số (latest/YoY) + 10 growth + cấu trúc vốn + nhóm `path`; đo bằng ablation | `forecasting/features.py`, `docs/BAO-CAO.md` §4.5, §7.4 | `python -m scripts.analyze` |
 | 5 | EDA (khám phá dữ liệu) | 9 hình EDA cơ bản (mô tả, phân phối, tương quan) + 7 hình chuyên sâu (thiếu/outlier/đuôi, drift, cụm) + nhận xét tự động | `reports/figures/**`, `reports/results/eda.md`, `reports/results/eda_deep.md` | `python -m scripts.eda`, `python -m scripts.eda_deep` |
-| 6 | **≥ 3 mô hình** | **Đúng 3 họ mô hình thuần scikit-learn**: Logistic Regression · Random Forest · HistGradientBoosting (không dùng xgboost/lightgbm; registry là nguồn duy nhất + test `TestThreeModelRegistry` chặn tái phát) | `forecasting/models.py`, `docs/BAO-CAO.md` §5, §6.1 | `python -m forecasting.train` |
+| 6 | **≥ 3 mô hình** | **Đúng 4 họ mô hình thuần scikit-learn**: Logistic Regression · Random Forest · HistGradientBoosting · **MLP (phi tuyến, không dựa trên cây)** (không dùng xgboost/lightgbm; registry là nguồn duy nhất + test `TestModelRegistry` chặn tái phát) | `forecasting/models.py`, `docs/BAO-CAO.md` §5, §6.1 | `python -m forecasting.train` |
+| 6b | **Baseline truyền thống** | **Quy tắc Altman Z'' < 1,1** (công thức công khai 1968/2000, KHÔNG học tham số) đặt cạnh dummy / ticker-prior / logistic-1-chỉ-tiêu | `forecasting/baselines.py::altman_z_probability`, `reports/results/baselines.json` | `python -m forecasting.baselines` |
 | 7 | Tinh chỉnh siêu tham số | `GridSearchCV` + `StratifiedGroupKFold` + `refit=average_precision`; random search **40 trial/mô hình trên 3 mô hình** + **sổ thực nghiệm** `runs.csv` (113 dòng). **Cấu hình tốt nhất theo CV KHÔNG được triển khai** (mô hình chốt dùng mặc định; chênh +0,003 CV-AP ≈ nhiễu) | `forecasting/tuning.py`, `forecasting/search.py`, `reports/results/runs.csv`, `reports/models/best.joblib` | `python -m forecasting.tuning`, `python -m scripts.search` |
 | 8 | Đánh giá đầy đủ & đúng | Precision/Recall/F1/macro-F1/MCC/Brier/AUROC/AP; confusion matrix ở **ngưỡng vận hành**; bootstrap CI 2.000 vòng | `forecasting/evaluation.py`, `reports/results/test_evaluation.json`, `docs/BAO-CAO.md` §6.2–6.5 | `python -m forecasting.evaluate` |
-| 9 | So sánh với baseline & kiểm định | 3 baseline (dummy, `ticker_prior`, 1-feature) + DeLong + paired bootstrap | `forecasting/baselines.py`, `forecasting/significance.py`, `docs/BAO-CAO.md` §9.3 | `python -m scripts.significance` |
+| 9 | So sánh với baseline & kiểm định | 4 baseline (dummy, `ticker_prior`, 1-feature, **quy tắc Altman Z''**) + DeLong + paired bootstrap | `forecasting/baselines.py`, `forecasting/significance.py`, `docs/BAO-CAO.md` §6.1, §9.3 | `python -m scripts.significance` |
+| 9b | **Tổng quát hoá theo THỜI GIAN** | **Walk-forward** (expanding window + purge theo ngày công bố nhãn) + hình + mục 6.7; CI **theo cụm công ty** (không chỉ theo mẫu) | `forecasting/validation.py::walk_forward_metrics`, `cluster_bootstrap_ci`, `reports/results/walk_forward.json` | `python -m forecasting.validation` |
 | 10 | Xử lý mất cân bằng | `class_weight='balanced*'` trong `fit`; lab 98/2 + thí nghiệm trên dữ liệu thật; **không** resample ở pipeline chính | `imbalance_lab/`, `scripts/experiment_imbalance_real.py`, `docs/BAO-CAO.md` §9.4 | `python -m imbalance_lab.run`, `python -m scripts.experiment_imbalance_real` |
 | 11 | Giải thích mô hình | KernelSHAP **tự cài đặt** + tự kiểm chứng efficiency; permutation importance; VIF; ablation | `forecasting/explain.py`, `reports/results/shap.md`, `docs/BAO-CAO.md` §7.2, §9.2 | `python -m scripts.explain_model` |
 | 12 | Phân tích lỗi | 3 mẫu sai cụ thể + SHAP cục bộ + ngưỡng theo chi phí (FN đắt gấp 5 lần FP) | `reports/results/error_cases.csv`, `docs/BAO-CAO.md` §7.5–7.6 | `python -m scripts.analyze` |
@@ -34,8 +36,9 @@ kiểm chứng; và để nhóm tự rà trước khi nộp. Mọi đường d�
    (`ticker_prior`) đạt AUROC 0,986 — *không thua* mô hình học máy (0,983). Vì vậy nhóm không hô
    "AUROC 0,98" mà định lượng phần nào đến từ **nhận diện công ty** (in-domain 0,983 vs
    cross-company 0,933 vs LOCO 0,610) — xem `docs/BAO-CAO.md` §6.4.
-2. **Mọi con số đều truy vết được.** 98.200 phép kiểm tra tự động (0 phát hiện) so số liệu trong
-   báo cáo/slide với artifact, 222 test tự động, và toàn bộ báo cáo **sinh từ** `reports/**` — kể cả
+2. **Mọi con số đều truy vết được.** 98.200+ phép kiểm tra tự động (0 phát hiện) so số liệu trong
+   báo cáo/slide với artifact, **234 test tự động** (registry 4 mô hình, chống rò rỉ, **walk-forward/cluster
+   bootstrap**, **ETL port**), và toàn bộ báo cáo **sinh từ** `reports/**` — kể cả
    mục 7.5 (phân tích lỗi) nay đọc trực tiếp từ `error_cases` nên không thể lệch.
 3. **Có sản phẩm chạy được.** `python -m scripts.predict --sample-id HD-2024Q2 --explain` in
    P(distress), quyết định theo **ngưỡng vận hành 0,788**, cảnh báo backtest và top-6 đóng góp SHAP
@@ -46,6 +49,9 @@ kiểm chứng; và để nhóm tự rà trước khi nộp. Mọi đường d�
 | Câu hỏi | Mở file / chạy lệnh |
 |---|---|
 | "Nhãn ở đâu ra, có tin được không?" | `docs/dinh-nghia-nhan.md`; `reports/results/analysis.json::label_audit`; `scripts/relabel.py` |
+| "ETL/dữ liệu có tái tạo được không?" | `python -m scripts.prepare_sec` → `reports/results/etl_verify.md` (tái tạo 99,92% số ô từ snapshot SEC) |
+| "Có phá sản thật trong dữ liệu không?" | `reports/results/events.md` — **0 sự kiện 8-K item 1.03** trên 8/8 công ty (11 filing tín hiệu kiệt quệ) ⇒ định vị đề tài là *suy giảm tài chính* |
+| "Tổng quát hoá theo THỜI GIAN thì sao?" | `reports/results/walk_forward.json`, hình `reports/figures/analysis/08_walk_forward.png` |
 | "Sao không dùng SMOTE?" | `docs/cac-ky-thuat-mat-can-bang.md`; `reports/results/imbalance_real.md` (§9.4) |
 | "Có rò rỉ dữ liệu không?" | `docs/BAO-CAO.md` §4.6 (7 lớp); `tests/test_pipeline.py`; `reports/results/imbalance_real.md` (so khớp ma trận test) |
 | "Vì sao chọn Random Forest?" | `docs/BAO-CAO.md` §5.2, §6.6; `reports/results/tuning.md`; `python -m forecasting.tuning` |
@@ -62,12 +68,12 @@ kiểm chứng; và để nhóm tự rà trước khi nộp. Mọi đường d�
 
 | Ưu tiên | Việc | Vì sao (bằng chứng) |
 |---|---|---|
-| P0 | **Chốt định nghĩa nhãn chính thức với giảng viên** (nhãn gốc không tái tạo được: quy tắc khớp tối đa 74,7%) | `docs/BAO-CAO.md` §8; chỉ còn bước ra quyết định, phần kỹ thuật đã xong (4 định nghĩa + độ nhạy) |
-| P1 | Mở rộng 50–100 công ty | Learning curve chưa bão hoà (`analysis.json::learning_curve`: val AUROC 0,731 → 0,895 khi train 83 → 162 mẫu; gap 0,105) |
+| P0 | **Chốt định nghĩa nhãn chính thức với giảng viên** — hạ tầng đã xong: nhãn gốc không tái tạo được (khớp tối đa 74,7%), nay đã có **3 định nghĩa nhãn quy tắc tái lập được** + **nhãn sự kiện 8-K** + **ETL port đối chiếu 99,92%** | `docs/BAO-CAO.md` §8, `reports/results/etl_verify.md`, `reports/results/events.md` |
+| P1 | Mở rộng 50–100 công ty (`python -m scripts.crawl_sec` → `prepare_sec`, đường sinh quý đã có) | Learning curve chưa bão hoà (`analysis.json::learning_curve`) |
 | P1 | Lọc đặc trưng theo cụm/VIF (33/47 cột VIF > 10; chỉ 12,89 chiều hiệu dụng) | `reports/results/eda_deep.md` §cụm đa cộng tuyến |
 | P1 | Mô hình panel/survival cho chuỗi quý | 90,8% cặp quý liền nhau giữ nguyên nhãn — dữ liệu có cấu trúc thời gian |
 | P2 | Monitoring PSI/KS + ngưỡng cấu hình hoá khi triển khai | 5 feature drift train→test (nặng nhất KS 0,621) |
 
-> Trạng thái tổng: **19/19 hạng mục ở mục 1 đã có bằng chứng trong repo**; các mục P0–P2 ở mục 4 là
+> Trạng thái tổng: **21/21 hạng mục ở mục 1 đã có bằng chứng trong repo**; các mục P0–P2 ở mục 4 là
 > *giới hạn đã biết*, được nêu minh bạch trong báo cáo (§10.2) chứ không phải việc còn thiếu sót.
 

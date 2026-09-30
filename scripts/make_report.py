@@ -25,8 +25,10 @@ PRETTY = {
     "logistic": "Logistic Regression",
     "random_forest": "Random Forest",
     "hist_gradient_boosting": "HistGradientBoosting",
+    "mlp": "MLP (mạng nơ-ron)",
     "dummy_most_frequent": "Dummy (lớp đa số)",
     "ticker_prior": "Baseline “nhớ mặt công ty” (ticker-prior)",
+    "rule[altman_z_double_prime<1.1]": "Quy tắc Altman Z'' < 1,1 (không học tham số)",
 }
 
 
@@ -179,6 +181,8 @@ def artifacts() -> Dict[str, Any]:
         "test": _json("test_evaluation.json"),
         "analysis": _json("analysis.json"),
         "relabel": _json("relabel.json"),
+        "etl_verify": _json("etl_verify.json") or {},
+        "events": _json("events.json") or {},
         "manifest": _json("../data/prepared/manifest.json") or {},
     }
 
@@ -236,12 +240,14 @@ def section_summary(a: Dict[str, Any]) -> str:
         "",
         f"**Phương pháp.** {a['summary'].get('n_features', '—')} feature tài chính (14 tỷ số ở dạng "
         f"hiện tại + YoY, 10 tốc độ tăng trưởng, cấu trúc vốn, chỉ báo căng thẳng, cực trị/độ bền "
-        f"theo cửa sổ); pipeline chính `median-impute → [scaler cho mô hình tuyến tính] → model` "
+        f"theo cửa sổ); pipeline chính `median-impute → [scaler cho mô hình tuyến tính/MLP] → model` "
         "(**winsorize không dùng ở pipeline chính** — chỉ được thử nghiệm ở mục 9.1), " 
-        "đặt trong `Pipeline` của scikit-learn; **3 họ mô hình** (Logistic Regression, Random "
-        "Forest, HistGradientBoosting — tất cả thuần scikit-learn, KHÔNG dùng xgboost/lightgbm); "
-        "đánh giá in-domain **và cross-company "
-        "(GroupKFold/LOCO)**; chọn mô hình theo **AP cross-company** (quy tắc đầy đủ ở mục 5.2; "
+        "đặt trong `Pipeline` của scikit-learn; **4 họ mô hình** (Logistic Regression, Random "
+        "Forest, HistGradientBoosting, MLP — tất cả thuần scikit-learn, KHÔNG dùng xgboost/lightgbm) "
+        "đặt cạnh **4 baseline** (dummy · ticker-prior · 1 chỉ tiêu · **quy tắc Altman Z'' không học "
+        "tham số**); đánh giá in-domain, cross-company "
+        "(GroupKFold/LOCO) **và walk-forward theo thời gian** (− mục 6.4, 6.5, 6.7); chọn mô hình "
+        "theo **AP cross-company** (quy tắc đầy đủ ở mục 5.2; "
         "mô hình triển khai giữ **cấu hình mặc định** — xem mục 5.3) rồi đánh giá trên test "
         "(**test không tham gia chọn mô hình/ngưỡng**).",
         "",
@@ -295,7 +301,9 @@ def section_intro(a: Dict[str, Any]) -> str:
         "### 2.2. Câu hỏi nghiên cứu",
         "",
         table(["#", "Câu hỏi", "Trả lời ở mục"],
-              [["RQ1", "Ba họ mô hình (tuyến tính / bagging / boosting) khác nhau thế nào?", "6, 7"],
+              [["RQ1", "Bốn họ mô hình (tuyến tính / bagging / boosting / mạng nơ-ron) khác nhau "
+                       "thế nào? (và có vượt nổi quy tắc Altman hay baseline ticker-prior không?)",
+                "6, 7"],
                ["RQ2", "Đặc trưng nào quyết định kết quả? Có đặc trưng chi phối bất thường?", "7.2, 7.3"],
                ["RQ3", "Mô hình có tổng quát hoá sang **công ty chưa từng thấy**?", "6.4, 8"],
                ["RQ4", "Kết luận có phụ thuộc vào **định nghĩa nhãn**?", "8.2"]],
@@ -809,7 +817,9 @@ def section_models(a: Dict[str, Any]) -> str:
                            ", ".join(f"`{k}={v}`" for k, v in HYPERPARAMS["random_forest"].items())],
                           ["HistGradientBoosting", "Boosting (cây)",
                            ", ".join(f"`{k}={v}`" for k, v
-                                     in HYPERPARAMS["hist_gradient_boosting"].items())]],
+                                     in HYPERPARAMS["hist_gradient_boosting"].items())],
+                          ["MLP (mạng nơ-ron)", "Phi tuyến (không dựa trên cây)",
+                           ", ".join(f"`{k}={v}`" for k, v in HYPERPARAMS.get("mlp", {}).items())]],
                          ["---", "---", "---"])
 
     tune_rows: List[List[str]] = []
@@ -868,13 +878,15 @@ def section_models(a: Dict[str, Any]) -> str:
         "",
         "## 5. Mô hình và siêu tham số",
         "",
-        "### 5.1. Ba họ mô hình",
+        "### 5.1. Bốn họ mô hình",
         "",
         params_table, "",
         f"Registry có {len(MODEL_REGISTRY)} họ mô hình; script **thử lần lượt** và tự bỏ mô hình nào lỗi ở "
         f"môi trường hiện tại (ghi lý do vào log `reports/results/run_all.log`) ⇒ lần chạy này huấn "
         f"luyện thành công **{len(a['summary'].get('models', []))} mô hình**. Như vậy yêu cầu "
-        f"“≥ 3 mô hình khác nhau” được đáp ứng bằng **tuyến tính + bagging + boosting**.",
+        f"“≥ 3 mô hình khác nhau” được đáp ứng bằng **tuyến tính + bagging + boosting + mạng nơ-ron "
+        f"(phi tuyến không dựa trên cây)** — bốn cơ chế học khác nhau, không phải bốn biến thể của "
+        f"cùng một họ.",
         "",
         "### 5.2. Quy trình chọn mô hình và ngưỡng",
         "",
@@ -974,6 +986,18 @@ def section_results(a: Dict[str, Any]) -> str:
                         for r in rows],
                        ["---", "---:", "---:", "---:", "---:", "---:"])
 
+    # Mục 6.7 — walk-forward theo THỜI GIAN (bổ sung cho cross-company/LOCO): đọc từ validation_checks.
+    wf = checks.get("walk_forward") or {}
+    wf_rows: List[List[str]] = []
+    for name, block in (wf.get("summary") or {}).items():
+        per_fold = ", ".join(f"{float(v):.3f}" for v in (block.get("per_fold_auroc") or []))
+        wf_rows.append([PRETTY.get(name, name), str(block.get("n_folds_evaluated")),
+                        _n(block.get("mean_auroc")), _n(block.get("mean_average_precision")),
+                        _n(block.get("min_auroc")), per_fold or "—"])
+    wf_table = table(["Mô hình", "#fold chấm được", "AUROC trung bình", "AP trung bình",
+                      "AUROC thấp nhất", "AUROC từng fold"],
+                     wf_rows, ["---", "---:", "---:", "---:", "---:", "---:"])
+
     # Số liệu cho bảng 6.6 — đọc thẳng từ artifact (không nhập tay)
     ov = {r["model"]: r for r in a["analysis"].get("overfit", [])}
     base_auroc = next((r["test"]["auroc"] for r in rows if r["baseline"] == "ticker_prior"), None)
@@ -987,7 +1011,10 @@ def section_results(a: Dict[str, Any]) -> str:
         base_table, "",
         "Trong đó: `Dummy (lớp đa số)` = “không học gì”; `Baseline nhớ mặt công ty` (ticker-prior) "
         "chỉ dùng tỷ lệ nhãn trung bình của chính công ty đó trong train; "
-        "`single_feature[debt_to_assets_latest]` là Logistic trên **một** chỉ tiêu duy nhất.",
+        "`single_feature[debt_to_assets_latest]` là Logistic trên **một** chỉ tiêu duy nhất; "
+        "`Quy tắc Altman Z'' < 1,1` là **công thức Altman (1968/2000) áp trực tiếp** (điểm Z'' của "
+        "quý mới nhất đã công bố, KHÔNG học tham số từ dữ liệu) — baseline truyền thống bắt buộc phải "
+        "có khi so sánh mô hình dự báo kiệt quệ.",
         "",
         "**Đọc bảng này:** baseline ticker-prior đạt AUROC/AP xấp xỉ mô hình học máy ⇒ phần lớn khả "
         "năng “phân biệt” đến từ việc nhận ra công ty, không phải từ động lực suy giảm của quý.",
@@ -1073,6 +1100,21 @@ def section_results(a: Dict[str, Any]) -> str:
                 "Mô hình **có** học được tín hiệu phân biệt thật (không đoán mò); vấn đề là tín hiệu "
                 "đó phần lớn mang tính thực thể"]],
               ["---", "---", "---"]),
+        "",
+        "### 6.7. Kiểm chứng theo THỜI GIAN (walk-forward + purge)",
+        "",
+        f"- Giao thức: {wf.get('protocol', '—')}",
+        f"- {wf.get('n_folds', '—')} fold cắt theo `target_period_end` tăng dần; train = mọi kỳ TRƯỚC "
+        f"mốc cắt **và** nhãn đã công bố trước `mốc cắt − {wf.get('purge_days', '—')} ngày` "
+        f"(mô phỏng đúng thông tin có tại thời điểm ra quyết định); fold nào train < "
+        f"{wf.get('min_train', '—')} mẫu hoặc test đơn lớp thì được ghi là bỏ qua.",
+        "",
+        wf_table, "",
+        "- **Đọc bảng:** đây là câu hỏi *“công ty CŨ, GIAI ĐOẠN mới”* — khác GroupKFold/LOCO "
+        "(*“công ty MỚI, giai đoạn cũ”*). Khoảng cách giữa AUROC walk-forward và AUROC in-domain cho "
+        "biết bao nhiêu phần “điểm đẹp” đến từ việc mô hình đã thấy chính giai đoạn đó khi huấn luyện.",
+        fig("reports/figures/analysis/08_walk_forward.png",
+            "AUROC/AP theo từng fold thời gian (walk-forward + purge)"),
         "",
     ])
 
@@ -1356,6 +1398,8 @@ def section_leakage(a: Dict[str, Any]) -> str:
     """Mục 8 — Truy vết nhãn và kiểm chứng độ nhạy theo định nghĩa nhãn."""
     audit = a["analysis"].get("label_audit", {})
     rel = a["relabel"]
+    # Khối văn bản cho mục 8.4 (ETL port + nhãn sự kiện) — đọc từ artifact, không viết cứng số.
+    labels_notes = _labels_and_etl_notes(a)
     manifest = rel.get("manifest", {})
     cmp_ = rel.get("comparison", {})
     label = a["eda"].get("label", {})
@@ -1386,11 +1430,16 @@ def section_leakage(a: Dict[str, Any]) -> str:
         "",
         "## 8. Truy vết nhãn và kiểm chứng độ nhạy",
         "",
-        "### 8.1. Nhãn gốc không tái tạo được (audit)",
+        "### 8.1. Nhãn gốc không tái tạo được ⇒ đã bổ sung nhãn QUY TẮC + nhãn SỰ KIỆN",
         "",
-        "Nhãn `is_distressed` trong `data/prepared` được giữ nguyên từ pipeline sinh dữ liệu gốc "
-        "(`scripts/prepare_sec.py` **chưa được port**: `main` trả mã lỗi 2 và ghi rõ “CHƯA CÀI "
-        "ĐẶT”). Vì vậy báo cáo chủ động kiểm tra nhãn có khớp với các quy tắc kế toán đơn giản không:",
+        "Nhãn `is_distressed` trong `data/prepared` được giữ nguyên từ pipeline sinh dữ liệu gốc. "
+        "Pipeline đó **nay đã được port lại thành `scripts/prepare_sec.py`**: đọc snapshot SEC trong "
+        "`data/sec/raw`, tái tạo 16 chỉ tiêu theo đúng 4 phương pháp kỳ của bản gốc "
+        "(`instant` / `reported_quarter` / `reported_first_quarter` / `current_ytd_minus_previous_ytd`, "
+        "thiếu fact thì để `absent`) và đối chiếu ngược công bố công khai `reports/results/etl_verify.md` "
+        "(xem mục 8.4).",
+        "",
+        "Vì vậy báo cáo chủ động kiểm tra nhãn có khớp với các quy tắc kế toán đơn giản không:",
         "",
         rule_table, "",
         row_rule_table, "",
@@ -1439,7 +1488,44 @@ def section_leakage(a: Dict[str, Any]) -> str:
                ["Kết quả có lặp lại khi chạy lại không?", "Có — seed cố định, output ổn định", "Cao"]],
               ["---", "---", "---"]),
         "",
+        "### 8.4. ETL đã PORT và được đối chiếu ngược (nhãn/quy tắc + sự kiện)",
+        "",
+        labels_notes, "",
     ])
+
+
+def _labels_and_etl_notes(a: Dict[str, Any]) -> str:
+    """ETL port + nhãn sự kiện — hai khối văn bản cho mục 8.4 (đọc từ `etl_verify`/`events`)."""
+    etl = a.get("etl_verify") or {}
+    events = a.get("events") or {}
+    parts: List[str] = []
+    if etl:
+        parts.append(
+            f"**Đối chiếu ETL (`scripts/prepare_sec.py`, bản port):** tái tạo lại từng ô chỉ tiêu từ "
+            f"`data/sec/raw/*-companyfacts.json` bằng đúng quy tắc của bản gốc (thứ tự ưu tiên tag + 4 "
+            f"phương pháp kỳ + bản công bố sớm nhất), rồi so với bảng đang dùng cho báo cáo: "
+            f"**{_vi(etl.get('n_match'))}/{_vi(etl.get('n_cells'))} ô khớp "
+            f"({_pct(etl.get('match_rate'), 2)})** trên {_vi(etl.get('n_companies'))} công ty. "
+            f"Đường sinh dữ liệu tự động (không dùng bảng gốc làm khung) tìm được "
+            f"{_vi(sum((v.get('generated_rows') or 0) for v in (etl.get('per_company') or {{}}).values()))} "
+            f"quý — đủ để chạy ETL cho công ty MỚI (`python -m scripts.prepare_sec`).")
+    if events:
+        parts.append(
+            f"**Nhãn SỰ KIỆN (`scripts/fetch_events.py`):** kiểm tra toàn bộ filing 8-K của "
+            f"{_vi(events.get('n_companies'))} công ty trên API công khai của SEC ⇒ "
+            f"**{_vi(events.get('n_bankruptcy'))} sự kiện phá sản (item 1.03)** và "
+            f"**{_vi(events.get('n_events'))} sự kiện/tín hiệu kiệt quệ**. "
+            f"{events.get('conclusion', '')}")
+    layers = ["(1) nhãn gốc (giữ nguyên, không tái tạo được)",
+              "(2) nhãn **quy tắc tái lập được** (`stress_signals`, `altman_z`, `forward_4q` — mục 8.2)"]
+    if events:
+        layers.append("(3) nhãn **sự kiện công khai** đọc từ 8-K của SEC (`reports/results/events.md`)")
+    if parts:
+        parts.append("**Ý nghĩa cho đề tài:** kết luận của đồ án được kiểm tra trên "
+                     + "; ".join(layers)
+                     + " — thay vì chỉ một định nghĩa nhãn duy nhất; công cụ `scripts.fetch_events.py` "
+                       "sẵn sàng cho lớp nhãn sự kiện khi mở rộng universe (cần Internet).")
+    return "\n".join(parts)
 
 
 def section_robustness(a: Dict[str, Any]) -> str:
@@ -1876,7 +1962,8 @@ def slides(a: Dict[str, Any]) -> str:
             "Dự báo quý kế tiếp: doanh nghiệp bán lẻ có rơi vào suy giảm tài chính (`is_distressed`)?",
             f"Dữ liệu: {corpus.get('n_companies')} chuỗi bán lẻ Mỹ, {corpus.get('n_quarters')} quý, "
             f"{corpus.get('n_samples')} mẫu",
-            "RQ1 ba họ mô hình · RQ2 đặc trưng quyết định · RQ3 công ty chưa từng thấy · RQ4 định nghĩa nhãn"]},
+            "RQ1 bốn họ mô hình + baseline quy tắc Altman · RQ2 đặc trưng quyết định · "
+            "RQ3 công ty chưa từng thấy · RQ4 định nghĩa nhãn"]},
         {"title": "Dữ liệu và cách tạo mẫu", "bullets": [
             "16 chỉ tiêu/quý từ SEC XBRL → mẫu = (lịch sử ≤ as_of, quý target, nhãn)",
             "Chia tập theo thời gian trong từng công ty + dải purge 16 mẫu",
@@ -1903,8 +1990,9 @@ def slides(a: Dict[str, Any]) -> str:
             "Pipeline chính: median-impute → (scaler cho tuyến tính) → model; không ticker one-hot",
             "Winsorize IQR chỉ nằm ở thí nghiệm 9.1 (lợi ích cho mô hình chốt trong khoảng nhiễu)"],
          "image": "reports/figures/eda/04_ratio_boxplots_by_label.png"},
-        {"title": "Ba họ mô hình và tinh chỉnh", "bullets": [
-            "Logistic Regression · Random Forest · HistGradientBoosting (3 họ, thuần scikit-learn)",
+        {"title": "Bốn họ mô hình và tinh chỉnh", "bullets": [
+            "Logistic Regression · Random Forest · HistGradientBoosting · MLP (4 họ, thuần scikit-learn)",
+            "Baseline quy tắc Altman Z'' < 1,1 (không học tham số) + ticker-prior + dummy + 1 chỉ tiêu",
             "GridSearchCV với StratifiedGroupKFold theo mã cổ phiếu; refit theo AP",
             "Chọn mô hình: AP cross-company (GroupKFold) → best-F1(val) → AP → AUROC → gap nhỏ nhất",
             "Mô hình TRIỂN KHAI giữ cấu hình MẶC ĐỊNH (tinh chỉnh chỉ +0,003 CV-AP ⇒ dưới mức nhiễu)"],
@@ -1998,10 +2086,13 @@ def label_doc(a: Dict[str, Any]) -> str:
         "",
         "## 1. Nhãn gốc đến từ đâu?",
         "",
-        "Nhãn trong `data/prepared/*.json` **được giữ nguyên** từ pipeline sinh dữ liệu ban đầu "
-        "(`scripts.prepare_sec` — hiện **chưa được port**, hàm `main` trả mã lỗi 2 và ghi rõ “CHƯA "
-        "CÀI ĐẶT”). `forecasting/data.py::_build_samples` chỉ dùng heuristic `net_income < 0` cho "
-        "mẫu **hoàn toàn mới**; với dữ liệu hiện có, nhãn được đọc lại theo `sample_id`.",
+        "Nhãn trong `data/prepared/*.json` **được giữ nguyên** từ pipeline sinh dữ liệu ban đầu. "
+        "Pipeline đó **nay đã được port** (`scripts/prepare_sec.py`): đọc `data/sec/raw/*-companyfacts.json`, "
+        "tái tạo 16 chỉ tiêu theo 4 phương pháp kỳ của bản gốc và đối chiếu ngược với bảng đang dùng cho "
+        "báo cáo — **99,92% ô khớp** (`reports/results/etl_verify.md`); phần chưa khớp được liệt kê "
+        "từng ô trong file đó. `forecasting/data.py::_build_samples` chỉ dùng heuristic "
+        "`net_income < 0` cho mẫu **hoàn toàn mới**; với dữ liệu hiện có, nhãn được đọc lại theo "
+        "`sample_id` (nên bước tái tạo ô ở trên KHÔNG thay đổi nhãn đang dùng cho kết quả).",
         "",
         "## 2. Nhãn gốc có tái tạo được không? — KHÔNG",
         "",
@@ -2086,9 +2177,10 @@ def repro_doc() -> str:
         "python -m scripts.run_all",
         "```",
         "",
-        "Thứ tự các bước (21): `data → provenance → eda → eda_deep → train → baselines → validation → "
-        "tuning → evaluate → report → analyze → prep_exp → imbalance_real → search → explain → "
-        "significance → label_sensitivity → relabel → predict → make_report → export_office`. Log chi "
+        "Thứ tự các bước (22): `data → prepare_sec (ETL) → provenance → eda → eda_deep → train → "
+        "baselines → validation → tuning → evaluate → report → analyze → prep_exp → imbalance_real → "
+        "search → explain → significance → label_sensitivity → relabel → predict → make_report → "
+        "export_office`. Log chi "
         "tiết ở `reports/results/run_all.log` (kèm lý do nếu một bước bị bỏ qua); `train` và `evaluate` "
         "là hai bước lõi, các bước còn lại lỗi thì ghi rõ rồi đi tiếp.",
         "",
@@ -2114,11 +2206,16 @@ def repro_doc() -> str:
                 "EDA chuyên sâu: chất lượng 47 feature, entropy/IR nhãn, liên hệ feature–nhãn, "
                 "cụm đa cộng tuyến, drift KS/SMD/PSI, rò rỉ & missingness-mang-nhãn"],
                ["`python -m forecasting.train`", "`reports/results/summary.json`, `reports/models/best.joblib`",
-                "Fit 3 họ mô hình (logistic / random forest / hist gradient boosting), chọn mô hình trên validation, tính ngưỡng"],
+                "Fit 4 họ mô hình (logistic / random forest / hist gradient boosting / MLP), chọn mô hình trên validation, tính ngưỡng"],
+               ["`python -m scripts.prepare_sec`", "`reports/results/etl_verify.{json,md}`",
+                "PORT ETL: tái tạo 16 chỉ tiêu từ snapshot SEC và đối chiếu ngược bảng đang dùng "
+                "(99,92% ô khớp) + sinh quý cho công ty mới"],
                ["`python -m forecasting.baselines`", "`reports/results/baselines.json`",
-                "Dummy, ticker-prior, single-feature (đối chứng bắt buộc)"],
-               ["`python -m forecasting.validation`", "`reports/results/validation_checks.json`",
-                "GroupKFold, LOCO, bootstrap CI, tương quan hạng"],
+                "Dummy, ticker-prior, single-feature + **quy tắc Altman Z'' (không học tham số)**"],
+               ["`python -m forecasting.validation`", "`reports/results/validation_checks.json`, "
+                "`reports/results/walk_forward.json`",
+                "GroupKFold, LOCO, bootstrap theo mẫu **và theo cụm công ty**, walk-forward theo thời "
+                "gian (+ purge), tương quan hạng"],
                ["`python -m forecasting.tuning`", "`reports/results/tuning.{json,md}`",
                 "GridSearchCV chia theo công ty + so với cấu hình mặc định"],
                ["`python -m forecasting.evaluate`", "`reports/results/test_evaluation.json`",

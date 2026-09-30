@@ -130,16 +130,31 @@ class TestPipelineAssembly(unittest.TestCase):
             make_model("khong-ton-tai")
 
 
-class TestThreeModelRegistry(unittest.TestCase):
-    """Đồ án CHỈ dùng 3 họ mô hình thuần scikit-learn (KHÔNG xgboost/lightgbm) — chặn tái phát."""
+class TestModelRegistry(unittest.TestCase):
+    """Đồ án dùng ĐÚNG 4 họ mô hình thuần scikit-learn (KHÔNG xgboost/lightgbm) — chặn tái phát."""
 
-    def test_registry_has_exactly_three_models(self):
+    def test_registry_has_exactly_four_models(self):
         from forecasting.models import DEFAULT_MODEL_ORDER, HYPERPARAMS
 
         self.assertEqual(sorted(MODEL_REGISTRY),
-                         ["hist_gradient_boosting", "logistic", "random_forest"])
+                         ["hist_gradient_boosting", "logistic", "mlp", "random_forest"])
         self.assertEqual(sorted(DEFAULT_MODEL_ORDER), sorted(MODEL_REGISTRY))
         self.assertEqual(sorted(HYPERPARAMS), sorted(MODEL_REGISTRY))
+
+    def test_mlp_is_scaled_by_default(self):
+        """MLP học theo gradient trên độ lớn đặc trưng ⇒ BẮT BUỘC có bước scale."""
+        from forecasting.models import DEFAULT_SCALER, NEEDS_SCALING
+
+        self.assertIn("scale", [name for name, _ in make_model("mlp").steps])
+        self.assertIn("mlp", NEEDS_SCALING)
+        self.assertEqual(DEFAULT_SCALER["mlp"], "standard")
+
+    def test_mlp_returns_probabilities_in_unit_interval(self):
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(60, 5))
+        y = (X[:, 0] + X[:, 1] > 0).astype(int)
+        proba = make_model("mlp").fit(X, y).predict_proba(X)[:, 1]
+        self.assertTrue(np.all((proba >= 0.0) & (proba <= 1.0)))
 
     def test_no_optional_boosting_library_is_imported(self):
         """Pipeline chính không được import lightgbm/xgboost (mọi script dùng 3 mô hình sklearn)."""

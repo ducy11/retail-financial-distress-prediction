@@ -17,7 +17,7 @@ Log CLI/test đã lọc cảnh báo **vô hại** của thư viện (`runtime_wa
 python -m scripts.run_all
 ```
 
-Thứ tự các bước (21): `data → provenance → eda → eda_deep → train → baselines → validation → tuning → evaluate → report → analyze → prep_exp → imbalance_real → search → explain → significance → label_sensitivity → relabel → predict → make_report → export_office`. Log chi tiết ở `reports/results/run_all.log` (kèm lý do nếu một bước bị bỏ qua); `train` và `evaluate` là hai bước lõi, các bước còn lại lỗi thì ghi rõ rồi đi tiếp.
+Thứ tự các bước (22): `data → prepare_sec (ETL) → provenance → eda → eda_deep → train → baselines → validation → tuning → evaluate → report → analyze → prep_exp → imbalance_real → search → explain → significance → label_sensitivity → relabel → predict → make_report → export_office`. Log chi tiết ở `reports/results/run_all.log` (kèm lý do nếu một bước bị bỏ qua); `train` và `evaluate` là hai bước lõi, các bước còn lại lỗi thì ghi rõ rồi đi tiếp.
 
 Chạy chọn lọc:
 
@@ -35,9 +35,10 @@ python -m scripts.analyze --quick                        # giảm số lần ho�
 | `python -m forecasting.data` | `data/prepared/*` | Tái tạo split gốc (mặc định bỏ qua nếu đã có; `--force` để ghi lại, byte-identical) |
 | `python -m scripts.eda` | `reports/figures/eda/*.png`, `reports/results/eda.md` | 9 hình EDA + thống kê mô tả 14 tỷ số/16 chỉ tiêu, tỉ lệ lớp %, tương quan, nhận xét tự động (mục 3.1–3.6) |
 | `python -m scripts.eda_deep` | `reports/results/eda_deep.{json,md}`, `reports/figures/eda_deep/*.png` | EDA chuyên sâu: chất lượng 47 feature, entropy/IR nhãn, liên hệ feature–nhãn, cụm đa cộng tuyến, drift KS/SMD/PSI, rò rỉ & missingness-mang-nhãn |
-| `python -m forecasting.train` | `reports/results/summary.json`, `reports/models/best.joblib` | Fit 3 họ mô hình (logistic / random forest / hist gradient boosting), chọn mô hình trên validation, tính ngưỡng |
-| `python -m forecasting.baselines` | `reports/results/baselines.json` | Dummy, ticker-prior, single-feature (đối chứng bắt buộc) |
-| `python -m forecasting.validation` | `reports/results/validation_checks.json` | GroupKFold, LOCO, bootstrap CI, tương quan hạng |
+| `python -m forecasting.train` | `reports/results/summary.json`, `reports/models/best.joblib` | Fit 4 họ mô hình (logistic / random forest / hist gradient boosting / MLP), chọn mô hình trên validation, tính ngưỡng |
+| `python -m scripts.prepare_sec` | `reports/results/etl_verify.{json,md}` | PORT ETL: tái tạo 16 chỉ tiêu từ snapshot SEC và đối chiếu ngược bảng đang dùng (99,92% ô khớp) + sinh quý cho công ty mới |
+| `python -m forecasting.baselines` | `reports/results/baselines.json` | Dummy, ticker-prior, single-feature + **quy tắc Altman Z'' (không học tham số)** |
+| `python -m forecasting.validation` | `reports/results/validation_checks.json`, `reports/results/walk_forward.json` | GroupKFold, LOCO, bootstrap theo mẫu **và theo cụm công ty**, walk-forward theo thời gian (+ purge), tương quan hạng |
 | `python -m forecasting.tuning` | `reports/results/tuning.{json,md}` | GridSearchCV chia theo công ty + so với cấu hình mặc định |
 | `python -m forecasting.evaluate` | `reports/results/test_evaluation.json` | Đánh giá cuối trên test (test KHÔNG dùng để chọn mô hình/ngưỡng), confusion matrix tại ngưỡng vận hành |
 | `python -m forecasting.report` | `reports/results/test_predictions.csv` | Xác suất từng mẫu test + histogram |

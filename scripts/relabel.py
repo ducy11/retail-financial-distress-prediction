@@ -31,12 +31,12 @@ from forecasting.data_loader import load_prepared
 from forecasting.evaluation import evaluate_proba
 from forecasting.features import build_feature_matrix, extract_labels
 from forecasting.labels import SIGNAL_DOCS, label_row
-from forecasting.models import MODEL_REGISTRY, make_model, predict_proba
+from forecasting.models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model, predict_proba
 from forecasting.validation import grouped_cv
 
 RULE_DIR = DATA_DIR / "prepared-rule"
 RESULTS = DATA_DIR.parent / "reports" / "results"
-MODELS = ["logistic", "random_forest", "hist_gradient_boosting"]
+MODELS = list(DEFAULT_MODEL_ORDER)
 
 
 def _read_json(path: Path) -> Any:

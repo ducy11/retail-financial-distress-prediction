@@ -4,7 +4,11 @@
 - Slide: tự ghi OOXML tối giản bằng `zipfile` (máy không có `python-pptx` vẫn xuất được .pptx).
 
 Lệnh: python -m scripts.export_office
-      → docs/BAO-CAO.docx, docs/BAO-CAO-slide.pptx
+      → docs/BAO-CAO.docx                  (BÁO CÁO HOÀN CHỈNH: 11 mục + 3 phụ lục, kèm bảng & hình)
+        docs/BAO-CAO-slide.pptx            (slide tự động 14 mục, khớp artifact)
+        docs/BAO-CAO-slide-bao-ve.pptx     (deck bảo vệ 11 slide)
+        docs/BAO-CAO-slide-bao-ve.docx     (cùng nội dung deck bảo vệ, dạng Word để DỰNG SLIDE)
+        docs/bo-tai-lieu-bao-ve.docx       (bộ tài liệu bảo vệ: factsheet + dàn 11 slide + 8 Q&A)
 """
 from __future__ import annotations
 
@@ -458,6 +462,23 @@ def run() -> Dict[str, Any]:
             print(f"Slide bảo vệ: docs/BAO-CAO-slide-bao-ve.pptx — {n_defense} slide")
         except Exception as exc:  # noqa: BLE001 - không để bước phụ làm hỏng cả bước xuất
             print(f"Bỏ qua slide bảo vệ: {exc}")
+    # Bản WORD của (a) dàn slide bảo vệ và (b) bộ tài liệu bảo vệ: để đọc/duyệt và DỰNG SLIDE trực tiếp
+    # (Word giữ được tiêu đề/bảng/bullet/lời thoại; mở được bằng mọi máy, không cần PowerPoint).
+    for md_name, docx_name, what in (("slide-bao-ve.md", "BAO-CAO-slide-bao-ve.docx",
+                                       "dàn slide bảo vệ"),
+                                      ("bo-tai-lieu-bao-ve.md", "bo-tai-lieu-bao-ve.docx",
+                                       "bộ tài liệu bảo vệ (factsheet + dàn slide + Q&A)")):
+        src_md = DOCS_DIR / md_name
+        if not src_md.exists():
+            continue
+        try:
+            counts = build_docx(src_md, DOCS_DIR / docx_name)
+            out[docx_name] = {"path": str(DOCS_DIR / docx_name), **counts}
+            print(f"Word ({what}): docs/{docx_name} — {counts['heading']} tiêu đề, "
+                  f"{counts['table']} bảng, {counts['image']} hình"
+                  + (f", thiếu {counts['missing_image']} hình" if counts["missing_image"] else ""))
+        except Exception as exc:  # noqa: BLE001 - bước phụ
+            print(f"Bỏ qua {docx_name}: {exc}")
     return out
 
 

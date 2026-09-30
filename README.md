@@ -83,6 +83,16 @@ viết tay: [docs/bo-tai-lieu-bao-ve.md](docs/bo-tai-lieu-bao-ve.md) — kèm
 chứng → lệnh) và [docs/slide-bao-ve.md](docs/slide-bao-ve.md) (deck bảo vệ, xuất được `.pptx` bằng
 `python -m scripts.export_office`).
 
+**File xuất để nộp / làm slide** (`python -m scripts.export_office` → `docs/`):
+
+| File | Dùng để |
+|---|---|
+| `BAO-CAO.docx` | **Báo cáo hoàn chỉnh** dạng Word (11 mục + 3 phụ lục, bảng + hình) — bản chính để đọc/nộp |
+| `BAO-CAO-slide.pptx` | Slide tự động **14 mục**, mọi số khớp artifact (dùng làm khung slide) |
+| `BAO-CAO-slide-bao-ve.pptx` | **Deck bảo vệ 11 slide** (takeaway + bullet + hình) |
+| `BAO-CAO-slide-bao-ve.docx` | Cùng nội dung deck bảo vệ ở dạng Word — **để dựng slide** theo ý mình |
+| `bo-tai-lieu-bao-ve.docx` | **Bộ tài liệu bảo vệ đầy đủ**: factsheet số liệu + dàn 11 slide (có lời thoại) + 8 Q&A phản biện |
+
 ## Benchmark mất cân bằng: Non-E Mode vs E-Mode (`benchmark_imbalanced.py`)
 
 Script độc lập, tái lập toàn bộ từ một lệnh, so sánh **11 phương pháp** trên dữ liệu giả lập mất cân

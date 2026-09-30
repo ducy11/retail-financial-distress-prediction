@@ -1800,7 +1800,10 @@ def section_conclusion(a: Dict[str, Any]) -> str:
                ["`data/prepared-rule/*`", "Split theo nhãn quy tắc"],
                ["`reports/models/best.joblib`", "Mô hình + ngưỡng đã chốt"],
                ["`reports/results/run_all.log`", "Log chạy toàn pipeline"],
-               ["`docs/BAO-CAO.docx`, `docs/BAO-CAO-slide.pptx`", "Bản Word và Slide xuất tự động"]],
+               ["`docs/BAO-CAO.docx`, `docs/BAO-CAO-slide.pptx`, `docs/BAO-CAO-slide-bao-ve.pptx`, "
+                "`docs/BAO-CAO-slide-bao-ve.docx`, `docs/bo-tai-lieu-bao-ve.docx`",
+                "Bản Word/Slide xuất tự động: **báo cáo hoàn chỉnh**, slide tự động, deck bảo vệ "
+                "(cả `.pptx` và bản Word để dựng slide), bộ tài liệu bảo vệ"]],
               ["---", "---"]),
         "",
         "## Phụ lục C — Kiến trúc mã nguồn",
@@ -2147,16 +2150,21 @@ def repro_doc() -> str:
                 "`reports/experiment/summary.{md,csv}`, `cv_mean_std.csv`, `results.json`, `pr_curves.png`",
                 "Thực nghiệm ĐƠN LẺ vs KẾT HỢP: 17 pipeline, mất cân bằng 1:50, metric mean ± std, chống rò rỉ"],
                ["`python -m scripts.make_report`", "`docs/*.md`", "Báo cáo + slide + tài liệu"],
-               ["`python -m scripts.export_office`", "`docs/BAO-CAO.docx`, `docs/BAO-CAO-slide.pptx`",
-                "Bản Word và Slide để nộp"],
+               ["`python -m scripts.export_office`",
+                "`docs/BAO-CAO.docx`, `docs/BAO-CAO-slide.pptx`, `docs/BAO-CAO-slide-bao-ve.pptx`, "
+                "`docs/BAO-CAO-slide-bao-ve.docx`, `docs/bo-tai-lieu-bao-ve.docx`",
+                "BÁO CÁO HOÀN CHỈNH dạng Word + 2 bộ slide (.pptx) + Word dàn slide bảo vệ"],
                ["`python -m unittest discover -s tests -v`", "—",
                 "Kiểm thử: tái lập byte-identical, chống rò rỉ, tính nhất quán metric, mutation "
                 "test cho auditor"],
                ["`python -m scripts.predict --sample-id HD-2024Q2 --explain`", "— (in ra màn hình)",
                 "Demo MỘT mẫu: P(distress), quyết định theo ngưỡng vận hành, cảnh báo backtest, "
                 "top-K đóng góp SHAP (dùng cho phần trình bày)"],
-               ["`python -m scripts.make_report` + `export_office`", "`docs/BAO-CAO.docx`, `docs/*.pptx`",
-                "Báo cáo/Word/2 bộ slide (tự động 14 slide + dàn bảo vệ 11 slide)"],
+               ["`python -m scripts.make_report` + `export_office`",
+                "`docs/BAO-CAO.docx`, `docs/*.pptx`, `docs/BAO-CAO-slide-bao-ve.docx`, "
+                "`docs/bo-tai-lieu-bao-ve.docx`",
+                "Báo cáo hoàn chỉnh (Word) + 2 bộ slide (tự động 14 slide, dàn bảo vệ 11 slide) "
+                "+ bản Word để dựng slide"],
                ["`python -m scripts.audit_data`", "`reports/results/data_audit.md`",
                 "Toàn vẹn số liệu & câu chữ trong báo cáo/slide so với artifact"],
                ["`python -m scripts.verify_provenance`", "`reports/results/provenance.{json,md}`",

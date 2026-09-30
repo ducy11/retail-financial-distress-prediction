@@ -11,8 +11,12 @@ Kiểm chứng: `python -m scripts.audit_data` (98.200 phép kiểm tra, 0 phát
 - **Phần 2 (Dàn slide):** 11 slide, mỗi slide có tiêu đề · takeaway · bullet hiển thị · lời thoại.
 - **Phần 3 (Mock defense):** 8 câu hỏi phản biện kèm kịch bản 4 bước (thừa nhận → kỹ thuật → số liệu → kết luận).
 - **Đi kèm:** `docs/checklist-doi-chieu-yeu-cau.md` (đối chiếu 19 tiêu chí → bằng chứng → lệnh),
-  `docs/slide-bao-ve.md` (deck 11 slide, xuất được `.pptx`), `python -m scripts.predict` (demo dự đoán
+  `docs/slide-bao-ve.md` (deck 11 slide), `python -m scripts.predict` (demo dự đoán
   1 quý + SHAP), `docs/BAO-CAO.md` §11 (tài liệu tham khảo 24 mục gắn vị trí dùng thật).
+- **Bản xuất để nộp / làm slide** (`python -m scripts.export_office`): `docs/BAO-CAO.docx` (báo cáo
+  hoàn chỉnh), `docs/BAO-CAO-slide.pptx` (slide tự động 14 mục), `docs/BAO-CAO-slide-bao-ve.pptx`
+  (deck 11 slide) và **`docs/BAO-CAO-slide-bao-ve.docx` + `docs/bo-tai-lieu-bao-ve.docx`** —
+  bản Word giữ nguyên takeaway/bullet/lời thoại để **dựng slide** (kể cả trên máy không có PowerPoint).
 - **Đã qua 1 vòng kiểm toán độc lập (auditor khó tính):** các lỗi phát hiện — mô hình phân tích khác
   mô hình triển khai, giấu cấu hình đang chạy, thiếu LightGBM trong bảng so sánh, 2 ô số sai trong
   tài liệu này — **đã sửa** và được **audit chặn tái phát** (`check_model_report_alignment`); danh

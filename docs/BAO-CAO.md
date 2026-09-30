@@ -1111,7 +1111,7 @@ Cách chạy riêng từng bước và ý nghĩa từng artifact: `docs/huong-da
 | `data/prepared-rule/*` | Split theo nhãn quy tắc |
 | `reports/models/best.joblib` | Mô hình + ngưỡng đã chốt |
 | `reports/results/run_all.log` | Log chạy toàn pipeline |
-| `docs/BAO-CAO.docx`, `docs/BAO-CAO-slide.pptx` | Bản Word và Slide xuất tự động |
+| `docs/BAO-CAO.docx`, `docs/BAO-CAO-slide.pptx`, `docs/BAO-CAO-slide-bao-ve.pptx`, `docs/BAO-CAO-slide-bao-ve.docx`, `docs/bo-tai-lieu-bao-ve.docx` | Bản Word/Slide xuất tự động: **báo cáo hoàn chỉnh**, slide tự động, deck bảo vệ (cả `.pptx` và bản Word để dựng slide), bộ tài liệu bảo vệ |
 
 ## Phụ lục C — Kiến trúc mã nguồn
 

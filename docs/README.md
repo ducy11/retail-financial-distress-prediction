@@ -18,6 +18,10 @@ Các file trong thư mục này mô tả quyết định lớn và kết quả �
 ## Tài liệu SINH TỰ ĐỘNG (chạy `python -m scripts.make_report` để cập nhật)
 
 `BAO-CAO.md` (báo cáo đầy đủ) · `slide.md` (dàn slide tự động) · `dinh-nghia-nhan.md` ·
-`huong-dan-tai-lap.md`. Xuất Word/PowerPoint: `python -m scripts.export_office` → `BAO-CAO.docx`,
-`BAO-CAO-slide.pptx` (slide tự động) và `BAO-CAO-slide-bao-ve.pptx` (deck bảo vệ 11 slide).
+`huong-dan-tai-lap.md`. Xuất Word/PowerPoint: `python -m scripts.export_office` →
+- `BAO-CAO.docx` — **báo cáo hoàn chỉnh** (bảng + hình), để đọc/nộp;
+- `BAO-CAO-slide.pptx` — slide tự động 14 mục (khớp artifact);
+- `BAO-CAO-slide-bao-ve.pptx` + `BAO-CAO-slide-bao-ve.docx` — **deck bảo vệ 11 slide** (bản `.docx`
+  giữ nguyên takeaway/bullet/lời thoại để **dựng slide** theo ý mình);
+- `bo-tai-lieu-bao-ve.docx` — **bộ tài liệu bảo vệ đầy đủ** (factsheet + dàn 11 slide + 8 Q&A phản biện).
 

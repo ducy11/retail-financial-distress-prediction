@@ -10,6 +10,7 @@ Các file trong thư mục này mô tả quyết định lớn và kết quả �
 | `checklist-doi-chieu-yeu-cau.md` | **Đối chiếu 21 tiêu chí** → bằng chứng → lệnh kiểm chứng; 3 điểm nhấn khi trình bày; bảng "bị hỏi X thì mở file nào"; việc còn lại P0–P2 (trong đó **ETL port + nhãn quy tắc + nhãn sự kiện + walk-forward** đã xong) |
 | `slide-bao-ve.md` | **Deck bảo vệ 11 slide** (cùng định dạng `slide.md` nên `export_office` xuất được `.pptx`) kèm lời thoại |
 | `slide-cho-ai.md` | **File Markdown TỰ CHỨA để sinh slide bằng công cụ AI** (Gamma/Canva/Tomei/ChatGPT) hoặc Marp/Slidev: 20 slide (bìa + 18 nội dung + cảm ơn) theo cấu trúc *thông điệp chính → gạch đầu dòng → lời thoại → Ảnh*, kèm Phụ lục A (toàn bộ số liệu gốc để AI không bịa số), Phụ lục B (danh mục ảnh cần chèn) và Phụ lục C (prompt gợi ý + checklist + lệnh Marp CLI). Dùng khi bản `.pptx` không mở được |
+| `cong-thuc-do-an.md` | **Bảng tra cứu CÔNG THỨC của đồ án** (11 mục): dữ liệu & nhãn (6 tín hiệu, Altman Z″), 47 feature (14 tỷ số + YoY + growth + nhóm `path`), tiền xử lý (impute/winsorize/scaler), bộ chỉ số (F1/MCC/AUROC/AP/Brier), ngưỡng theo chi phí (`p* = C_FP/(C_FN+C_FP)`), mất cân bằng (class weight/SMOTE/ADASYN/Tomek/ENN/Focal Loss), SHAP (`π(S)`, hiệu suất), thống kê (DeLong/boostrap/BH-FDR/KS/SMD/PSI), tìm kiếm siêu tham số — mỗi công thức kèm `file:dòng` và **số thực từ artifact**; mục 10 liệt kê công thức chuẩn **không** dùng (G-mean, focal loss trong pipeline chính, SMOTE…) để tránh hiểu nhầm khi phản biện |
 | `model-card.md` | Model card: mục đích, phạm vi, giới hạn, cách dùng/cách không dùng |
 | `ke-hoach-tiep-theo.md` | Lộ trình P0/P1/P2 sau khi đóng các khoảng trống phản biện |
 | `cac-ky-thuat-mat-can-bang.md` | Lab mất cân bằng 98/2: 17 pipeline, metric, kết quả |
@@ -24,5 +25,5 @@ Các file trong thư mục này mô tả quyết định lớn và kết quả �
 - `BAO-CAO-slide.pptx` — slide tự động 14 mục (khớp artifact);
 - `BAO-CAO-slide-bao-ve.pptx` + `BAO-CAO-slide-bao-ve.docx` — **deck bảo vệ 11 slide** (bản `.docx`
   giữ nguyên takeaway/bullet/lời thoại để **dựng slide** theo ý mình);
-- `bo-tai-lieu-bao-ve.docx` — **bộ tài liệu bảo vệ đầy đủ** (factsheet + dàn 11 slide + 8 Q&A phản biện).
+- `bo-tai-lieu-bao-ve.docx` — **bộ tài liệu bảo vệ đầy đủ** (factsheet + dàn 11 slide + 10 Q&A phản biện).
 

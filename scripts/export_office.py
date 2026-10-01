@@ -491,7 +491,9 @@ def run() -> Dict[str, Any]:
     for md_name, docx_name, what in (("slide-bao-ve.md", "BAO-CAO-slide-bao-ve.docx",
                                        "dàn slide bảo vệ"),
                                       ("bo-tai-lieu-bao-ve.md", "bo-tai-lieu-bao-ve.docx",
-                                       "bộ tài liệu bảo vệ (factsheet + dàn slide + Q&A)")):
+                                       "bộ tài liệu bảo vệ (factsheet + dàn slide + Q&A)"),
+                                      ("BAO-CAO-phan-bien.md", "BAO-CAO-phan-bien.docx",
+                                       "báo cáo kỹ thuật & giải trình phản biện 10 chương")):
         src_md = DOCS_DIR / md_name
         if not src_md.exists():
             continue

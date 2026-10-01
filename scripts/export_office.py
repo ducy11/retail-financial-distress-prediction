@@ -8,7 +8,9 @@ Lệnh: python -m scripts.export_office
         docs/BAO-CAO-slide.pptx            (slide tự động 14 mục, khớp artifact)
         docs/BAO-CAO-slide-bao-ve.pptx     (deck bảo vệ 11 slide)
         docs/BAO-CAO-slide-bao-ve.docx     (cùng nội dung deck bảo vệ, dạng Word để DỰNG SLIDE)
-        docs/bo-tai-lieu-bao-ve.docx       (bộ tài liệu bảo vệ: factsheet + dàn 11 slide + 8 Q&A)
+        docs/bo-tai-lieu-bao-ve.docx       (bộ tài liệu bảo vệ: factsheet + dàn 11 slide + 10 Q&A)
+        docs/BAO-CAO-phan-bien.docx        (báo cáo kỹ thuật & giải trình phản biện 10 chương)
+        docs/script-slide-bao-ve.docx      (kịch bản thuyết trình 12 slide + Q&A — bản Word để cầm đọc)
 """
 from __future__ import annotations
 
@@ -30,6 +32,10 @@ _TABLE_ROW = re.compile(r"^\|(.+)\|$")
 _SEP_ROW = re.compile(r"^\|[\s:\-|]+\|$")
 _BULLET = re.compile(r"^[-*]\s+(.*)$")
 _NUMBERED = re.compile(r"^\d+\.\s+(.*)$")
+#: Khối trích dẫn (`> lời thoại`) — dùng trong `docs/script-slide-bao-ve.md` và báo cáo phản biện.
+_QUOTE = re.compile(r"^>\s?(.*)$")
+#: Đường kẻ ngang markdown (`---`) — bỏ khi xuất Word (tránh in ra chuỗi "---").
+_RULE = re.compile(r"^[-*_]{3,}$")
 
 
 def _clean(text: str) -> str:
@@ -91,10 +97,19 @@ def _md_blocks(md: str) -> List[Tuple[str, Any]]:
                 i += 1
             blocks.append(("table", _parse_table(table_lines)))
             continue
+        elif _QUOTE.match(line):
+            quoted: List[str] = []
+            while i < len(lines) and _QUOTE.match(lines[i]):
+                quoted.append(_QUOTE.match(lines[i]).group(1).strip())
+                i += 1
+            blocks.append(("quote", " ".join(part for part in quoted if part)))
+            continue
         elif _BULLET.match(line):
             blocks.append(("bullet", _clean(_BULLET.match(line).group(1))))
         elif _NUMBERED.match(line):
             blocks.append(("numbered", _clean(_NUMBERED.match(line).group(1))))
+        elif _RULE.match(line.strip()):
+            pass  # đường kẻ ngang markdown: không xuất ra Word
         elif line.strip():
             blocks.append(("paragraph", line.strip()))
         i += 1
@@ -112,7 +127,7 @@ def build_docx(md_path: Path, out_path: Path) -> Dict[str, Any]:
     normal.font.size = Pt(11)
 
     counts = {"heading": 0, "paragraph": 0, "table": 0, "image": 0, "missing_image": 0,
-              "bullet": 0, "code": 0}
+              "bullet": 0, "code": 0, "quote": 0}
     for kind, payload in _md_blocks(md_path.read_text(encoding="utf-8")):
         if kind == "heading":
             level, text = payload
@@ -121,6 +136,12 @@ def build_docx(md_path: Path, out_path: Path) -> Dict[str, Any]:
         elif kind == "paragraph":
             _add_runs(doc.add_paragraph(), payload)
             counts["paragraph"] += 1
+        elif kind == "quote":
+            # Lời thoại / trích dẫn: giữ nguyên định dạng đậm, thụt lề nhẹ cho dễ đọc khi in.
+            par = doc.add_paragraph()
+            par.paragraph_format.left_indent = Inches(0.3)
+            _add_runs(par, payload)
+            counts["quote"] += 1
         elif kind == "bullet":
             _add_runs(doc.add_paragraph(style="List Bullet"), payload)
             counts["bullet"] += 1
@@ -493,7 +514,9 @@ def run() -> Dict[str, Any]:
                                       ("bo-tai-lieu-bao-ve.md", "bo-tai-lieu-bao-ve.docx",
                                        "bộ tài liệu bảo vệ (factsheet + dàn slide + Q&A)"),
                                       ("BAO-CAO-phan-bien.md", "BAO-CAO-phan-bien.docx",
-                                       "báo cáo kỹ thuật & giải trình phản biện 10 chương")):
+                                       "báo cáo kỹ thuật & giải trình phản biện 10 chương"),
+                                      ("script-slide-bao-ve.md", "script-slide-bao-ve.docx",
+                                       "kịch bản thuyết trình 12 slide (script slide)")):
         src_md = DOCS_DIR / md_name
         if not src_md.exists():
             continue

@@ -128,11 +128,13 @@ data/retail-expanded-rebuilt/
 # already tracked next to them.
 *- Copy.*
 
-# 15. Documentation under docs/ is tracked on purpose, including the Word, slide and PDF
-#     deliverables. Uncomment the next line to keep it private instead.
-# docs/
+# 15. Documentation and packaging helpers stay LOCAL and are never pushed: docs/ holds the
+#     report, slide, Word and PDF deliverables, and tools/ holds the submission export
+#     script. scripts/audit_data.py already treats docs/ as absent on a fresh clone.
+docs/
+tools/
 
 # Tracked on purpose, so none of the rules above may hide them:
 #   data/sec/downloads.json, data/prepared/*.json, data/retail-expanded/*.json,
-#   reports/results/*.{json,md,csv}, reports/figures/**/*.png, docs/**,
+#   reports/results/*.{json,md,csv}, reports/figures/**/*.png,
 #   requirements.txt and requirements-*.txt

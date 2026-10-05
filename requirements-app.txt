@@ -1,0 +1,12 @@
+# Phụ thuộc RIÊNG cho web demo Streamlit (app.py) — KHÔNG thuộc pipeline chính.
+#
+# Vì sao tách riêng: pipeline chính của đồ án cố tình KHÔNG dùng pandas (xem requirements.txt);
+# Streamlit kéo theo pandas/altair/pyarrow nên cài thêm sẽ làm nặng môi trường.
+# Cài khi muốn chạy demo: python -m pip install -r requirements-app.txt
+#
+# Số phiên bản dưới đây là bản đã chạy kiểm chứng app (Python 3.13.12, Windows):
+streamlit==1.64.0
+plotly==7.1.0
+
+# App KHÔNG cần gói shap: giải thích cục bộ dùng KernelSHAP tự cài đặt của đồ án
+# (forecasting/explain.py), và tự chuyển sang mô hình mô phỏng nếu thiếu best.joblib.

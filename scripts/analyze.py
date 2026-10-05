@@ -335,6 +335,21 @@ def _reliability(y: np.ndarray, proba: np.ndarray, n_bins: int = 8
     return xs, ys, ns
 
 
+def expected_calibration_error(y: np.ndarray, proba: np.ndarray, n_bins: int = 8) -> float:
+    """Expected calibration error: |observed - predicted| averaged over the reliability bins, weighted by bin size."""
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    idx = np.clip(np.digitize(proba, edges[1:-1]), 0, n_bins - 1)
+    total = len(proba)
+    if not total:
+        return float("nan")
+    ece = 0.0
+    for b in range(n_bins):
+        m = idx == b
+        if m.sum():
+            ece += abs(float(y[m].mean()) - float(proba[m].mean())) * int(m.sum())
+    return float(ece / total)
+
+
 def calibration(train_s, val_s, test_s, path: Path, n_bins: int = 8) -> Dict[str, Any]:
     """Calibration curve and Brier score, showing whether probabilities match observed frequencies."""
     model, _, _ = _fit(MODEL, train_s)
@@ -349,12 +364,14 @@ def calibration(train_s, val_s, test_s, path: Path, n_bins: int = 8) -> Dict[str
         ax.bar(xs, [n / max(ns) * 0.25 for n in ns], width=0.06, alpha=0.3, color="steelblue",
                label="số mẫu (tỷ lệ)")
         brier = float(brier_score_loss(y, proba))
-        ax.set_title(f"{tag}: reliability (Brier={brier:.3f}, n={len(y)})")
+        ece = expected_calibration_error(y, proba, n_bins)
+        ax.set_title(f"{tag}: reliability (Brier={brier:.3f}, ECE={ece:.3f}, n={len(y)})")
         ax.set_xlabel("xác suất dự báo")
         ax.set_ylabel("tần suất thực tế")
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
-        out["bins"][tag] = {"predicted_mean": xs, "observed_rate": ys, "n": ns, "brier": brier}
+        out["bins"][tag] = {"predicted_mean": xs, "observed_rate": ys, "n": ns,
+                            "brier": brier, "ece": ece}
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
@@ -594,9 +611,9 @@ def _markdown(out: Dict[str, Any]) -> str:
                      f"{_n(b['recall'])} | {_n(c['threshold'])} | {_n(c['expected_cost'], 1)} |")
     lines += ["", f"Chi phí giả định: FN = {thr['cost_fn']:.0f}, FP = {thr['cost_fp']:.0f}.", ""]
 
-    lines += ["## 7. Hiệu chuẩn xác suất", "", "| Tập | Brier |", "|---|---:|"]
+    lines += ["## 7. Hiệu chuẩn xác suất", "", "| Tập | Brier | ECE |", "|---|---:|---:|"]
     for tag, d in out["calibration"]["bins"].items():
-        lines.append(f"| {tag} | {_n(d['brier'])} |")
+        lines.append(f"| {tag} | {_n(d['brier'])} | {_n(d.get('ece'))} |")
 
     lc = out["learning_curve"]
     lines += ["", "## 8. Learning curve (chia theo công ty)", "",

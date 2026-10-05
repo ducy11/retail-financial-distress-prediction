@@ -124,6 +124,10 @@ data/retail-expanded-rebuilt/
 *.tmp
 *.bak
 
+# Windows "Copy" duplicates of deliverables (e.g. "Report - Copy.docx"); the real file is
+# already tracked next to them.
+*- Copy.*
+
 # 15. Documentation under docs/ is tracked on purpose, including the Word, slide and PDF
 #     deliverables. Uncomment the next line to keep it private instead.
 # docs/

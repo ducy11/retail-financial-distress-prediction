@@ -179,8 +179,8 @@
 ## 7. Tái lập
 
 ```powershell
-python -m pip install -r imbalance_lab/requirements.txt
-python -m imbalance_lab.techniques            # toàn bộ danh mục (ghi artifact)
-python -m imbalance_lab.techniques --quick --techniques smote,adasyn,focal_loss
+python -m pip install -r requirements-labs.txt
+python -m labs.imbalance_lab.techniques            # toàn bộ danh mục (ghi artifact)
+python -m labs.imbalance_lab.techniques --quick --techniques smote,adasyn,focal_loss
 python -m unittest discover -s tests -v       # gồm test danh mục + chống rò rỉ
 ```

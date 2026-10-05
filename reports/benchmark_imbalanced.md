@@ -88,5 +88,5 @@ Chi tiết từng fold + 3 kiểm chứng mỗi fold: `reports/benchmark_imbalan
 ## Tái lập
 
 ```powershell
-python benchmark_imbalanced.py
+python -m labs.benchmark
 ```

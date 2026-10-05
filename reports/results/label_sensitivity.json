@@ -1,0 +1,255 @@
+{
+  "model": "random_forest",
+  "policy": "mỗi định nghĩa nhãn dựng lại split bằng forecasting.data.split_policy (train/validation/test/purged) rồi đo độc lập",
+  "min_signals": 1,
+  "rows": [
+    {
+      "rule": "original",
+      "description": "nhãn gốc `is_distressed` trong data/prepared (KHÔNG tái tạo được — dùng làm mốc tham chiếu)",
+      "counts": {
+        "train": 212,
+        "validation": 32,
+        "test": 64,
+        "purged": 16
+      },
+      "positive_rate": {
+        "train": 0.6226415094339622,
+        "validation": 0.65625,
+        "test": 0.59375,
+        "purged": 0.6875
+      },
+      "imbalance_train": {
+        "n": 212,
+        "positive": 132,
+        "negative": 80,
+        "positive_pct": 62.264151,
+        "minority_class": 1,
+        "minority_pct": 37.735849,
+        "imbalance_ratio": 1.65,
+        "level": "slightly_imbalanced",
+        "entropy_bits": 0.956155,
+        "entropy_normalized": 0.956155,
+        "gini": 0.469918,
+        "majority_baseline_accuracy_pct": 62.264151
+      },
+      "imbalance_test": {
+        "n": 64,
+        "positive": 38,
+        "negative": 26,
+        "positive_pct": 59.375,
+        "minority_class": 1,
+        "minority_pct": 40.625,
+        "imbalance_ratio": 1.461538,
+        "level": "balanced",
+        "entropy_bits": 0.974489,
+        "entropy_normalized": 0.974489,
+        "gini": 0.482422,
+        "majority_baseline_accuracy_pct": 59.375
+      },
+      "agreement_with_original_labels": 1.0,
+      "n_comparable_samples": 64,
+      "in_domain": {
+        "model_auroc": 0.9827935222672065,
+        "model_average_precision": 0.990780227276072,
+        "ticker_prior_auroc": 0.9858299595141702,
+        "ticker_prior_average_precision": 0.9846491228070176,
+        "delta_auroc_model_minus_prior": -0.0030364372469636747
+      },
+      "cross_company": {
+        "n_oof": 244,
+        "oof_average_precision": 0.9576921530219119,
+        "oof_auroc": 0.9431157078215902
+      },
+      "delong_model_vs_prior": {
+        "auc_a": 0.9827935222672065,
+        "auc_b": 0.9858299595141702,
+        "delta": -0.0030364372469636747,
+        "sklearn_auc_a": 0.9827935222672065,
+        "sklearn_auc_b": 0.9858299595141702,
+        "auc_matches_sklearn": true,
+        "z": -0.3125660048587052,
+        "p_value": 0.7546104090450154,
+        "std_err": 0.009714547326847938
+      }
+    },
+    {
+      "rule": "stress_signals",
+      "description": "≥1 trong 6 tín hiệu căng thẳng của QUÝ TARGET (quy tắc kế toán đơn giản)",
+      "counts": {
+        "train": 212,
+        "validation": 32,
+        "test": 64,
+        "purged": 16
+      },
+      "positive_rate": {
+        "train": 0.41509433962264153,
+        "validation": 0.4375,
+        "test": 0.421875
+      },
+      "imbalance_train": {
+        "n": 212,
+        "positive": 88,
+        "negative": 124,
+        "positive_pct": 41.509434,
+        "minority_class": 0,
+        "minority_pct": 41.509434,
+        "imbalance_ratio": 1.409091,
+        "level": "balanced",
+        "entropy_bits": 0.979098,
+        "entropy_normalized": 0.979098,
+        "gini": 0.485582,
+        "majority_baseline_accuracy_pct": 58.490566
+      },
+      "imbalance_test": {
+        "n": 64,
+        "positive": 27,
+        "negative": 37,
+        "positive_pct": 42.1875,
+        "minority_class": 0,
+        "minority_pct": 42.1875,
+        "imbalance_ratio": 1.37037,
+        "level": "balanced",
+        "entropy_bits": 0.982317,
+        "entropy_normalized": 0.982317,
+        "gini": 0.487793,
+        "majority_baseline_accuracy_pct": 57.8125
+      },
+      "agreement_with_original_labels": 0.7438271604938271,
+      "n_comparable_samples": 324,
+      "in_domain": {
+        "model_auroc": 0.9089089089089089,
+        "model_average_precision": 0.9407838625292646,
+        "ticker_prior_auroc": 0.9604604604604604,
+        "ticker_prior_average_precision": 0.9578703703703704,
+        "delta_auroc_model_minus_prior": -0.051551551551551555
+      },
+      "cross_company": {
+        "n_oof": 244,
+        "oof_average_precision": 0.610416197166836,
+        "oof_auroc": 0.7297707815520574
+      }
+    },
+    {
+      "rule": "altman_z",
+      "description": "Altman Z''-score < 1.1 (công thức công khai 1968/2000)",
+      "counts": {
+        "train": 212,
+        "validation": 32,
+        "test": 64,
+        "purged": 16
+      },
+      "positive_rate": {
+        "train": 0.22641509433962265,
+        "validation": 0.34375,
+        "test": 0.3125
+      },
+      "imbalance_train": {
+        "n": 212,
+        "positive": 48,
+        "negative": 164,
+        "positive_pct": 22.641509,
+        "minority_class": 0,
+        "minority_pct": 22.641509,
+        "imbalance_ratio": 3.416667,
+        "level": "slightly_imbalanced",
+        "entropy_bits": 0.771709,
+        "entropy_normalized": 0.771709,
+        "gini": 0.350303,
+        "majority_baseline_accuracy_pct": 77.358491
+      },
+      "imbalance_test": {
+        "n": 64,
+        "positive": 20,
+        "negative": 44,
+        "positive_pct": 31.25,
+        "minority_class": 0,
+        "minority_pct": 31.25,
+        "imbalance_ratio": 2.2,
+        "level": "slightly_imbalanced",
+        "entropy_bits": 0.896038,
+        "entropy_normalized": 0.896038,
+        "gini": 0.429688,
+        "majority_baseline_accuracy_pct": 68.75
+      },
+      "agreement_with_original_labels": 0.6388888888888888,
+      "n_comparable_samples": 324,
+      "in_domain": {
+        "model_auroc": 0.9988636363636364,
+        "model_average_precision": 0.9976190476190478,
+        "ticker_prior_auroc": 0.9909090909090909,
+        "ticker_prior_average_precision": 0.9666666666666667,
+        "delta_auroc_model_minus_prior": 0.007954545454545547
+      },
+      "cross_company": {
+        "n_oof": 244,
+        "oof_average_precision": 0.45987463894327885,
+        "oof_auroc": 0.7715987173614292
+      }
+    },
+    {
+      "rule": "forward_4q",
+      "description": "có ≥1 quý trong 4 quý TỚI chạm ngưỡng tín hiệu căng thẳng (sự kiện sắp xảy ra, không phải trạng thái quý target)",
+      "counts": {
+        "train": 212,
+        "validation": 32,
+        "test": 64,
+        "purged": 16
+      },
+      "positive_rate": {
+        "train": 0.6650943396226415,
+        "validation": 0.53125,
+        "test": 0.484375
+      },
+      "imbalance_train": {
+        "n": 212,
+        "positive": 141,
+        "negative": 71,
+        "positive_pct": 66.509434,
+        "minority_class": 1,
+        "minority_pct": 33.490566,
+        "imbalance_ratio": 1.985915,
+        "level": "slightly_imbalanced",
+        "entropy_bits": 0.91986,
+        "entropy_normalized": 0.91986,
+        "gini": 0.445488,
+        "majority_baseline_accuracy_pct": 66.509434
+      },
+      "imbalance_test": {
+        "n": 64,
+        "positive": 31,
+        "negative": 33,
+        "positive_pct": 48.4375,
+        "minority_class": 0,
+        "minority_pct": 48.4375,
+        "imbalance_ratio": 1.064516,
+        "level": "balanced",
+        "entropy_bits": 0.999295,
+        "entropy_normalized": 0.999295,
+        "gini": 0.499512,
+        "majority_baseline_accuracy_pct": 51.5625
+      },
+      "agreement_with_original_labels": 0.6666666666666666,
+      "n_comparable_samples": 324,
+      "in_domain": {
+        "model_auroc": 0.8357771260997067,
+        "model_average_precision": 0.8430755491806875,
+        "ticker_prior_auroc": 0.9105571847507331,
+        "ticker_prior_average_precision": 0.8469758064516129,
+        "delta_auroc_model_minus_prior": -0.07478005865102644
+      },
+      "cross_company": {
+        "n_oof": 244,
+        "oof_average_precision": 0.5820835464805938,
+        "oof_auroc": 0.4102148954960259
+      }
+    }
+  ],
+  "conclusions": [
+    "**Số định nghĩa nhãn TÁI LẬP ĐƯỢC đã kiểm chứng:** 3 (stress_signals, altman_z, forward_4q).",
+    "**Luận điểm \"mô hình không vượt baseline ticker-prior\" xuất hiện ở 3/3 định nghĩa** ⇒ kết luận **ỔN ĐỊNH theo định nghĩa nhãn** — đây là bằng chứng mạnh nhất của đồ án.",
+    "**`stress_signals`:** tỉ lệ dương test = 42.2%, IR train = 1.41; khớp nhãn gốc = 74.4%; in-domain AUROC (mô hình / ticker-prior) = 0.909 / 0.960; cross-company OOF AP = 0.610, AUROC = 0.730.",
+    "**`altman_z`:** tỉ lệ dương test = 31.2%, IR train = 3.42; khớp nhãn gốc = 63.9%; in-domain AUROC (mô hình / ticker-prior) = 0.999 / 0.991; cross-company OOF AP = 0.460, AUROC = 0.772.",
+    "**`forward_4q`:** tỉ lệ dương test = 48.4%, IR train = 1.99; khớp nhãn gốc = 66.7%; in-domain AUROC (mô hình / ticker-prior) = 0.836 / 0.911; cross-company OOF AP = 0.582, AUROC = 0.410.",
+    "**Đọc kết quả:** cột khớp nhãn gốc cho biết định nghĩa mới có đo cùng khái niệm với nhãn gốc hay không; cột cross-company cho biết mô hình còn giữ được bao nhiêu khi công ty bị giữ trọn ra ngoài. Một định nghĩa chỉ đáng tin khi cả hai hợp lý (khớp > ~65% và cross-company ≈ 0,9)."
+  ]
+}

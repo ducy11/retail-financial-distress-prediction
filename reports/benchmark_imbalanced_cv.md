@@ -85,5 +85,5 @@
 ## 3. Tái lập
 
 ```powershell
-python benchmark_imbalanced.py --cv 5
+python -m labs.benchmark --cv 5
 ```

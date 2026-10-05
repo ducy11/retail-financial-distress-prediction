@@ -1,0 +1,349 @@
+{
+  "n_samples": 64,
+  "n_positive": 38,
+  "systems": {
+    "model[random_forest]": {
+      "auroc": 0.9827935222672065,
+      "average_precision": 0.990780227276072
+    },
+    "ticker_prior": {
+      "auroc": 0.9858299595141702,
+      "average_precision": 0.9846491228070176
+    },
+    "single_feature[debt_to_assets_latest]": {
+      "auroc": 0.888663967611336,
+      "average_precision": 0.9379353574488052
+    },
+    "dummy_most_frequent": {
+      "auroc": 0.5,
+      "average_precision": 0.59375
+    }
+  },
+  "pairs": [
+    {
+      "a": "model[random_forest]",
+      "b": "ticker_prior",
+      "delong_auroc": {
+        "auc_a": 0.9827935222672065,
+        "auc_b": 0.9858299595141702,
+        "delta": -0.0030364372469636747,
+        "sklearn_auc_a": 0.9827935222672065,
+        "sklearn_auc_b": 0.9858299595141702,
+        "auc_matches_sklearn": true,
+        "z": -0.3125660048587052,
+        "p_value": 0.7546104090450154,
+        "std_err": 0.009714547326847938
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.006131104469054405,
+        "ci95_lower": -0.004788209694520334,
+        "ci95_upper": 0.021533782566816994,
+        "p_value": 0.344,
+        "n_boot": 2000,
+        "share_same_sign": 0.828,
+        "significant_5pct": false
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": -0.0030364372469636747,
+        "ci95_lower": -0.02582236842105264,
+        "ci95_upper": 0.014170040485829927,
+        "p_value": 0.882,
+        "n_boot": 2000,
+        "share_same_sign": 0.559,
+        "significant_5pct": false
+      }
+    },
+    {
+      "a": "model[random_forest]",
+      "b": "single_feature[debt_to_assets_latest]",
+      "delong_auroc": {
+        "auc_a": 0.9827935222672065,
+        "auc_b": 0.8886639676113359,
+        "delta": 0.09412955465587058,
+        "sklearn_auc_a": 0.9827935222672065,
+        "sklearn_auc_b": 0.888663967611336,
+        "auc_matches_sklearn": true,
+        "z": 2.671314695089459,
+        "p_value": 0.0075554776105297705,
+        "std_err": 0.03523716424309877
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.05284486982726677,
+        "ci95_lower": 0.01759829297121524,
+        "ci95_upper": 0.09731049636425147,
+        "p_value": 0.001,
+        "n_boot": 2000,
+        "share_same_sign": 0.9995,
+        "significant_5pct": true
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": 0.09412955465587047,
+        "ci95_lower": 0.03340080971659909,
+        "ci95_upper": 0.168066801619433,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      }
+    },
+    {
+      "a": "model[random_forest]",
+      "b": "dummy_most_frequent",
+      "delong_auroc": {
+        "auc_a": 0.9827935222672065,
+        "auc_b": 0.5,
+        "delta": 0.4827935222672065,
+        "sklearn_auc_a": 0.9827935222672065,
+        "sklearn_auc_b": 0.5,
+        "auc_matches_sklearn": true,
+        "z": 32.51846027651005,
+        "p_value": 0.0,
+        "std_err": 0.014846752218952876
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.39703022727607196,
+        "ci95_lower": 0.37938911306945355,
+        "ci95_upper": 0.40625,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": 0.4827935222672065,
+        "ci95_lower": 0.44736842105263164,
+        "ci95_upper": 0.5,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      }
+    },
+    {
+      "a": "ticker_prior",
+      "b": "single_feature[debt_to_assets_latest]",
+      "delong_auroc": {
+        "auc_a": 0.9858299595141702,
+        "auc_b": 0.8886639676113359,
+        "delta": 0.09716599190283426,
+        "sklearn_auc_a": 0.9858299595141702,
+        "sklearn_auc_b": 0.888663967611336,
+        "auc_matches_sklearn": true,
+        "z": 2.5573661479327825,
+        "p_value": 0.010546813886553652,
+        "std_err": 0.03799455622785078
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.04671376535821237,
+        "ci95_lower": 0.007389782520951047,
+        "ci95_upper": 0.0941208228738868,
+        "p_value": 0.018,
+        "n_boot": 2000,
+        "share_same_sign": 0.991,
+        "significant_5pct": true
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": 0.09716599190283415,
+        "ci95_lower": 0.03238866396761131,
+        "ci95_upper": 0.17865637651821864,
+        "p_value": 0.001,
+        "n_boot": 2000,
+        "share_same_sign": 0.9995,
+        "significant_5pct": true
+      }
+    },
+    {
+      "a": "ticker_prior",
+      "b": "dummy_most_frequent",
+      "delong_auroc": {
+        "auc_a": 0.9858299595141702,
+        "auc_b": 0.5,
+        "delta": 0.4858299595141702,
+        "sklearn_auc_a": 0.9858299595141702,
+        "sklearn_auc_b": 0.5,
+        "auc_matches_sklearn": true,
+        "z": 53.05611924862155,
+        "p_value": 0.0,
+        "std_err": 0.00915690718421311
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.39089912280701755,
+        "ci95_lower": 0.37027666928015224,
+        "ci95_upper": 0.4042257085020242,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": 0.4858299595141702,
+        "ci95_lower": 0.462537955465587,
+        "ci95_upper": 0.4984817813765182,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      }
+    },
+    {
+      "a": "single_feature[debt_to_assets_latest]",
+      "b": "dummy_most_frequent",
+      "delong_auroc": {
+        "auc_a": 0.8886639676113359,
+        "auc_b": 0.5,
+        "delta": 0.3886639676113359,
+        "sklearn_auc_a": 0.888663967611336,
+        "sklearn_auc_b": 0.5,
+        "auc_matches_sklearn": true,
+        "z": 9.643848876653404,
+        "p_value": 0.0,
+        "std_err": 0.04030174804504087
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.3441853574488052,
+        "ci95_lower": 0.2962105884505029,
+        "ci95_upper": 0.3828190796667984,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": 0.38866396761133604,
+        "ci95_lower": 0.3006072874493927,
+        "ci95_upper": 0.458502024291498,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      }
+    }
+  ],
+  "baseline": "ticker_prior",
+  "pairs_vs_baseline": [
+    {
+      "a": "model[random_forest]",
+      "b": "ticker_prior",
+      "delong_auroc": {
+        "auc_a": 0.9827935222672065,
+        "auc_b": 0.9858299595141702,
+        "delta": -0.0030364372469636747,
+        "sklearn_auc_a": 0.9827935222672065,
+        "sklearn_auc_b": 0.9858299595141702,
+        "auc_matches_sklearn": true,
+        "z": -0.3125660048587052,
+        "p_value": 0.7546104090450154,
+        "std_err": 0.009714547326847938
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.006131104469054405,
+        "ci95_lower": -0.004788209694520334,
+        "ci95_upper": 0.021533782566816994,
+        "p_value": 0.344,
+        "n_boot": 2000,
+        "share_same_sign": 0.828,
+        "significant_5pct": false
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": -0.0030364372469636747,
+        "ci95_lower": -0.02582236842105264,
+        "ci95_upper": 0.014170040485829927,
+        "p_value": 0.882,
+        "n_boot": 2000,
+        "share_same_sign": 0.559,
+        "significant_5pct": false
+      }
+    },
+    {
+      "a": "ticker_prior",
+      "b": "single_feature[debt_to_assets_latest]",
+      "delong_auroc": {
+        "auc_a": 0.9858299595141702,
+        "auc_b": 0.8886639676113359,
+        "delta": 0.09716599190283426,
+        "sklearn_auc_a": 0.9858299595141702,
+        "sklearn_auc_b": 0.888663967611336,
+        "auc_matches_sklearn": true,
+        "z": 2.5573661479327825,
+        "p_value": 0.010546813886553652,
+        "std_err": 0.03799455622785078
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.04671376535821237,
+        "ci95_lower": 0.007389782520951047,
+        "ci95_upper": 0.0941208228738868,
+        "p_value": 0.018,
+        "n_boot": 2000,
+        "share_same_sign": 0.991,
+        "significant_5pct": true
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": 0.09716599190283415,
+        "ci95_lower": 0.03238866396761131,
+        "ci95_upper": 0.17865637651821864,
+        "p_value": 0.001,
+        "n_boot": 2000,
+        "share_same_sign": 0.9995,
+        "significant_5pct": true
+      }
+    },
+    {
+      "a": "ticker_prior",
+      "b": "dummy_most_frequent",
+      "delong_auroc": {
+        "auc_a": 0.9858299595141702,
+        "auc_b": 0.5,
+        "delta": 0.4858299595141702,
+        "sklearn_auc_a": 0.9858299595141702,
+        "sklearn_auc_b": 0.5,
+        "auc_matches_sklearn": true,
+        "z": 53.05611924862155,
+        "p_value": 0.0,
+        "std_err": 0.00915690718421311
+      },
+      "bootstrap_ap": {
+        "metric": "average_precision",
+        "delta": 0.39089912280701755,
+        "ci95_lower": 0.37027666928015224,
+        "ci95_upper": 0.4042257085020242,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      },
+      "bootstrap_auroc": {
+        "metric": "auroc",
+        "delta": 0.4858299595141702,
+        "ci95_lower": 0.462537955465587,
+        "ci95_upper": 0.4984817813765182,
+        "p_value": 0.0,
+        "n_boot": 2000,
+        "share_same_sign": 1.0,
+        "significant_5pct": true
+      }
+    }
+  ],
+  "model_key": "model[random_forest]",
+  "feature_used_by_single": "debt_to_assets_latest",
+  "conclusions": [
+    "**ΔAUROC (DeLong):** model[random_forest] − ticker_prior = -0.0030, z = -0.3126, p = 0.7546 ⇒ **không** có ý nghĩa ở mức 5% (chưa thể khẳng định mô hình hơn baseline).",
+    "**ΔAP (paired bootstrap 2000 vòng):** +0.0061, CI 95% = [-0.0048; +0.0215], p = 0.3440 ⇒ kết luận tương tự DeLong.",
+    "**Cách đọc:** n = 64 mẫu nên khoảng tin cậy rộng; \"không khác biệt\" nghĩa là *dữ liệu chưa đủ để khẳng định*, không phải bằng chứng mô hình kém. Đây là lý do báo cáo dùng thêm so sánh cross-company (`validation_checks.json`) và lấy `ticker_prior` làm mốc trung thực."
+  ]
+}

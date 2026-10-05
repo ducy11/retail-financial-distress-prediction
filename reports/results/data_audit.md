@@ -1,0 +1,54 @@
+# Đối soát dữ liệu với SỐ LIỆU THẬT (SEC) — `scripts.audit_data`
+
+- Số phép kiểm tra: **98200**
+- Số phát hiện: **0**
+
+## Phát hiện theo nhóm
+
+| Nhóm kiểm tra | Số phát hiện |
+|---|---:|
+| `sec_snapshots` | 0 |
+| `retail_expanded` | 0 |
+| `legacy_10` | 0 |
+| `prepared` | 0 |
+| `manifest` | 0 |
+| `corpus` | 0 |
+| `prepared_rule` | 0 |
+| `report_numbers` | 0 |
+
+## Số liệu đối chiếu
+
+| Khoá | Giá trị |
+|---|---|
+| `sec_registries` | `["corpus.json → downloads", "downloads.json"]` |
+| `fields[DG-16-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "liabilities", "net_income", "operating_cash_flow", "operating_income", "receivables", "retained_earnings", "revenue", "selling_general_admin", "short_term_investments", "stockholders_equity", "total_assets"]` |
+| `fields[DKS-16-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "liabilities", "net_income", "operating_cash_flow", "operating_income", "receivables", "retained_earnings", "revenue", "selling_general_admin", "short_term_investments", "stockholders_equity", "total_assets"]` |
+| `fields[FIVE-16-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "liabilities", "net_income", "operating_cash_flow", "operating_income", "receivables", "retained_earnings", "revenue", "selling_general_admin", "short_term_investments", "stockholders_equity", "total_assets"]` |
+| `fields[HD-16-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "liabilities", "net_income", "operating_cash_flow", "operating_income", "receivables", "retained_earnings", "revenue", "selling_general_admin", "short_term_investments", "stockholders_equity", "total_assets"]` |
+| `fields[LOW-16-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "liabilities", "net_income", "operating_cash_flow", "operating_income", "receivables", "retained_earnings", "revenue", "selling_general_admin", "short_term_investments", "stockholders_equity", "total_assets"]` |
+| `fields[ORLY-16-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "liabilities", "net_income", "operating_cash_flow", "operating_income", "receivables", "retained_earnings", "revenue", "selling_general_admin", "short_term_investments", "stockholders_equity", "total_assets"]` |
+| `fields[ROST-16-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "liabilities", "net_income", "operating_cash_flow", "operating_income", "receivables", "retained_earnings", "revenue", "selling_general_admin", "short_term_investments", "stockholders_equity", "total_assets"]` |
+| `fields[WMT-16-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "liabilities", "net_income", "operating_cash_flow", "operating_income", "receivables", "retained_earnings", "revenue", "selling_general_admin", "short_term_investments", "stockholders_equity", "total_assets"]` |
+| `fields[AEO-10-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "operating_cash_flow", "operating_income", "revenue", "selling_general_admin", "total_assets"]` |
+| `fields[DG-10-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "operating_cash_flow", "operating_income", "revenue", "selling_general_admin", "total_assets"]` |
+| `fields[DKS-10-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "operating_cash_flow", "operating_income", "revenue", "selling_general_admin", "total_assets"]` |
+| `fields[HD-10-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "operating_cash_flow", "operating_income", "revenue", "selling_general_admin", "total_assets"]` |
+| `fields[LOW-10-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "operating_cash_flow", "operating_income", "revenue", "selling_general_admin", "total_assets"]` |
+| `fields[ORLY-10-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "operating_cash_flow", "operating_income", "revenue", "selling_general_admin", "total_assets"]` |
+| `fields[WMT-10-indicators-vnd.json]` | `["cash_and_equivalents", "cost_of_sales", "current_assets", "current_liabilities", "inventory", "operating_cash_flow", "operating_income", "revenue", "selling_general_admin", "total_assets"]` |
+| `legacy_only[AEO]` | `28` |
+| `retail_quarters` | `{"DG": 32, "DKS": 44, "FIVE": 32, "HD": 44, "LOW": 44, "ORLY": 44, "ROST": 44, "WMT": 48}` |
+| `legacy_10_tickers` | `["AEO", "DG", "DKS", "HD", "LOW", "ORLY", "WMT"]` |
+| `balance_identity[quý kiểm|quý lệch>0.5%|lệch tương đối lớn nhất]` | `[124, 0, 0.003082]` |
+| `prepared_counts` | `{"train": 212, "validation": 32, "test": 64, "purged": 16}` |
+| `expected_counts` | `{"train": 212, "validation": 32, "test": 64, "purged": 16}` |
+| `n_samples_total` | `324` |
+| `validation_fit_before[manifest|max_train_pub|min_val_as_of]` | `["2022-11-08", "2022-06-09", "2022-11-08"]` |
+| `final_fit_before[manifest|max_train_val_pub|min_test_as_of]` | `["2024-02-28", "2023-09-06", "2024-02-28"]` |
+| `corpus_companies` | `["DG", "DKS", "FIVE", "HD", "LOW", "ORLY", "ROST", "WMT"]` |
+| `corpus_excluded` | `["AAP", "AEO", "AZO", "BBY", "BURL", "COST", "DLTR", "KR", "TGT", "TJX", "TSCO", "ULTA"]` |
+| `rule_counts` | `{"train": 212, "validation": 32, "test": 64, "purged": 16}` |
+| `rule_label_counts` | `{"train": 88, "validation": 14, "test": 27, "purged": 8}` |
+| `rule_agreement_recomputed` | `0.7438271604938271` |
+| `class_balance[IR toàn corpus | % thiểu số | mức]` | `[1.6557377049180328, 37.65, "slightly_imbalanced"]` |
+| `n_features_features_py` | `47` |

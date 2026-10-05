@@ -178,6 +178,6 @@ Bối cảnh: 20000 mẫu, mất cân bằng 1:50, 5 fold stratified, mô hình 
 
 - Dataset mặc định là GIẢ LẬP (`make_classification`): kết luận định tính chuyển được, con số thì không. Muốn chạy dữ liệu thật (credit card fraud) dùng `--data path/to/creditcard.csv --target Class`.
 - Mỗi kỹ thuật dùng MỘT cấu hình hợp lý (tỉ lệ oversampling 0,5; Focal Loss `gamma=2`, `alpha=0,75`) chứ chưa grid-search ⇒ đây là so sánh 'cùng ngân sách', không phải 'tối ưu cho từng kỹ thuật'.
-- Ngưỡng báo cáo cố định 0,5 để so sánh trực tiếp; muốn tối ưu ngưỡng hãy dùng `imbalance_lab.thresholds.tune_thresholds_from_pr_curve` (chọn trên xác suất OOF).
+- Ngưỡng báo cáo cố định 0,5 để so sánh trực tiếp; muốn tối ưu ngưỡng hãy dùng `labs.imbalance_lab.thresholds.tune_thresholds_from_pr_curve` (chọn trên xác suất OOF).
 
 

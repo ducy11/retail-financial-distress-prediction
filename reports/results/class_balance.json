@@ -1,0 +1,240 @@
+{
+  "target_column": "is_distressed",
+  "label_source": "data/prepared/*.json",
+  "level_thresholds": {
+    "balanced_minority_pct": 40.0,
+    "severe_minority_pct_below": 20.0
+  },
+  "per_split": {
+    "train": {
+      "n": 212,
+      "counts": {
+        "1": 132,
+        "0": 80
+      },
+      "percent": {
+        "1": 62.264150943396224,
+        "0": 37.735849056603776
+      },
+      "minority_class": 0,
+      "minority_percent": 37.735849056603776,
+      "imbalance_ratio": 1.65,
+      "level": "slightly_imbalanced",
+      "majority_baseline_accuracy_pct": 62.264150943396224
+    },
+    "validation": {
+      "n": 32,
+      "counts": {
+        "1": 21,
+        "0": 11
+      },
+      "percent": {
+        "1": 65.625,
+        "0": 34.375
+      },
+      "minority_class": 0,
+      "minority_percent": 34.375,
+      "imbalance_ratio": 1.9090909090909092,
+      "level": "slightly_imbalanced",
+      "majority_baseline_accuracy_pct": 65.625
+    },
+    "test": {
+      "n": 64,
+      "counts": {
+        "1": 38,
+        "0": 26
+      },
+      "percent": {
+        "1": 59.375,
+        "0": 40.625
+      },
+      "minority_class": 0,
+      "minority_percent": 40.625,
+      "imbalance_ratio": 1.4615384615384615,
+      "level": "balanced",
+      "majority_baseline_accuracy_pct": 59.375
+    },
+    "purged": {
+      "n": 16,
+      "counts": {
+        "1": 11,
+        "0": 5
+      },
+      "percent": {
+        "1": 68.75,
+        "0": 31.25
+      },
+      "minority_class": 0,
+      "minority_percent": 31.25,
+      "imbalance_ratio": 2.2,
+      "level": "slightly_imbalanced",
+      "majority_baseline_accuracy_pct": 68.75
+    }
+  },
+  "overall": {
+    "n": 324,
+    "counts": {
+      "1": 202,
+      "0": 122
+    },
+    "percent": {
+      "1": 62.34567901234568,
+      "0": 37.65432098765432
+    },
+    "minority_class": 0,
+    "minority_percent": 37.65432098765432,
+    "imbalance_ratio": 1.6557377049180328,
+    "level": "slightly_imbalanced",
+    "majority_baseline_accuracy_pct": 62.34567901234568
+  },
+  "per_ticker": {
+    "DG": {
+      "n": 31,
+      "counts": {
+        "1": 17,
+        "0": 14
+      },
+      "percent": {
+        "1": 54.83870967741935,
+        "0": 45.16129032258065
+      },
+      "minority_class": 0,
+      "minority_percent": 45.16129032258065,
+      "imbalance_ratio": 1.2142857142857142,
+      "level": "balanced",
+      "majority_baseline_accuracy_pct": 54.83870967741935
+    },
+    "DKS": {
+      "n": 43,
+      "counts": {
+        "1": 5,
+        "0": 38
+      },
+      "percent": {
+        "1": 11.627906976744185,
+        "0": 88.37209302325581
+      },
+      "minority_class": 1,
+      "minority_percent": 11.627906976744185,
+      "imbalance_ratio": 7.6,
+      "level": "severely_imbalanced",
+      "majority_baseline_accuracy_pct": 88.37209302325581
+    },
+    "FIVE": {
+      "n": 31,
+      "counts": {
+        "1": 6,
+        "0": 25
+      },
+      "percent": {
+        "1": 19.35483870967742,
+        "0": 80.64516129032258
+      },
+      "minority_class": 1,
+      "minority_percent": 19.35483870967742,
+      "imbalance_ratio": 4.166666666666667,
+      "level": "severely_imbalanced",
+      "majority_baseline_accuracy_pct": 80.64516129032258
+    },
+    "HD": {
+      "n": 43,
+      "counts": {
+        "1": 43,
+        "0": 0
+      },
+      "percent": {
+        "1": 100.0,
+        "0": 0.0
+      },
+      "minority_class": 0,
+      "minority_percent": 0.0,
+      "imbalance_ratio": Infinity,
+      "level": "single_class",
+      "majority_baseline_accuracy_pct": 100.0
+    },
+    "LOW": {
+      "n": 43,
+      "counts": {
+        "1": 43,
+        "0": 0
+      },
+      "percent": {
+        "1": 100.0,
+        "0": 0.0
+      },
+      "minority_class": 0,
+      "minority_percent": 0.0,
+      "imbalance_ratio": Infinity,
+      "level": "single_class",
+      "majority_baseline_accuracy_pct": 100.0
+    },
+    "ORLY": {
+      "n": 43,
+      "counts": {
+        "1": 39,
+        "0": 4
+      },
+      "percent": {
+        "1": 90.69767441860465,
+        "0": 9.30232558139535
+      },
+      "minority_class": 0,
+      "minority_percent": 9.30232558139535,
+      "imbalance_ratio": 9.75,
+      "level": "severely_imbalanced",
+      "majority_baseline_accuracy_pct": 90.69767441860465
+    },
+    "ROST": {
+      "n": 43,
+      "counts": {
+        "1": 2,
+        "0": 41
+      },
+      "percent": {
+        "1": 4.651162790697675,
+        "0": 95.34883720930233
+      },
+      "minority_class": 1,
+      "minority_percent": 4.651162790697675,
+      "imbalance_ratio": 20.5,
+      "level": "severely_imbalanced",
+      "majority_baseline_accuracy_pct": 95.34883720930233
+    },
+    "WMT": {
+      "n": 47,
+      "counts": {
+        "1": 47,
+        "0": 0
+      },
+      "percent": {
+        "1": 100.0,
+        "0": 0.0
+      },
+      "minority_class": 0,
+      "minority_percent": 0.0,
+      "imbalance_ratio": Infinity,
+      "level": "single_class",
+      "majority_baseline_accuracy_pct": 100.0
+    }
+  },
+  "rule_labels_overall": {
+    "n": 324,
+    "counts": {
+      "1": 137,
+      "0": 187
+    },
+    "percent": {
+      "1": 42.28395061728395,
+      "0": 57.71604938271605
+    },
+    "minority_class": 1,
+    "minority_percent": 42.28395061728395,
+    "imbalance_ratio": 1.364963503649635,
+    "level": "balanced",
+    "majority_baseline_accuracy_pct": 57.71604938271605
+  },
+  "class_weight_enabled_in_hyperparams": [
+    "random_forest",
+    "hist_gradient_boosting"
+  ]
+}

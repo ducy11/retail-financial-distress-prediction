@@ -93,7 +93,7 @@
 ## Tái lập
 
 ```powershell
-python -m pip install -r imbalance_lab/requirements.txt
-python -m imbalance_lab.run        # log ở reports/imbalance/run.log
+python -m pip install -r requirements-labs.txt
+python -m labs.imbalance_lab.run        # log ở reports/imbalance/run.log
 python -m unittest discover -s tests -v   # gồm test chống rò rỉ của lab
 ```

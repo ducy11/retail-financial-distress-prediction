@@ -1,0 +1,147 @@
+{
+  "protocol": {
+    "cv": "GroupKFold(4) theo mã cổ phiếu trên train+validation (244 mẫu)",
+    "leakage": "sampler nằm trong imblearn.Pipeline ⇒ chỉ chạm fold-train; test fold được so khớp ma trận trước/sau fit",
+    "metric": "AP/AUROC/F1 trên xác suất out-of-fold (không dùng test của đồ án)",
+    "note": "test 64 mẫu giữ nguyên vai trò chốt cuối, không tham gia thí nghiệm này"
+  },
+  "base_model": "hist_gradient_boosting",
+  "label_ir": 1.6813186813186813,
+  "n_samples": 244,
+  "n_positive": 153,
+  "rows": [
+    {
+      "name": "none",
+      "group": "baseline",
+      "description": "không can thiệp (đối chứng)",
+      "n_oof": 244,
+      "average_precision": 0.9587981951535904,
+      "auroc": 0.9425770308123249,
+      "best_f1_on_oof": 0.9419354838709678,
+      "best_f1_threshold": 0.4383891028035179,
+      "folds_checked": 4,
+      "fold_test_untouched": true,
+      "ir_before": null,
+      "ir_after": null,
+      "n_before": null,
+      "n_after": null
+    },
+    {
+      "name": "class_weight",
+      "group": "algorithm-level",
+      "description": "class_weight='balanced' tính trong fit từ nhãn fold-train",
+      "n_oof": 244,
+      "average_precision": 0.9568658279090959,
+      "auroc": 0.9403504991740286,
+      "best_f1_on_oof": 0.9419354838709678,
+      "best_f1_threshold": 0.4099236003257395,
+      "folds_checked": 4,
+      "fold_test_untouched": true,
+      "ir_before": null,
+      "ir_after": null,
+      "n_before": null,
+      "n_after": null
+    },
+    {
+      "name": "random_under",
+      "group": "undersampling",
+      "description": "RandomUnderSampler: cân bằng bằng cách hạ lớp ĐA SỐ (ở corpus này là lớp 1 = suy giảm, 62%) xuống bằng lớp thiểu số",
+      "n_oof": 244,
+      "average_precision": 0.9560972774130354,
+      "auroc": 0.9266681031386914,
+      "best_f1_on_oof": 0.926517571884984,
+      "best_f1_threshold": 0.21751341041874592,
+      "folds_checked": 4,
+      "fold_test_untouched": true,
+      "ir_before": 1.325,
+      "ir_after": 1.0,
+      "n_before": 186,
+      "n_after": 160
+    },
+    {
+      "name": "tomek_links",
+      "group": "undersampling",
+      "description": "TomekLinks: bỏ cặp mẫu hai lớp nằm sát nhau (làm sạch biên)",
+      "n_oof": 244,
+      "average_precision": 0.942758903434529,
+      "auroc": 0.9160382101558572,
+      "best_f1_on_oof": 0.9158878504672897,
+      "best_f1_threshold": 0.07218461085525446,
+      "folds_checked": 4,
+      "fold_test_untouched": true,
+      "ir_before": 1.325,
+      "ir_after": 1.225,
+      "n_before": 186,
+      "n_after": 178
+    },
+    {
+      "name": "smote",
+      "group": "oversampling",
+      "description": "SMOTE: sinh thêm mẫu cho LỚP THIỂU SỐ (ở corpus này là lớp 0 = không suy giảm, 38%) cho tới khi cân bằng",
+      "n_oof": 244,
+      "average_precision": 0.9502205333083675,
+      "auroc": 0.9499748617395677,
+      "best_f1_on_oof": 0.9311475409836065,
+      "best_f1_threshold": 0.5715400693644781,
+      "folds_checked": 4,
+      "fold_test_untouched": true,
+      "ir_before": 1.325,
+      "ir_after": 1.0,
+      "n_before": 186,
+      "n_after": 212
+    },
+    {
+      "name": "smote_enn",
+      "group": "hybrid",
+      "description": "SMOTE + ENN: sinh mẫu rồi dọn mẫu bị láng giềng phủ nhận",
+      "n_oof": 244,
+      "average_precision": 0.9682641424363938,
+      "auroc": 0.9512317747611865,
+      "best_f1_on_oof": 0.9158249158249158,
+      "best_f1_threshold": 0.764529416211904,
+      "folds_checked": 4,
+      "fold_test_untouched": true,
+      "ir_before": 1.325,
+      "ir_after": 1.12,
+      "n_before": 186,
+      "n_after": 159
+    }
+  ],
+  "significance": {
+    "best_technique": "smote_enn",
+    "reference": "none",
+    "n_paired": 244,
+    "delong_auroc": {
+      "auc_a": 0.9512317747611866,
+      "auc_b": 0.942577030812325,
+      "delta": 0.008654743948861565,
+      "sklearn_auc_a": 0.9512317747611865,
+      "sklearn_auc_b": 0.9425770308123249,
+      "auc_matches_sklearn": true,
+      "z": 0.7157864654158332,
+      "p_value": 0.4741232109103479,
+      "std_err": 0.012091237215324582
+    },
+    "bootstrap_ap": {
+      "metric": "average_precision",
+      "delta": 0.009465947282803366,
+      "ci95_lower": -0.005382589936239987,
+      "ci95_upper": 0.026912385773806776,
+      "p_value": 0.21,
+      "n_boot": 2000,
+      "share_same_sign": 0.895,
+      "significant_5pct": false
+    }
+  },
+  "conclusions": [
+    "**Đối chứng (không can thiệp):** cross-company AP = 0.9588, AUROC = 0.9426 (IR cấp mẫu của corpus ≈ 1.68 — mất cân bằng NHẸ).",
+    "**Kết quả trên dữ liệu thật:** 1 kỹ thuật hơn đối chứng > 0,5 điểm % AP, 2 kỹ thuật kém hơn > 0,5 điểm %. Tốt nhất: **smote_enn** (AP 0.9683).",
+    "**Cách đọc:** AP ở đây là OOF cross-company — mỗi công ty bị giữ trọn ra ngoài, nên kết quả không thể đến từ việc \"nhớ mặt công ty\". Vì vậy đây là phép thử công bằng cho kỹ thuật resampling/cost-sensitive, khác hẳn so sánh in-domain.",
+    "**Lưu ý về CHIỀU của mất cân bằng (khác bộ dữ liệu phá sản thông thường):** trong corpus này lớp 1 (suy giảm) chiếm **62%** ⇒ lớp THIỂU SỐ là lớp 0. Vì vậy SMOTE ở đây **sinh thêm mẫu \"không suy giảm\"**, tức can thiệp theo hướng ngược với thực hành phổ biến — một lý do nữa để mất cân bằng không phải nút thắt của bài toán này.",
+    "**Kiểm định cặp cho kỹ thuật tốt nhất** (`smote_enn` vs `none`, cùng 244 mẫu OOF): ΔAP = +0.0095 (CI 95% [-0.0054; +0.0269], p = 0.21), ΔAUROC (DeLong) = +0.0087 (p = 0.4741232109103479) ⇒ **chưa** đủ căn cứ khẳng định hơn đối chứng (khoảng tin cậy chứa 0).",
+    "**Chống rò rỉ:** mọi kỹ thuật đều có sampler nằm trong pipeline ⇒ tập test của từng fold KHÔNG bị resample (đã kiểm tra bằng so khớp ma trận trước/sau fit)."
+  ],
+  "figures": [
+    "figures\\imbalance_real\\01_techniques_real.png"
+  ]
+}

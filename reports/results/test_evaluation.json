@@ -1,0 +1,197 @@
+{
+  "model": "random_forest",
+  "threshold": 0.7879126873178737,
+  "threshold_cost_optimal_from_val": 0.7879126873178737,
+  "curve_stats": {
+    "auroc_from_curve": 0.9827935222672065,
+    "ap_from_curve": 0.9906810868314859
+  },
+  "test_metrics": {
+    "n": 64,
+    "observed_distress": 0.59375,
+    "auroc": 0.9827935222672065,
+    "average_precision": 0.990780227276072,
+    "brier": 0.058029377866729515,
+    "by_threshold": [
+      {
+        "threshold": 0.3,
+        "accuracy": 0.921875,
+        "precision": 0.9024390243902439,
+        "recall": 0.9736842105263158,
+        "f1": 0.9367088607594937,
+        "macro_f1": 0.9173340222164815,
+        "weighted_f1": 0.9209668044432963,
+        "specificity": 0.8461538461538461,
+        "npv": 0.9565217391304348,
+        "mcc": 0.839171450377872,
+        "n_predicted": 41,
+        "tn": 22,
+        "fp": 4,
+        "fn": 1,
+        "tp": 37,
+        "expected_cost": 9.0
+      },
+      {
+        "threshold": 0.35,
+        "accuracy": 0.9375,
+        "precision": 0.925,
+        "recall": 0.9736842105263158,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "weighted_f1": 0.9370512820512821,
+        "specificity": 0.8846153846153846,
+        "npv": 0.9583333333333334,
+        "mcc": 0.8707265026259214,
+        "n_predicted": 40,
+        "tn": 23,
+        "fp": 3,
+        "fn": 1,
+        "tp": 37,
+        "expected_cost": 8.0
+      },
+      {
+        "threshold": 0.4,
+        "accuracy": 0.9375,
+        "precision": 0.925,
+        "recall": 0.9736842105263158,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "weighted_f1": 0.9370512820512821,
+        "specificity": 0.8846153846153846,
+        "npv": 0.9583333333333334,
+        "mcc": 0.8707265026259214,
+        "n_predicted": 40,
+        "tn": 23,
+        "fp": 3,
+        "fn": 1,
+        "tp": 37,
+        "expected_cost": 8.0
+      },
+      {
+        "threshold": 0.5,
+        "accuracy": 0.9375,
+        "precision": 0.925,
+        "recall": 0.9736842105263158,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "weighted_f1": 0.9370512820512821,
+        "specificity": 0.8846153846153846,
+        "npv": 0.9583333333333334,
+        "mcc": 0.8707265026259214,
+        "n_predicted": 40,
+        "tn": 23,
+        "fp": 3,
+        "fn": 1,
+        "tp": 37,
+        "expected_cost": 8.0
+      },
+      {
+        "threshold": 0.6,
+        "accuracy": 0.9375,
+        "precision": 0.925,
+        "recall": 0.9736842105263158,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "weighted_f1": 0.9370512820512821,
+        "specificity": 0.8846153846153846,
+        "npv": 0.9583333333333334,
+        "mcc": 0.8707265026259214,
+        "n_predicted": 40,
+        "tn": 23,
+        "fp": 3,
+        "fn": 1,
+        "tp": 37,
+        "expected_cost": 8.0
+      },
+      {
+        "threshold": 0.656,
+        "accuracy": 0.9375,
+        "precision": 0.925,
+        "recall": 0.9736842105263158,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "weighted_f1": 0.9370512820512821,
+        "specificity": 0.8846153846153846,
+        "npv": 0.9583333333333334,
+        "mcc": 0.8707265026259214,
+        "n_predicted": 40,
+        "tn": 23,
+        "fp": 3,
+        "fn": 1,
+        "tp": 37,
+        "expected_cost": 8.0
+      }
+    ],
+    "best_f1": {
+      "threshold": 0.7834807777221335,
+      "precision": 0.9736842105263158,
+      "recall": 0.9736842105263158,
+      "f1": 0.9736842105263158
+    },
+    "cost_optimal": {
+      "threshold": 0.7834807777221335,
+      "expected_cost": 6.0,
+      "cost_fn": 5.0,
+      "cost_fp": 1.0,
+      "f1": 0.9736842105263158,
+      "precision": 0.9736842105263158,
+      "recall": 0.9736842105263158
+    },
+    "confusion_at_0.5": {
+      "tn": 23,
+      "fp": 3,
+      "fn": 1,
+      "tp": 37
+    },
+    "operating": {
+      "threshold": 0.7879126873178737,
+      "accuracy": 0.953125,
+      "precision": 0.972972972972973,
+      "recall": 0.9473684210526315,
+      "f1": 0.96,
+      "macro_f1": 0.9516981132075472,
+      "weighted_f1": 0.9532547169811321,
+      "specificity": 0.9615384615384616,
+      "npv": 0.9259259259259259,
+      "mcc": 0.9038890396297349,
+      "n_predicted": 37,
+      "tn": 25,
+      "fp": 1,
+      "fn": 2,
+      "tp": 36,
+      "expected_cost": 11.0
+    },
+    "confusion_at_operating": {
+      "tn": 25,
+      "fp": 1,
+      "fn": 2,
+      "tp": 36
+    },
+    "threshold": 0.7879126873178737
+  },
+  "n_misclassified": 3,
+  "misclassified": [
+    {
+      "sample_id": "HD-2024Q2",
+      "ticker": "HD",
+      "actual": 1,
+      "probability": 0.7834807777221335,
+      "predicted": 0
+    },
+    {
+      "sample_id": "DG-2025Q2",
+      "ticker": "DG",
+      "actual": 0,
+      "probability": 0.7975207048609142,
+      "predicted": 1
+    },
+    {
+      "sample_id": "FIVE-2024Q3",
+      "ticker": "FIVE",
+      "actual": 1,
+      "probability": 0.17446336088059378,
+      "predicted": 0
+    }
+  ],
+  "notes": "Metric trong 'operating' là tại ngưỡng vận hành; 'confusion_at_0.5' giữ truyền thống để so sánh với các ngưỡng khác."
+}

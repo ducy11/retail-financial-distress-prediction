@@ -1,0 +1,1929 @@
+{
+  "n_companies": 8,
+  "n_rebuilt": 8,
+  "n_cells": 5312,
+  "n_match": 5308,
+  "match_rate": 0.9992469879518072,
+  "out_dir": "E:\\CS114\\Do-an\\do-an\\data\\retail-expanded-rebuilt",
+  "wrote_tables": true,
+  "fx_vnd_per_usd": 25000,
+  "per_company": {
+    "DG": {
+      "status": "ok",
+      "entity_name": "DOLLAR GENERAL CORP",
+      "verify": {
+        "n_rows": 32,
+        "n_cells": 512,
+        "n_match": 512,
+        "n_mismatch": 0,
+        "n_absent_both": 92,
+        "by_method": {
+          "reported_first_quarter": {
+            "n": 48,
+            "match": 48
+          },
+          "instant": {
+            "n": 228,
+            "match": 228
+          },
+          "absent": {
+            "n": 92,
+            "match": 92
+          },
+          "reported_quarter": {
+            "n": 89,
+            "match": 89
+          },
+          "current_ytd_minus_previous_ytd": {
+            "n": 55,
+            "match": 55
+          }
+        },
+        "by_indicator": {
+          "revenue": {
+            "n": 32,
+            "match": 32
+          },
+          "cost_of_sales": {
+            "n": 32,
+            "match": 32
+          },
+          "inventory": {
+            "n": 32,
+            "match": 32
+          },
+          "selling_general_admin": {
+            "n": 32,
+            "match": 32
+          },
+          "operating_cash_flow": {
+            "n": 32,
+            "match": 32
+          },
+          "total_assets": {
+            "n": 32,
+            "match": 32
+          },
+          "cash_and_equivalents": {
+            "n": 32,
+            "match": 32
+          },
+          "operating_income": {
+            "n": 32,
+            "match": 32
+          },
+          "current_assets": {
+            "n": 32,
+            "match": 32
+          },
+          "current_liabilities": {
+            "n": 32,
+            "match": 32
+          },
+          "net_income": {
+            "n": 32,
+            "match": 32
+          },
+          "stockholders_equity": {
+            "n": 32,
+            "match": 32
+          },
+          "liabilities": {
+            "n": 32,
+            "match": 32
+          },
+          "receivables": {
+            "n": 32,
+            "match": 32
+          },
+          "short_term_investments": {
+            "n": 32,
+            "match": 32
+          },
+          "retained_earnings": {
+            "n": 32,
+            "match": 32
+          }
+        },
+        "by_tag": {
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "n": 32,
+            "match": 32
+          },
+          "CostOfGoodsAndServicesSold": {
+            "n": 32,
+            "match": 32
+          },
+          "InventoryNet": {
+            "n": 32,
+            "match": 32
+          },
+          "SellingGeneralAndAdministrativeExpense": {
+            "n": 32,
+            "match": 32
+          },
+          "NetCashProvidedByUsedInOperatingActivities": {
+            "n": 32,
+            "match": 32
+          },
+          "Assets": {
+            "n": 32,
+            "match": 32
+          },
+          "CashAndCashEquivalentsAtCarryingValue": {
+            "n": 32,
+            "match": 32
+          },
+          "OperatingIncomeLoss": {
+            "n": 32,
+            "match": 32
+          },
+          "AssetsCurrent": {
+            "n": 32,
+            "match": 32
+          },
+          "LiabilitiesCurrent": {
+            "n": 32,
+            "match": 32
+          },
+          "NetIncomeLoss": {
+            "n": 32,
+            "match": 32
+          },
+          "StockholdersEquity": {
+            "n": 32,
+            "match": 32
+          },
+          "None": {
+            "n": 92,
+            "match": 92
+          },
+          "RetainedEarningsAccumulatedDeficit": {
+            "n": 32,
+            "match": 32
+          },
+          "Liabilities": {
+            "n": 4,
+            "match": 4
+          }
+        },
+        "examples": [],
+        "match_rate": 1.0
+      },
+      "generated_rows": 56,
+      "generated_periods": [
+        "2011Q1",
+        "2011Q2",
+        "2011Q3",
+        "2012Q1",
+        "2012Q2",
+        "2012Q3",
+        "2013Q1",
+        "2013Q2",
+        "2013Q3",
+        "2014Q1",
+        "2014Q2",
+        "2014Q3",
+        "2015Q1",
+        "2015Q2",
+        "2015Q3",
+        "2016Q1",
+        "2016Q2",
+        "2016Q3",
+        "2017Q1",
+        "2017Q2",
+        "2017Q3",
+        "2017Q4",
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2018Q4",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2019Q4",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2020Q4",
+        "2021Q1",
+        "2021Q2",
+        "2021Q3",
+        "2021Q4",
+        "2022Q1",
+        "2022Q2",
+        "2022Q3",
+        "2022Q4",
+        "2023Q1",
+        "2023Q2",
+        "2023Q3",
+        "2023Q4",
+        "2024Q1",
+        "2024Q2",
+        "2024Q3",
+        "2024Q4",
+        "2025Q1",
+        "2025Q2",
+        "2025Q3",
+        "2025Q4",
+        "2026Q1",
+        "2026Q2"
+      ]
+    },
+    "DKS": {
+      "status": "ok",
+      "entity_name": "DICK’S SPORTING GOODS, INC.",
+      "verify": {
+        "n_rows": 44,
+        "n_cells": 704,
+        "n_match": 700,
+        "n_mismatch": 4,
+        "n_absent_both": 167,
+        "by_method": {
+          "reported_first_quarter": {
+            "n": 51,
+            "match": 51
+          },
+          "instant": {
+            "n": 331,
+            "match": 331
+          },
+          "absent": {
+            "n": 167,
+            "match": 167
+          },
+          "reported_quarter": {
+            "n": 100,
+            "match": 96
+          },
+          "current_ytd_minus_previous_ytd": {
+            "n": 55,
+            "match": 55
+          }
+        },
+        "by_indicator": {
+          "revenue": {
+            "n": 44,
+            "match": 44
+          },
+          "cost_of_sales": {
+            "n": 44,
+            "match": 44
+          },
+          "inventory": {
+            "n": 44,
+            "match": 44
+          },
+          "selling_general_admin": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_cash_flow": {
+            "n": 44,
+            "match": 44
+          },
+          "total_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "cash_and_equivalents": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_income": {
+            "n": 44,
+            "match": 40
+          },
+          "current_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "current_liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "net_income": {
+            "n": 44,
+            "match": 44
+          },
+          "stockholders_equity": {
+            "n": 44,
+            "match": 44
+          },
+          "liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "receivables": {
+            "n": 44,
+            "match": 44
+          },
+          "short_term_investments": {
+            "n": 44,
+            "match": 44
+          },
+          "retained_earnings": {
+            "n": 44,
+            "match": 44
+          }
+        },
+        "by_tag": {
+          "SalesRevenueNet": {
+            "n": 13,
+            "match": 13
+          },
+          "CostOfGoodsAndServicesSold": {
+            "n": 44,
+            "match": 44
+          },
+          "InventoryNet": {
+            "n": 44,
+            "match": 44
+          },
+          "SellingGeneralAndAdministrativeExpense": {
+            "n": 44,
+            "match": 44
+          },
+          "None": {
+            "n": 167,
+            "match": 167
+          },
+          "Assets": {
+            "n": 44,
+            "match": 44
+          },
+          "CashAndCashEquivalentsAtCarryingValue": {
+            "n": 44,
+            "match": 44
+          },
+          "OperatingIncomeLoss": {
+            "n": 44,
+            "match": 40
+          },
+          "AssetsCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "LiabilitiesCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "StockholdersEquity": {
+            "n": 44,
+            "match": 44
+          },
+          "ReceivablesNetCurrent": {
+            "n": 23,
+            "match": 23
+          },
+          "RetainedEarningsAccumulatedDeficit": {
+            "n": 44,
+            "match": 44
+          },
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "n": 31,
+            "match": 31
+          },
+          "NetCashProvidedByUsedInOperatingActivities": {
+            "n": 26,
+            "match": 26
+          },
+          "NetIncomeLoss": {
+            "n": 4,
+            "match": 4
+          }
+        },
+        "examples": [
+          {
+            "row": "DKS-2015Q4",
+            "indicator": "operating_income",
+            "shipped": "5194825000000",
+            "rebuilt": "5194850000000",
+            "method": "reported_quarter",
+            "tag": "OperatingIncomeLoss"
+          },
+          {
+            "row": "DKS-2016Q4",
+            "indicator": "operating_income",
+            "shipped": "3455375000000",
+            "rebuilt": "3455350000000",
+            "method": "reported_quarter",
+            "tag": "OperatingIncomeLoss"
+          },
+          {
+            "row": "DKS-2017Q4",
+            "indicator": "operating_income",
+            "shipped": "4457850000000",
+            "rebuilt": "4457875000000",
+            "method": "reported_quarter",
+            "tag": "OperatingIncomeLoss"
+          },
+          {
+            "row": "DKS-2019Q4",
+            "indicator": "operating_income",
+            "shipped": "2472800000000",
+            "rebuilt": "2472775000000",
+            "method": "reported_quarter",
+            "tag": "OperatingIncomeLoss"
+          }
+        ],
+        "match_rate": 0.9943181818181818
+      },
+      "generated_rows": 51,
+      "generated_periods": [
+        "2010Q2",
+        "2010Q3",
+        "2010Q4",
+        "2011Q1",
+        "2011Q2",
+        "2011Q3",
+        "2012Q1",
+        "2012Q2",
+        "2012Q3",
+        "2013Q1",
+        "2013Q2",
+        "2013Q3",
+        "2014Q1",
+        "2014Q2",
+        "2014Q3",
+        "2015Q1",
+        "2015Q2",
+        "2015Q3",
+        "2016Q1",
+        "2016Q2",
+        "2016Q3",
+        "2017Q1",
+        "2017Q2",
+        "2017Q3",
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2021Q1",
+        "2021Q2",
+        "2021Q3",
+        "2022Q1",
+        "2022Q2",
+        "2022Q3",
+        "2023Q1",
+        "2023Q2",
+        "2023Q3",
+        "2024Q1",
+        "2024Q2",
+        "2024Q3",
+        "2025Q1",
+        "2025Q2",
+        "2025Q3",
+        "2025Q4",
+        "2026Q1",
+        "2026Q2"
+      ]
+    },
+    "FIVE": {
+      "status": "ok",
+      "entity_name": "Five Below, Inc.",
+      "verify": {
+        "n_rows": 32,
+        "n_cells": 512,
+        "n_match": 512,
+        "n_mismatch": 0,
+        "n_absent_both": 44,
+        "by_method": {
+          "reported_first_quarter": {
+            "n": 46,
+            "match": 46
+          },
+          "instant": {
+            "n": 282,
+            "match": 282
+          },
+          "absent": {
+            "n": 44,
+            "match": 44
+          },
+          "reported_quarter": {
+            "n": 96,
+            "match": 96
+          },
+          "current_ytd_minus_previous_ytd": {
+            "n": 44,
+            "match": 44
+          }
+        },
+        "by_indicator": {
+          "revenue": {
+            "n": 32,
+            "match": 32
+          },
+          "cost_of_sales": {
+            "n": 32,
+            "match": 32
+          },
+          "inventory": {
+            "n": 32,
+            "match": 32
+          },
+          "selling_general_admin": {
+            "n": 32,
+            "match": 32
+          },
+          "operating_cash_flow": {
+            "n": 32,
+            "match": 32
+          },
+          "total_assets": {
+            "n": 32,
+            "match": 32
+          },
+          "cash_and_equivalents": {
+            "n": 32,
+            "match": 32
+          },
+          "operating_income": {
+            "n": 32,
+            "match": 32
+          },
+          "current_assets": {
+            "n": 32,
+            "match": 32
+          },
+          "current_liabilities": {
+            "n": 32,
+            "match": 32
+          },
+          "net_income": {
+            "n": 32,
+            "match": 32
+          },
+          "stockholders_equity": {
+            "n": 32,
+            "match": 32
+          },
+          "liabilities": {
+            "n": 32,
+            "match": 32
+          },
+          "receivables": {
+            "n": 32,
+            "match": 32
+          },
+          "short_term_investments": {
+            "n": 32,
+            "match": 32
+          },
+          "retained_earnings": {
+            "n": 32,
+            "match": 32
+          }
+        },
+        "by_tag": {
+          "SalesRevenueNet": {
+            "n": 4,
+            "match": 4
+          },
+          "CostOfGoodsSold": {
+            "n": 4,
+            "match": 4
+          },
+          "InventoryNet": {
+            "n": 32,
+            "match": 32
+          },
+          "SellingGeneralAndAdministrativeExpense": {
+            "n": 32,
+            "match": 32
+          },
+          "None": {
+            "n": 44,
+            "match": 44
+          },
+          "Assets": {
+            "n": 32,
+            "match": 32
+          },
+          "CashAndCashEquivalentsAtCarryingValue": {
+            "n": 26,
+            "match": 26
+          },
+          "OperatingIncomeLoss": {
+            "n": 32,
+            "match": 32
+          },
+          "AssetsCurrent": {
+            "n": 32,
+            "match": 32
+          },
+          "LiabilitiesCurrent": {
+            "n": 32,
+            "match": 32
+          },
+          "NetIncomeLoss": {
+            "n": 32,
+            "match": 32
+          },
+          "StockholdersEquity": {
+            "n": 32,
+            "match": 32
+          },
+          "Liabilities": {
+            "n": 32,
+            "match": 32
+          },
+          "ShortTermInvestments": {
+            "n": 32,
+            "match": 32
+          },
+          "RetainedEarningsAccumulatedDeficit": {
+            "n": 32,
+            "match": 32
+          },
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "n": 28,
+            "match": 28
+          },
+          "CostOfGoodsAndServicesSold": {
+            "n": 28,
+            "match": 28
+          },
+          "NetCashProvidedByUsedInOperatingActivities": {
+            "n": 26,
+            "match": 26
+          }
+        },
+        "examples": [],
+        "match_rate": 1.0
+      },
+      "generated_rows": 56,
+      "generated_periods": [
+        "2012Q2",
+        "2012Q3",
+        "2012Q4",
+        "2013Q1",
+        "2013Q2",
+        "2013Q3",
+        "2013Q4",
+        "2014Q1",
+        "2014Q2",
+        "2014Q3",
+        "2014Q4",
+        "2015Q1",
+        "2015Q2",
+        "2015Q3",
+        "2015Q4",
+        "2016Q1",
+        "2016Q2",
+        "2016Q3",
+        "2016Q4",
+        "2017Q1",
+        "2017Q2",
+        "2017Q3",
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2018Q4",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2019Q4",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2020Q4",
+        "2021Q1",
+        "2021Q2",
+        "2021Q3",
+        "2021Q4",
+        "2022Q1",
+        "2022Q2",
+        "2022Q3",
+        "2022Q4",
+        "2023Q1",
+        "2023Q2",
+        "2023Q3",
+        "2023Q4",
+        "2024Q1",
+        "2024Q2",
+        "2024Q3",
+        "2024Q4",
+        "2025Q1",
+        "2025Q2",
+        "2025Q3",
+        "2025Q4",
+        "2026Q1",
+        "2026Q2"
+      ]
+    },
+    "HD": {
+      "status": "ok",
+      "entity_name": "The Home Depot, Inc.",
+      "verify": {
+        "n_rows": 44,
+        "n_cells": 704,
+        "n_match": 704,
+        "n_mismatch": 0,
+        "n_absent_both": 44,
+        "by_method": {
+          "reported_first_quarter": {
+            "n": 66,
+            "match": 66
+          },
+          "instant": {
+            "n": 396,
+            "match": 396
+          },
+          "absent": {
+            "n": 44,
+            "match": 44
+          },
+          "reported_quarter": {
+            "n": 120,
+            "match": 120
+          },
+          "current_ytd_minus_previous_ytd": {
+            "n": 78,
+            "match": 78
+          }
+        },
+        "by_indicator": {
+          "revenue": {
+            "n": 44,
+            "match": 44
+          },
+          "cost_of_sales": {
+            "n": 44,
+            "match": 44
+          },
+          "inventory": {
+            "n": 44,
+            "match": 44
+          },
+          "selling_general_admin": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_cash_flow": {
+            "n": 44,
+            "match": 44
+          },
+          "total_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "cash_and_equivalents": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_income": {
+            "n": 44,
+            "match": 44
+          },
+          "current_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "current_liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "net_income": {
+            "n": 44,
+            "match": 44
+          },
+          "stockholders_equity": {
+            "n": 44,
+            "match": 44
+          },
+          "liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "receivables": {
+            "n": 44,
+            "match": 44
+          },
+          "short_term_investments": {
+            "n": 44,
+            "match": 44
+          },
+          "retained_earnings": {
+            "n": 44,
+            "match": 44
+          }
+        },
+        "by_tag": {
+          "SalesRevenueNet": {
+            "n": 14,
+            "match": 14
+          },
+          "CostOfRevenue": {
+            "n": 44,
+            "match": 44
+          },
+          "InventoryNet": {
+            "n": 44,
+            "match": 44
+          },
+          "SellingGeneralAndAdministrativeExpense": {
+            "n": 44,
+            "match": 44
+          },
+          "NetCashProvidedByUsedInOperatingActivities": {
+            "n": 44,
+            "match": 44
+          },
+          "Assets": {
+            "n": 44,
+            "match": 44
+          },
+          "CashAndCashEquivalentsAtCarryingValue": {
+            "n": 44,
+            "match": 44
+          },
+          "OperatingIncomeLoss": {
+            "n": 44,
+            "match": 44
+          },
+          "AssetsCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "LiabilitiesCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "NetIncomeLoss": {
+            "n": 44,
+            "match": 44
+          },
+          "StockholdersEquity": {
+            "n": 44,
+            "match": 44
+          },
+          "Liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "AccountsReceivableNetCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "None": {
+            "n": 44,
+            "match": 44
+          },
+          "RetainedEarningsAccumulatedDeficit": {
+            "n": 44,
+            "match": 44
+          },
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "n": 30,
+            "match": 30
+          }
+        },
+        "examples": [],
+        "match_rate": 1.0
+      },
+      "generated_rows": 69,
+      "generated_periods": [
+        "2009Q2",
+        "2009Q3",
+        "2009Q4",
+        "2010Q1",
+        "2010Q2",
+        "2010Q3",
+        "2010Q4",
+        "2011Q1",
+        "2011Q2",
+        "2011Q3",
+        "2011Q4",
+        "2012Q1",
+        "2012Q2",
+        "2012Q3",
+        "2012Q4",
+        "2013Q1",
+        "2013Q2",
+        "2013Q3",
+        "2013Q4",
+        "2014Q1",
+        "2014Q2",
+        "2014Q3",
+        "2014Q4",
+        "2015Q1",
+        "2015Q2",
+        "2015Q3",
+        "2015Q4",
+        "2016Q1",
+        "2016Q2",
+        "2016Q3",
+        "2016Q4",
+        "2017Q1",
+        "2017Q2",
+        "2017Q3",
+        "2017Q4",
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2018Q4",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2019Q4",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2020Q4",
+        "2021Q1",
+        "2021Q2",
+        "2021Q3",
+        "2021Q4",
+        "2022Q1",
+        "2022Q2",
+        "2022Q3",
+        "2022Q4",
+        "2023Q1",
+        "2023Q2",
+        "2023Q3",
+        "2023Q4",
+        "2024Q1",
+        "2024Q2",
+        "2024Q3",
+        "2024Q4",
+        "2025Q1",
+        "2025Q2",
+        "2025Q3",
+        "2025Q4",
+        "2026Q1",
+        "2026Q2"
+      ]
+    },
+    "LOW": {
+      "status": "ok",
+      "entity_name": "LOWES COMPANIES INC",
+      "verify": {
+        "n_rows": 44,
+        "n_cells": 704,
+        "n_match": 704,
+        "n_mismatch": 0,
+        "n_absent_both": 60,
+        "by_method": {
+          "reported_first_quarter": {
+            "n": 61,
+            "match": 61
+          },
+          "instant": {
+            "n": 398,
+            "match": 398
+          },
+          "absent": {
+            "n": 60,
+            "match": 60
+          },
+          "reported_quarter": {
+            "n": 106,
+            "match": 106
+          },
+          "current_ytd_minus_previous_ytd": {
+            "n": 79,
+            "match": 79
+          }
+        },
+        "by_indicator": {
+          "revenue": {
+            "n": 44,
+            "match": 44
+          },
+          "cost_of_sales": {
+            "n": 44,
+            "match": 44
+          },
+          "inventory": {
+            "n": 44,
+            "match": 44
+          },
+          "selling_general_admin": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_cash_flow": {
+            "n": 44,
+            "match": 44
+          },
+          "total_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "cash_and_equivalents": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_income": {
+            "n": 44,
+            "match": 44
+          },
+          "current_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "current_liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "net_income": {
+            "n": 44,
+            "match": 44
+          },
+          "stockholders_equity": {
+            "n": 44,
+            "match": 44
+          },
+          "liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "receivables": {
+            "n": 44,
+            "match": 44
+          },
+          "short_term_investments": {
+            "n": 44,
+            "match": 44
+          },
+          "retained_earnings": {
+            "n": 44,
+            "match": 44
+          }
+        },
+        "by_tag": {
+          "SalesRevenueNet": {
+            "n": 13,
+            "match": 13
+          },
+          "CostOfGoodsAndServicesSold": {
+            "n": 44,
+            "match": 44
+          },
+          "InventoryNet": {
+            "n": 44,
+            "match": 44
+          },
+          "SellingGeneralAndAdministrativeExpense": {
+            "n": 44,
+            "match": 44
+          },
+          "None": {
+            "n": 60,
+            "match": 60
+          },
+          "Assets": {
+            "n": 44,
+            "match": 44
+          },
+          "CashAndCashEquivalentsAtCarryingValue": {
+            "n": 44,
+            "match": 44
+          },
+          "AssetsCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "LiabilitiesCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "NetIncomeLoss": {
+            "n": 44,
+            "match": 44
+          },
+          "StockholdersEquity": {
+            "n": 44,
+            "match": 44
+          },
+          "Liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "ShortTermInvestments": {
+            "n": 44,
+            "match": 44
+          },
+          "RetainedEarningsAccumulatedDeficit": {
+            "n": 44,
+            "match": 44
+          },
+          "OperatingIncomeLoss": {
+            "n": 36,
+            "match": 36
+          },
+          "NetCashProvidedByUsedInOperatingActivities": {
+            "n": 34,
+            "match": 34
+          },
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "n": 31,
+            "match": 31
+          },
+          "ReceivablesNetCurrent": {
+            "n": 2,
+            "match": 2
+          }
+        },
+        "examples": [],
+        "match_rate": 1.0
+      },
+      "generated_rows": 64,
+      "generated_periods": [
+        "2009Q2",
+        "2009Q3",
+        "2010Q1",
+        "2010Q2",
+        "2010Q3",
+        "2011Q1",
+        "2011Q2",
+        "2011Q3",
+        "2012Q1",
+        "2012Q2",
+        "2012Q3",
+        "2013Q1",
+        "2013Q2",
+        "2013Q3",
+        "2014Q1",
+        "2014Q2",
+        "2014Q3",
+        "2014Q4",
+        "2015Q1",
+        "2015Q2",
+        "2015Q3",
+        "2015Q4",
+        "2016Q1",
+        "2016Q2",
+        "2016Q3",
+        "2016Q4",
+        "2017Q1",
+        "2017Q2",
+        "2017Q3",
+        "2017Q4",
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2018Q4",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2019Q4",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2020Q4",
+        "2021Q1",
+        "2021Q2",
+        "2021Q3",
+        "2021Q4",
+        "2022Q1",
+        "2022Q2",
+        "2022Q3",
+        "2022Q4",
+        "2023Q1",
+        "2023Q2",
+        "2023Q3",
+        "2023Q4",
+        "2024Q1",
+        "2024Q2",
+        "2024Q3",
+        "2024Q4",
+        "2025Q1",
+        "2025Q2",
+        "2025Q3",
+        "2025Q4",
+        "2026Q1",
+        "2026Q2"
+      ]
+    },
+    "ORLY": {
+      "status": "ok",
+      "entity_name": "O REILLY AUTOMOTIVE INC",
+      "verify": {
+        "n_rows": 44,
+        "n_cells": 704,
+        "n_match": 704,
+        "n_mismatch": 0,
+        "n_absent_both": 88,
+        "by_method": {
+          "reported_first_quarter": {
+            "n": 66,
+            "match": 66
+          },
+          "instant": {
+            "n": 352,
+            "match": 352
+          },
+          "absent": {
+            "n": 88,
+            "match": 88
+          },
+          "reported_quarter": {
+            "n": 137,
+            "match": 137
+          },
+          "current_ytd_minus_previous_ytd": {
+            "n": 61,
+            "match": 61
+          }
+        },
+        "by_indicator": {
+          "revenue": {
+            "n": 44,
+            "match": 44
+          },
+          "cost_of_sales": {
+            "n": 44,
+            "match": 44
+          },
+          "inventory": {
+            "n": 44,
+            "match": 44
+          },
+          "selling_general_admin": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_cash_flow": {
+            "n": 44,
+            "match": 44
+          },
+          "total_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "cash_and_equivalents": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_income": {
+            "n": 44,
+            "match": 44
+          },
+          "current_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "current_liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "net_income": {
+            "n": 44,
+            "match": 44
+          },
+          "stockholders_equity": {
+            "n": 44,
+            "match": 44
+          },
+          "liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "receivables": {
+            "n": 44,
+            "match": 44
+          },
+          "short_term_investments": {
+            "n": 44,
+            "match": 44
+          },
+          "retained_earnings": {
+            "n": 44,
+            "match": 44
+          }
+        },
+        "by_tag": {
+          "SalesRevenueNet": {
+            "n": 12,
+            "match": 12
+          },
+          "CostOfGoodsSold": {
+            "n": 13,
+            "match": 13
+          },
+          "InventoryNet": {
+            "n": 44,
+            "match": 44
+          },
+          "SellingGeneralAndAdministrativeExpense": {
+            "n": 44,
+            "match": 44
+          },
+          "NetCashProvidedByUsedInOperatingActivities": {
+            "n": 44,
+            "match": 44
+          },
+          "Assets": {
+            "n": 44,
+            "match": 44
+          },
+          "CashAndCashEquivalentsAtCarryingValue": {
+            "n": 44,
+            "match": 44
+          },
+          "OperatingIncomeLoss": {
+            "n": 44,
+            "match": 44
+          },
+          "AssetsCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "LiabilitiesCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "NetIncomeLoss": {
+            "n": 44,
+            "match": 44
+          },
+          "StockholdersEquity": {
+            "n": 44,
+            "match": 44
+          },
+          "None": {
+            "n": 88,
+            "match": 88
+          },
+          "AccountsReceivableNetCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "RetainedEarningsAccumulatedDeficit": {
+            "n": 44,
+            "match": 44
+          },
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "n": 32,
+            "match": 32
+          },
+          "CostOfGoodsAndServicesSold": {
+            "n": 31,
+            "match": 31
+          }
+        },
+        "examples": [],
+        "match_rate": 1.0
+      },
+      "generated_rows": 65,
+      "generated_periods": [
+        "2010Q1",
+        "2010Q2",
+        "2010Q3",
+        "2010Q4",
+        "2011Q1",
+        "2011Q2",
+        "2011Q3",
+        "2011Q4",
+        "2012Q1",
+        "2012Q2",
+        "2012Q3",
+        "2012Q4",
+        "2013Q1",
+        "2013Q2",
+        "2013Q3",
+        "2013Q4",
+        "2014Q1",
+        "2014Q2",
+        "2014Q3",
+        "2014Q4",
+        "2015Q1",
+        "2015Q2",
+        "2015Q3",
+        "2015Q4",
+        "2016Q1",
+        "2016Q2",
+        "2016Q3",
+        "2016Q4",
+        "2017Q1",
+        "2017Q2",
+        "2017Q3",
+        "2017Q4",
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2018Q4",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2019Q4",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2020Q4",
+        "2021Q1",
+        "2021Q2",
+        "2021Q3",
+        "2021Q4",
+        "2022Q1",
+        "2022Q2",
+        "2022Q3",
+        "2022Q4",
+        "2023Q1",
+        "2023Q3",
+        "2023Q4",
+        "2024Q1",
+        "2024Q2",
+        "2024Q3",
+        "2024Q4",
+        "2025Q1",
+        "2025Q2",
+        "2025Q3",
+        "2025Q4",
+        "2026Q1",
+        "2026Q2"
+      ]
+    },
+    "ROST": {
+      "status": "ok",
+      "entity_name": "Ross Stores, Inc.",
+      "verify": {
+        "n_rows": 44,
+        "n_cells": 704,
+        "n_match": 704,
+        "n_mismatch": 0,
+        "n_absent_both": 112,
+        "by_method": {
+          "reported_first_quarter": {
+            "n": 56,
+            "match": 56
+          },
+          "instant": {
+            "n": 368,
+            "match": 368
+          },
+          "absent": {
+            "n": 112,
+            "match": 112
+          },
+          "reported_quarter": {
+            "n": 114,
+            "match": 114
+          },
+          "current_ytd_minus_previous_ytd": {
+            "n": 54,
+            "match": 54
+          }
+        },
+        "by_indicator": {
+          "revenue": {
+            "n": 44,
+            "match": 44
+          },
+          "cost_of_sales": {
+            "n": 44,
+            "match": 44
+          },
+          "inventory": {
+            "n": 44,
+            "match": 44
+          },
+          "selling_general_admin": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_cash_flow": {
+            "n": 44,
+            "match": 44
+          },
+          "total_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "cash_and_equivalents": {
+            "n": 44,
+            "match": 44
+          },
+          "operating_income": {
+            "n": 44,
+            "match": 44
+          },
+          "current_assets": {
+            "n": 44,
+            "match": 44
+          },
+          "current_liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "net_income": {
+            "n": 44,
+            "match": 44
+          },
+          "stockholders_equity": {
+            "n": 44,
+            "match": 44
+          },
+          "liabilities": {
+            "n": 44,
+            "match": 44
+          },
+          "receivables": {
+            "n": 44,
+            "match": 44
+          },
+          "short_term_investments": {
+            "n": 44,
+            "match": 44
+          },
+          "retained_earnings": {
+            "n": 44,
+            "match": 44
+          }
+        },
+        "by_tag": {
+          "SalesRevenueNet": {
+            "n": 13,
+            "match": 13
+          },
+          "CostOfGoodsSold": {
+            "n": 13,
+            "match": 13
+          },
+          "InventoryNet": {
+            "n": 44,
+            "match": 44
+          },
+          "SellingGeneralAndAdministrativeExpense": {
+            "n": 44,
+            "match": 44
+          },
+          "NetCashProvidedByUsedInOperatingActivities": {
+            "n": 44,
+            "match": 44
+          },
+          "Assets": {
+            "n": 44,
+            "match": 44
+          },
+          "CashAndCashEquivalentsAtCarryingValue": {
+            "n": 44,
+            "match": 44
+          },
+          "None": {
+            "n": 112,
+            "match": 112
+          },
+          "AssetsCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "LiabilitiesCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "NetIncomeLoss": {
+            "n": 44,
+            "match": 44
+          },
+          "StockholdersEquity": {
+            "n": 44,
+            "match": 44
+          },
+          "ReceivablesNetCurrent": {
+            "n": 44,
+            "match": 44
+          },
+          "ShortTermInvestments": {
+            "n": 16,
+            "match": 16
+          },
+          "RetainedEarningsAccumulatedDeficit": {
+            "n": 44,
+            "match": 44
+          },
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "n": 31,
+            "match": 31
+          },
+          "CostOfGoodsAndServicesSold": {
+            "n": 31,
+            "match": 31
+          },
+          "OperatingIncomeLoss": {
+            "n": 4,
+            "match": 4
+          }
+        },
+        "examples": [],
+        "match_rate": 1.0
+      },
+      "generated_rows": 66,
+      "generated_periods": [
+        "2010Q1",
+        "2010Q2",
+        "2010Q3",
+        "2010Q4",
+        "2011Q1",
+        "2011Q2",
+        "2011Q3",
+        "2011Q4",
+        "2012Q1",
+        "2012Q2",
+        "2012Q3",
+        "2012Q4",
+        "2013Q1",
+        "2013Q2",
+        "2013Q3",
+        "2013Q4",
+        "2014Q1",
+        "2014Q2",
+        "2014Q3",
+        "2014Q4",
+        "2015Q1",
+        "2015Q2",
+        "2015Q3",
+        "2015Q4",
+        "2016Q1",
+        "2016Q2",
+        "2016Q3",
+        "2016Q4",
+        "2017Q1",
+        "2017Q2",
+        "2017Q3",
+        "2017Q4",
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2018Q4",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2019Q4",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2020Q4",
+        "2021Q1",
+        "2021Q2",
+        "2021Q3",
+        "2021Q4",
+        "2022Q1",
+        "2022Q2",
+        "2022Q3",
+        "2022Q4",
+        "2023Q1",
+        "2023Q2",
+        "2023Q3",
+        "2023Q4",
+        "2024Q1",
+        "2024Q2",
+        "2024Q3",
+        "2024Q4",
+        "2025Q1",
+        "2025Q2",
+        "2025Q3",
+        "2025Q4",
+        "2026Q1",
+        "2026Q2"
+      ]
+    },
+    "WMT": {
+      "status": "ok",
+      "entity_name": "WALMART INC.",
+      "verify": {
+        "n_rows": 48,
+        "n_cells": 768,
+        "n_match": 768,
+        "n_mismatch": 0,
+        "n_absent_both": 96,
+        "by_method": {
+          "reported_first_quarter": {
+            "n": 72,
+            "match": 72
+          },
+          "instant": {
+            "n": 384,
+            "match": 384
+          },
+          "absent": {
+            "n": 96,
+            "match": 96
+          },
+          "reported_quarter": {
+            "n": 138,
+            "match": 138
+          },
+          "current_ytd_minus_previous_ytd": {
+            "n": 78,
+            "match": 78
+          }
+        },
+        "by_indicator": {
+          "revenue": {
+            "n": 48,
+            "match": 48
+          },
+          "cost_of_sales": {
+            "n": 48,
+            "match": 48
+          },
+          "inventory": {
+            "n": 48,
+            "match": 48
+          },
+          "selling_general_admin": {
+            "n": 48,
+            "match": 48
+          },
+          "operating_cash_flow": {
+            "n": 48,
+            "match": 48
+          },
+          "total_assets": {
+            "n": 48,
+            "match": 48
+          },
+          "cash_and_equivalents": {
+            "n": 48,
+            "match": 48
+          },
+          "operating_income": {
+            "n": 48,
+            "match": 48
+          },
+          "current_assets": {
+            "n": 48,
+            "match": 48
+          },
+          "current_liabilities": {
+            "n": 48,
+            "match": 48
+          },
+          "net_income": {
+            "n": 48,
+            "match": 48
+          },
+          "stockholders_equity": {
+            "n": 48,
+            "match": 48
+          },
+          "liabilities": {
+            "n": 48,
+            "match": 48
+          },
+          "receivables": {
+            "n": 48,
+            "match": 48
+          },
+          "short_term_investments": {
+            "n": 48,
+            "match": 48
+          },
+          "retained_earnings": {
+            "n": 48,
+            "match": 48
+          }
+        },
+        "by_tag": {
+          "SalesRevenueNet": {
+            "n": 18,
+            "match": 18
+          },
+          "CostOfRevenue": {
+            "n": 48,
+            "match": 48
+          },
+          "InventoryNet": {
+            "n": 48,
+            "match": 48
+          },
+          "SellingGeneralAndAdministrativeExpense": {
+            "n": 48,
+            "match": 48
+          },
+          "NetCashProvidedByUsedInOperatingActivities": {
+            "n": 48,
+            "match": 48
+          },
+          "Assets": {
+            "n": 48,
+            "match": 48
+          },
+          "CashAndCashEquivalentsAtCarryingValue": {
+            "n": 48,
+            "match": 48
+          },
+          "OperatingIncomeLoss": {
+            "n": 48,
+            "match": 48
+          },
+          "AssetsCurrent": {
+            "n": 48,
+            "match": 48
+          },
+          "LiabilitiesCurrent": {
+            "n": 48,
+            "match": 48
+          },
+          "NetIncomeLoss": {
+            "n": 48,
+            "match": 48
+          },
+          "StockholdersEquity": {
+            "n": 48,
+            "match": 48
+          },
+          "None": {
+            "n": 96,
+            "match": 96
+          },
+          "ReceivablesNetCurrent": {
+            "n": 48,
+            "match": 48
+          },
+          "RetainedEarningsAccumulatedDeficit": {
+            "n": 48,
+            "match": 48
+          },
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "n": 30,
+            "match": 30
+          }
+        },
+        "examples": [],
+        "match_rate": 1.0
+      },
+      "generated_rows": 69,
+      "generated_periods": [
+        "2009Q2",
+        "2009Q3",
+        "2009Q4",
+        "2010Q1",
+        "2010Q2",
+        "2010Q3",
+        "2010Q4",
+        "2011Q1",
+        "2011Q2",
+        "2011Q3",
+        "2011Q4",
+        "2012Q1",
+        "2012Q2",
+        "2012Q3",
+        "2012Q4",
+        "2013Q1",
+        "2013Q2",
+        "2013Q3",
+        "2013Q4",
+        "2015Q1",
+        "2015Q2",
+        "2015Q3",
+        "2015Q4",
+        "2016Q1",
+        "2016Q2",
+        "2016Q3",
+        "2016Q4",
+        "2017Q1",
+        "2017Q2",
+        "2017Q3",
+        "2017Q4",
+        "2018Q1",
+        "2018Q2",
+        "2018Q3",
+        "2018Q4",
+        "2019Q1",
+        "2019Q2",
+        "2019Q3",
+        "2019Q4",
+        "2020Q1",
+        "2020Q2",
+        "2020Q3",
+        "2020Q4",
+        "2021Q1",
+        "2021Q2",
+        "2021Q3",
+        "2021Q4",
+        "2022Q1",
+        "2022Q2",
+        "2022Q3",
+        "2022Q4",
+        "2023Q1",
+        "2023Q2",
+        "2023Q3",
+        "2023Q4",
+        "2024Q1",
+        "2024Q2",
+        "2024Q3",
+        "2024Q4",
+        "2025Q1",
+        "2025Q2",
+        "2025Q3",
+        "2025Q4",
+        "2026Q1",
+        "2026Q2",
+        "2026Q3",
+        "2026Q4",
+        "2027Q1",
+        "2027Q2"
+      ]
+    }
+  }
+}

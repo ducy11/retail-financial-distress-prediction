@@ -1,0 +1,184 @@
+{
+  "manifest": {
+    "rule": "stress_signals",
+    "min_signals": 1,
+    "signals": {
+      "net_income<0": "Lỗ ròng trong quý target",
+      "operating_cash_flow<0": "Dòng tiền hoạt động âm",
+      "operating_income<0": "Lỗ hoạt động",
+      "current_liabilities>current_assets": "Vốn lưu động âm (thanh khoản ngắn hạn)",
+      "stockholders_equity<0": "Vốn chủ sở hữu âm",
+      "revenue_yoy<-5%": "Doanh thu giảm hơn 5% so với cùng kỳ"
+    },
+    "label_definition": "1 nếu quý target có >= min_signals tín hiệu căng thẳng; chỉ dùng dữ liệu công bố ở label_available_on (SAU as_of) nên không rò rỉ vào feature.",
+    "policy": "giống prepared gốc: 8 quý cuối = test, 4 quý trước = validation, purge 2 quý",
+    "counts": {
+      "train": 212,
+      "validation": 32,
+      "test": 64,
+      "purged": 16
+    },
+    "label_counts": {
+      "train": 88,
+      "validation": 14,
+      "test": 27,
+      "purged": 8
+    },
+    "agreement_with_original_labels": 0.7438271604938271,
+    "n_comparable_samples": 324,
+    "source_sha256": {
+      "WMT-16-indicators-vnd.json": "45c3c821b1dbf5f4f642b25ac8569818cb9ca58443d2affe76c7f51b4ac74e6b",
+      "HD-16-indicators-vnd.json": "34cce344e934ebee30976420ac8b8ae644882371f7000aae44892a4956638aed",
+      "LOW-16-indicators-vnd.json": "36d6786b98d3b440e1b30f689b171ae8a3a80a60e32aaee02a256a2e50934b4c",
+      "ROST-16-indicators-vnd.json": "87e6a2d3f971aff44a23443c826fe6010f778e75cd431f7192b4fe7b8046eec4",
+      "DG-16-indicators-vnd.json": "8c88cdf9251167a22d2859ad2203e52f2e0fd3fbbb4ff1b8ff94c47c2b6f70fc",
+      "ORLY-16-indicators-vnd.json": "37b4c89ad3c03a89bb773d53963a437b610efc3c0043202e3a43d161d05a33e1",
+      "DKS-16-indicators-vnd.json": "d8df19c89fba84f016935cf7ad22e6aad16b03ce30d773c8ca064ce6cb545c18",
+      "FIVE-16-indicators-vnd.json": "775d78969513681bbff0188a4b0853d0034b3418b0d2e2d751f7ad7f386c3281"
+    },
+    "generated_by": "scripts.relabel"
+  },
+  "comparison": {
+    "in_domain": [
+      {
+        "system": "model[logistic]",
+        "source": "train→test",
+        "val": {
+          "auroc": 0.9325396825396826,
+          "ap": 0.9492673992673992,
+          "f1": 0.88,
+          "macro_f1": 0.9015384615384616
+        },
+        "test": {
+          "auroc": 0.9309309309309309,
+          "ap": 0.9485403323122621,
+          "f1": 0.7727272727272727,
+          "macro_f1": 0.8268398268398268
+        }
+      },
+      {
+        "system": "model[random_forest]",
+        "source": "train→test",
+        "val": {
+          "auroc": 0.9047619047619048,
+          "ap": 0.9266073007452318,
+          "f1": 0.8461538461538461,
+          "macro_f1": 0.8704453441295547
+        },
+        "test": {
+          "auroc": 0.9089089089089089,
+          "ap": 0.9407838625292646,
+          "f1": 0.92,
+          "macro_f1": 0.9343589743589744
+        }
+      },
+      {
+        "system": "model[hist_gradient_boosting]",
+        "source": "train→test",
+        "val": {
+          "auroc": 0.8571428571428571,
+          "ap": 0.8681701238870023,
+          "f1": 0.6666666666666666,
+          "macro_f1": 0.7333333333333334
+        },
+        "test": {
+          "auroc": 0.9219219219219219,
+          "ap": 0.9319331207626826,
+          "f1": 0.851063829787234,
+          "macro_f1": 0.8823220383504071
+        }
+      },
+      {
+        "system": "model[mlp]",
+        "source": "train→test",
+        "val": {
+          "auroc": 0.8928571428571429,
+          "ap": 0.8839975455064969,
+          "f1": 0.8125,
+          "macro_f1": 0.8125
+        },
+        "test": {
+          "auroc": 0.8868868868868868,
+          "ap": 0.8859616465498278,
+          "f1": 0.7058823529411765,
+          "macro_f1": 0.6862745098039216
+        }
+      },
+      {
+        "system": "baseline[ticker_prior]",
+        "source": "baseline",
+        "val": {
+          "auroc": 0.9444444444444444,
+          "ap": 0.9452380952380952,
+          "f1": 0.7272727272727273,
+          "macro_f1": 0.7922077922077921
+        },
+        "test": {
+          "auroc": 0.9604604604604604,
+          "ap": 0.9578703703703704,
+          "f1": 0.7441860465116279,
+          "macro_f1": 0.8073871409028728
+        }
+      }
+    ],
+    "cross_company": [
+      {
+        "system": "model[logistic] — cross-company",
+        "source": "GroupKFold",
+        "test": {
+          "auroc": 0.36906153912779865,
+          "ap": 0.3987199475582534,
+          "f1": 0.24701195219123506,
+          "macro_f1": 0.36460186650657644
+        }
+      },
+      {
+        "system": "model[random_forest] — cross-company",
+        "source": "GroupKFold",
+        "test": {
+          "auroc": 0.7311506647611623,
+          "ap": 0.6488794667727344,
+          "f1": 0.39325842696629215,
+          "macro_f1": 0.5733415422502693
+        }
+      },
+      {
+        "system": "model[hist_gradient_boosting] — cross-company",
+        "source": "GroupKFold",
+        "test": {
+          "auroc": 0.6378675674505219,
+          "ap": 0.6082114492309135,
+          "f1": 0.39080459770114945,
+          "macro_f1": 0.5754927965881312
+        }
+      },
+      {
+        "system": "model[mlp] — cross-company",
+        "source": "GroupKFold",
+        "test": {
+          "auroc": 0.4034472305227145,
+          "ap": 0.3949278192061263,
+          "f1": 0.270042194092827,
+          "macro_f1": 0.4067889070727987
+        }
+      }
+    ],
+    "label_counts": {
+      "train": 88,
+      "validation": 14,
+      "test": 27
+    },
+    "ticker_prior": {
+      "WMT": 1.0,
+      "HD": 0.3103448275862069,
+      "LOW": 0.3448275862068966,
+      "ROST": 0.10344827586206896,
+      "DG": 0.058823529411764705,
+      "ORLY": 0.8275862068965517,
+      "DKS": 0.1724137931034483,
+      "FIVE": 0.17647058823529413
+    },
+    "min_signals": 1,
+    "quick": false
+  }
+}

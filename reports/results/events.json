@@ -1,0 +1,213 @@
+{
+  "n_companies": 8,
+  "n_events": 11,
+  "n_bankruptcy": 0,
+  "per_ticker": {
+    "DG": {
+      "status": "ok",
+      "n_events": 2,
+      "n_bankruptcy": 0,
+      "first": "2005-03-03",
+      "last": "2006-11-29"
+    },
+    "DKS": {
+      "status": "ok",
+      "n_events": 2,
+      "n_bankruptcy": 0,
+      "first": "2007-06-05",
+      "last": "2009-02-05"
+    },
+    "FIVE": {
+      "status": "ok",
+      "n_events": 0,
+      "n_bankruptcy": 0,
+      "first": null,
+      "last": null
+    },
+    "HD": {
+      "status": "ok",
+      "n_events": 0,
+      "n_bankruptcy": 0,
+      "first": null,
+      "last": null
+    },
+    "LOW": {
+      "status": "ok",
+      "n_events": 7,
+      "n_bankruptcy": 0,
+      "first": "2005-02-23",
+      "last": "2018-11-05"
+    },
+    "ORLY": {
+      "status": "ok",
+      "n_events": 0,
+      "n_bankruptcy": 0,
+      "first": null,
+      "last": null
+    },
+    "ROST": {
+      "status": "ok",
+      "n_events": 0,
+      "n_bankruptcy": 0,
+      "first": null,
+      "last": null
+    },
+    "WMT": {
+      "status": "ok",
+      "n_events": 0,
+      "n_bankruptcy": 0,
+      "first": null,
+      "last": null
+    }
+  },
+  "conclusion": "**0 sự kiện phá sản (8-K item 1.03)** trong 8/8 công ty đã tra ⇒ bộ dữ liệu hiện tại KHÔNG chứa sự kiện phá sản thật, nên đề tài được định vị là **dự báo suy giảm tài chính (financial distress)**; muốn dự báo phá sản phải mở rộng universe sang doanh nghiệp đã nộp 8-K item 1.03.",
+  "events": [
+    {
+      "ticker": "DG",
+      "kind": "distress_item_4.02",
+      "form": "8-K",
+      "filing_date": "2005-03-03",
+      "items": [
+        "4.02",
+        "7.01",
+        "9.01"
+      ],
+      "accession": "0000029534-05-000022",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/29534/000002953405000022/0000029534-05-000022-index.html"
+    },
+    {
+      "ticker": "DG",
+      "kind": "distress_item_2.06",
+      "form": "8-K",
+      "filing_date": "2006-11-29",
+      "items": [
+        "2.02",
+        "2.05",
+        "2.06",
+        "7.01",
+        "9.01"
+      ],
+      "accession": "0001157523-06-011757",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/29534/000115752306011757/0001157523-06-011757-index.html"
+    },
+    {
+      "ticker": "DKS",
+      "kind": "distress_item_4.02",
+      "form": "8-K",
+      "filing_date": "2007-06-05",
+      "items": [
+        "2.02",
+        "4.02",
+        "9.01"
+      ],
+      "accession": "0000950152-07-004926",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1089063/000095015207004926/0000950152-07-004926-index.html"
+    },
+    {
+      "ticker": "DKS",
+      "kind": "distress_item_2.06",
+      "form": "8-K",
+      "filing_date": "2009-02-05",
+      "items": [
+        "2.02",
+        "2.06",
+        "9.01"
+      ],
+      "accession": "0000950152-09-001022",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1089063/000095015209001022/0000950152-09-001022-index.html"
+    },
+    {
+      "ticker": "LOW",
+      "kind": "distress_item_4.02",
+      "form": "8-K",
+      "filing_date": "2005-02-23",
+      "items": [
+        "2.02",
+        "4.02",
+        "9.01"
+      ],
+      "accession": "0000060667-05-000019",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/60667/000006066705000019/0000060667-05-000019-index.html"
+    },
+    {
+      "ticker": "LOW",
+      "kind": "distress_item_4.02",
+      "form": "8-K/A",
+      "filing_date": "2005-04-20",
+      "items": [
+        "4.02"
+      ],
+      "accession": "0000060667-05-000105",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/60667/000006066705000105/0000060667-05-000105-index.html"
+    },
+    {
+      "ticker": "LOW",
+      "kind": "distress_item_2.06",
+      "form": "8-K",
+      "filing_date": "2011-10-17",
+      "items": [
+        "2.05",
+        "2.06",
+        "8.01",
+        "9.01"
+      ],
+      "accession": "0000060667-11-000173",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/60667/000006066711000173/0000060667-11-000173-index.html"
+    },
+    {
+      "ticker": "LOW",
+      "kind": "distress_item_2.06",
+      "form": "8-K",
+      "filing_date": "2016-01-22",
+      "items": [
+        "2.06",
+        "9.01"
+      ],
+      "accession": "0000060667-16-000213",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/60667/000006066716000213/0000060667-16-000213-index.html"
+    },
+    {
+      "ticker": "LOW",
+      "kind": "distress_item_2.06",
+      "form": "8-K/A",
+      "filing_date": "2016-02-24",
+      "items": [
+        "2.06"
+      ],
+      "accession": "0000060667-16-000232",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/60667/000006066716000232/0000060667-16-000232-index.html"
+    },
+    {
+      "ticker": "LOW",
+      "kind": "distress_item_2.06",
+      "form": "8-K",
+      "filing_date": "2018-08-22",
+      "items": [
+        "2.02",
+        "2.05",
+        "2.06",
+        "5.02",
+        "5.03",
+        "5.05",
+        "7.01",
+        "9.01"
+      ],
+      "accession": "0001193125-18-254569",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/60667/000119312518254569/0001193125-18-254569-index.html"
+    },
+    {
+      "ticker": "LOW",
+      "kind": "distress_item_2.06",
+      "form": "8-K",
+      "filing_date": "2018-11-05",
+      "items": [
+        "2.05",
+        "2.06",
+        "7.01",
+        "9.01"
+      ],
+      "accession": "0000060667-18-000189",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/60667/000006066718000189/0000060667-18-000189-index.html"
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "model": "random_forest",
+  "method": "KernelSHAP tự cài đặt (Lundberg & Lee 2017), π(S) = (M−1)/[C(M,|S|)·|S|·(M−|S|)]",
+  "n_features": 47,
+  "n_explained": 64,
+  "n_coalitions": 200,
+  "n_background": 40,
+  "evaluated_on": {
+    "validation": 32,
+    "test": 32
+  },
+  "base_value": 0.6390855962839411,
+  "threshold": 0.7879126873178737,
+  "self_check": {
+    "max_abs_efficiency_gap": 2.220446049250313e-16,
+    "relative_efficiency_gap": 6.3366709386066306e-15,
+    "note": "Σφ_j + E[f] phải bằng f(x); KernelSHAP ràng buộc đúng điều này nên sai số ≈ 0 (kiểm chứng cài đặt, không phải kết quả mô hình)."
+  },
+  "importance_top": [
+    {
+      "feature": "current_ratio_latest",
+      "mean_abs_shap": 0.07648945117859028
+    },
+    {
+      "feature": "current_ratio_min_window",
+      "mean_abs_shap": 0.0763913109629966
+    },
+    {
+      "feature": "debt_to_assets_latest",
+      "mean_abs_shap": 0.05829953526131547
+    },
+    {
+      "feature": "working_capital_to_assets",
+      "mean_abs_shap": 0.05613665388313745
+    },
+    {
+      "feature": "debt_to_equity_latest",
+      "mean_abs_shap": 0.03560860518456334
+    },
+    {
+      "feature": "quick_ratio_latest",
+      "mean_abs_shap": 0.02299559054461198
+    },
+    {
+      "feature": "receivables_to_sales_latest",
+      "mean_abs_shap": 0.02178002254540719
+    },
+    {
+      "feature": "gross_margin_latest",
+      "mean_abs_shap": 0.02115854861619212
+    },
+    {
+      "feature": "retained_to_assets_latest",
+      "mean_abs_shap": 0.020823732413527495
+    },
+    {
+      "feature": "operating_margin_latest",
+      "mean_abs_shap": 0.018733123807561293
+    },
+    {
+      "feature": "ocf_to_sales_min_window",
+      "mean_abs_shap": 0.018023702811868266
+    },
+    {
+      "feature": "inventory_yoy_growth",
+      "mean_abs_shap": 0.01790314291682658
+    },
+    {
+      "feature": "debt_to_assets_yoy",
+      "mean_abs_shap": 0.0175945709616139
+    },
+    {
+      "feature": "inventory_to_sales_latest",
+      "mean_abs_shap": 0.017542460044834347
+    },
+    {
+      "feature": "total_assets_yoy_growth",
+      "mean_abs_shap": 0.017177419329775918
+    }
+  ],
+  "rank_agreement_with_permutation": {
+    "spearman": 0.3618137820239713,
+    "top_overlap": 0.42857142857142855,
+    "top_k": 15,
+    "agreed_features": [
+      0,
+      8,
+      10,
+      14,
+      16,
+      18,
+      24,
+      38,
+      41
+    ]
+  },
+  "misclassified_explained": 2,
+  "local_explanations": [
+    {
+      "sample_id": "FIVE-2023Q3",
+      "actual": 1,
+      "probability": 0.1324515188365429,
+      "predicted": 0,
+      "top_positive": [
+        {
+          "feature": "operating_income_yoy_growth",
+          "phi": 0.06881658661429692
+        },
+        {
+          "feature": "negative_ni_streak",
+          "phi": 0.05823387266406717
+        },
+        {
+          "feature": "quick_ratio_yoy",
+          "phi": 0.04872610541758105
+        },
+        {
+          "feature": "gross_margin_latest",
+          "phi": 0.04419776426304402
+        }
+      ],
+      "top_negative": [
+        {
+          "feature": "current_ratio_min_window",
+          "phi": -0.12268723526839861
+        },
+        {
+          "feature": "current_ratio_latest",
+          "phi": -0.10913090308399967
+        },
+        {
+          "feature": "debt_to_assets_latest",
+          "phi": -0.09614174681084656
+        },
+        {
+          "feature": "working_capital_to_assets",
+          "phi": -0.07465150970009211
+        }
+      ]
+    },
+    {
+      "sample_id": "HD-2024Q2",
+      "actual": 1,
+      "probability": 0.7834807777221335,
+      "predicted": 0,
+      "top_positive": [
+        {
+          "feature": "debt_to_assets_latest",
+          "phi": 0.09104246492577167
+        },
+        {
+          "feature": "debt_to_equity_latest",
+          "phi": 0.08311027616852877
+        },
+        {
+          "feature": "receivables_to_sales_latest",
+          "phi": 0.04181908103229767
+        },
+        {
+          "feature": "operating_margin_latest",
+          "phi": 0.03386385876879174
+        }
+      ],
+      "top_negative": [
+        {
+          "feature": "current_ratio_min_window",
+          "phi": -0.06656940057970671
+        },
+        {
+          "feature": "current_ratio_latest",
+          "phi": -0.051495567917035565
+        },
+        {
+          "feature": "sgna_pct_revenue_latest",
+          "phi": -0.026310873065719248
+        },
+        {
+          "feature": "debt_to_assets_yoy",
+          "phi": -0.021568013214750752
+        }
+      ]
+    }
+  ],
+  "figures": [
+    "figures\\shap\\01_shap_summary.png",
+    "figures\\shap\\02_shap_beeswarm.png",
+    "figures\\shap\\03_shap_local_errors.png"
+  ]
+}

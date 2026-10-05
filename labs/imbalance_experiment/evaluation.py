@@ -1,15 +1,8 @@
-"""Chạy Stratified K-Fold CV, thu metric từng fold, tổng hợp **mean ± std** (yêu cầu #4).
+"""Cross-validate each pipeline, aggregate per-fold metrics and score the holdout once.
 
-Quy trình cho MỖI pipeline:
-1. `StratifiedKFold(shuffle=True, seed)` trên tập train (mỗi fold giữ nguyên tỉ lệ lớp).
-2. Trong từng fold: ghi phân phối nhãn TRƯỚC/SAU resampling của fold-train, fit pipeline
-   (đo thời gian), tính metric trên fold-validation, và **đối chiếu fold-validation với bản sao**
-   để phát hiện rò rỉ (`checks`).
-3. Tổng hợp mean ± std qua các fold.
-4. Refit trên TOÀN BỘ train rồi chấm điểm trên holdout test đúng MỘT lần (metric + đường PR để vẽ).
-
-Chỉ số theo yêu cầu #3: PR-AUC, ROC-AUC, F1 (macro + lớp thiểu số), Balanced Accuracy, Recall và FPR
-(kèm Precision, MCC, confusion counts để đọc bức tranh đầy đủ).
+Every fold keeps class proportions and logs the label distribution before and after resampling. The
+fold validation set is compared against a copy taken before fit to detect leakage. Aggregate metrics are
+mean and std across folds, while the holdout metrics and PR curve come from one refit on the full train.
 """
 from __future__ import annotations
 
@@ -27,21 +20,21 @@ from .pipeline_builder import PipelineSpec, inspect_pipeline, missing_requiremen
 
 LOGGER = logging.getLogger(__name__)
 
-#: Metric chính theo yêu cầu #3 (thứ tự cột khi in bảng) — Accuracy KHÔNG có mặt.
+#: Primary metrics and the column order when printing tables; accuracy is excluded on purpose.
 METRIC_KEYS: Tuple[str, ...] = ("pr_auc", "roc_auc", "f1", "macro_f1", "balanced_accuracy", "recall",
                                 "fpr", "precision", "mcc")
-#: Nhãn tiếng Việt của metric (dùng trong báo cáo).
+#: Display label of each metric, used in the report.
 METRIC_LABELS: Dict[str, str] = {
-    "pr_auc": "PR-AUC", "roc_auc": "ROC-AUC", "f1": "F1 (thiểu số)", "macro_f1": "F1-macro",
+    "pr_auc": "PR-AUC", "roc_auc": "ROC-AUC", "f1": "F1 (minority)", "macro_f1": "F1-macro",
     "balanced_accuracy": "Balanced Acc", "recall": "Recall", "fpr": "FPR", "precision": "Precision",
-    "mcc": "MCC", "n_train_after": "n train sau resample", "fit_seconds": "giây/fold (fit)",
-    "resample_seconds": "giây/fold (resample)",
+    "mcc": "MCC", "n_train_after": "n train after resample", "fit_seconds": "seconds/fold (fit)",
+    "resample_seconds": "seconds/fold (resample)",
 }
 
 
 @dataclass
 class FoldResult:
-    """Kết quả một fold: metric, thời gian, kích thước train sau resampling và cờ chống rò rỉ."""
+    """Result of one fold: metrics, timing, train size after resampling and the anti-leak flag."""
 
     fold: int
     n_train: int
@@ -57,7 +50,7 @@ class FoldResult:
 
 @dataclass
 class TechniqueResult:
-    """Kết quả một pipeline: mean ± std qua fold + metric holdout + dữ liệu PR curve."""
+    """Result of one pipeline: per-fold mean and std, holdout metrics and PR curve data."""
 
     key: str
     name: str
@@ -79,12 +72,12 @@ class TechniqueResult:
 
     @property
     def ok(self) -> bool:
-        """Pipeline có chạy thành công hay không."""
+        """Whether the pipeline completed successfully."""
         return self.status == "ok"
 
 
 def _imbalance_ratio(y: np.ndarray) -> float:
-    """Imbalance ratio = số âm / số dương (∞ nếu không có mẫu dương)."""
+    """Imbalance ratio as negative over positive count, infinite when there are no positive samples."""
     y = np.asarray(y, dtype=int)
     n_positive = int((y == 1).sum())
     n_negative = int(len(y) - n_positive)
@@ -92,16 +85,16 @@ def _imbalance_ratio(y: np.ndarray) -> float:
 
 
 def _fold_metrics(y_true: np.ndarray, proba: np.ndarray, threshold: float) -> Dict[str, float]:
-    """Metric tại ngưỡng vận hành (gồm FPR) bằng bộ metric chuẩn của `imbalance_lab`."""
-    from imbalance_lab.metrics import metrics_at_threshold
+    """Metrics at the operating threshold, including FPR, from the standard `labs.imbalance_lab` set."""
+    from labs.imbalance_lab.metrics import metrics_at_threshold
 
     metrics = metrics_at_threshold(np.asarray(y_true, int), np.asarray(proba, float), threshold)
     return {key: float(metrics[key]) for key in METRIC_KEYS}
 
 
 def _extra_holdout_metrics(y_true: np.ndarray, proba: np.ndarray) -> Dict[str, float]:
-    """Metric bổ sung cho holdout: accuracy (CHẨN ĐOÁN) + mốc đoán lớp đa số."""
-    from imbalance_lab.metrics import accuracy_diagnostic
+    """Extra holdout metrics: accuracy as a diagnostic plus the majority-class baseline."""
+    from labs.imbalance_lab.metrics import accuracy_diagnostic
 
     y_pred = (np.asarray(proba, float) >= 0.5).astype(int)
     diagnostic = accuracy_diagnostic(np.asarray(y_true, int), y_pred)
@@ -111,22 +104,24 @@ def _extra_holdout_metrics(y_true: np.ndarray, proba: np.ndarray) -> Dict[str, f
 
 def evaluate_technique(spec: PipelineSpec, dataset: Dataset, cfg: ExperimentConfig,
                        log: Any = LOGGER.info) -> TechniqueResult:
-    """Chạy CV + holdout cho MỘT pipeline; trả `TechniqueResult` (không ném lỗi ra ngoài).
+    """Run cross-validation and the holdout score for one pipeline; return a `TechniqueResult`.
+
+    Exceptions are captured and recorded in the result rather than raised.
 
     Args:
-        spec: pipeline cần đánh giá.
-        dataset: dataset đã chia train/test.
-        cfg: cấu hình thực nghiệm.
-        log: hàm ghi log (mặc định `LOGGER.info`) — dùng `print` cũng được.
+        spec: pipeline to evaluate.
+        dataset: dataset already split into train and test.
+        cfg: experiment configuration.
+        log: logging function, `LOGGER.info` by default.
     """
-    from imbalance_lab.cv import assert_val_untouched
+    from labs.imbalance_lab.cv import assert_val_untouched
 
     result = TechniqueResult(key=spec.key, name=spec.name, group=spec.group, note=spec.note,
                              is_resampling=spec.is_resampling)
     missing = missing_requirements(cfg, spec.key)
     if missing:
-        result.status, result.reason = "skipped", f"thiếu {', '.join(missing)}"
-        log(f"    BỎ QUA {spec.name} — {result.reason}")
+        result.status, result.reason = "skipped", f"missing {', '.join(missing)}"
+        log(f"    SKIPPED {spec.name}: {result.reason}")
         return result
 
     fold_rows: List[FoldResult] = []
@@ -155,12 +150,12 @@ def evaluate_technique(spec: PipelineSpec, dataset: Dataset, cfg: ExperimentConf
             proba = estimator.predict_proba(X_va)[:, 1]
             fit_seconds = time.perf_counter() - started_fit
 
-            checks = {"fold_val_nguyên_vẹn": True}
-            try:  # đối chiếu fold-validation với bản sao trước khi fit
+            checks = {"fold_validation_untouched": True}
+            try:  # compare the fold validation set against the copy taken before fit
                 assert_val_untouched(X_va, y_va, X_va_before, y_va_before)
-            except AssertionError as exc:  # pragma: no cover - chỉ xảy ra khi có lỗi thật
-                checks["fold_val_nguyên_vẹn"] = False
-                LOGGER.error("RÒ RỈ ở fold %d của %s: %s", fold, spec.key, exc)
+            except AssertionError as exc:  # pragma: no cover - only on a real leak
+                checks["fold_validation_untouched"] = False
+                LOGGER.error("Leakage in fold %d of %s: %s", fold, spec.key, exc)
 
             fold_rows.append(FoldResult(
                 fold=fold, n_train=int(len(y_tr)), n_val=int(len(y_va)), n_train_after=n_after,
@@ -169,12 +164,12 @@ def evaluate_technique(spec: PipelineSpec, dataset: Dataset, cfg: ExperimentConf
                 resample_seconds=resample_seconds, checks=checks))
             row = fold_rows[-1]
             log(f"    fold {fold}/{cfg.n_splits}: n_train={len(y_tr)}"
-                + (f" → {n_after} sau resample" if n_after is not None else "")
+                + (f" -> {n_after} after resample" if n_after is not None else "")
                 + f" | val n={len(y_va)} | PR-AUC={row.metrics['pr_auc']:.4f} "
                   f"F1={row.metrics['f1']:.3f} Recall={row.metrics['recall']:.3f} "
                   f"FPR={row.metrics['fpr']:.4f} | {fit_seconds:.2f}s")
 
-        # ---- tổng hợp mean ± std qua các fold ----
+        # Aggregate mean and std across folds.
         for metric in METRIC_KEYS:
             values = [row.metrics[metric] for row in fold_rows]
             result.mean[metric] = float(np.nanmean(values))
@@ -188,16 +183,16 @@ def evaluate_technique(spec: PipelineSpec, dataset: Dataset, cfg: ExperimentConf
         result.n_train_after_mean = float(np.mean(sizes)) if sizes else float("nan")
         result.folds = fold_rows
         _score_holdout(result, spec, dataset, cfg)
-    except Exception as exc:  # noqa: BLE001 - một pipeline lỗi không được làm hỏng cả thực nghiệm
+    except Exception as exc:  # noqa: BLE001 - one failing pipeline must not stop the experiment
         result.status, result.reason = "error", f"{type(exc).__name__}: {exc}"
-        LOGGER.error("LỖI %s — %s", spec.name, result.reason)
+        LOGGER.error("ERROR %s: %s", spec.name, result.reason)
     result.total_seconds = time.perf_counter() - started
     return result
 
 
 def _score_holdout(result: TechniqueResult, spec: PipelineSpec, dataset: Dataset,
                    cfg: ExperimentConfig) -> None:
-    """Refit trên TOÀN BỘ train rồi chấm holdout test ĐÚNG MỘT LẦN (metric + đường PR)."""
+    """Refit on the whole train set, then score the holdout test once, producing metrics and the PR curve."""
     X_test_before, y_test_before = dataset.X_test.copy(), dataset.y_test.copy()
     estimator = spec.factory()
     estimator.fit(dataset.X_train, dataset.y_train)
@@ -208,34 +203,35 @@ def _score_holdout(result: TechniqueResult, spec: PipelineSpec, dataset: Dataset
     result.pr_curve = {"recall": recall, "precision": precision}
     pipeline_checks = inspect_pipeline(spec.factory(), expect_samplers=spec.is_resampling)
     result.checks = {
-        # Chỉ BẮT BUỘC là imblearn pipeline khi có bước lấy mẫu (ensemble tự lấy mẫu trong `fit`).
-        "resampling dùng imblearn.pipeline":
+        # The imblearn pipeline is required only for pipelines with a sampling step; ensembles sample
+        # inside their own `fit`.
+        "resampling uses imblearn.pipeline":
             bool(pipeline_checks["imblearn_pipeline"]) if spec.is_resampling else True,
-        f"sampler chỉ nằm trong pipeline (n={pipeline_checks['n_sampler_steps']})":
-            bool(pipeline_checks["sampler_nằm_trong_pipeline"]),
-        "fold_val_nguyên_vẹn": all(row.checks["fold_val_nguyên_vẹn"] for row in result.folds),
-        "test_nguyên_vẹn": bool(np.array_equal(dataset.X_test, X_test_before)
-                                and np.array_equal(dataset.y_test, y_test_before)),
+        f"sampler stays inside the pipeline (n={pipeline_checks['n_sampler_steps']})":
+            bool(pipeline_checks["samplers_inside_pipeline"]),
+        "fold_validation_untouched": all(row.checks["fold_validation_untouched"] for row in result.folds),
+        "test_untouched": bool(np.array_equal(dataset.X_test, X_test_before)
+                               and np.array_equal(dataset.y_test, y_test_before)),
     }
 
 
 def evaluate_all(specs: List[PipelineSpec], dataset: Dataset, cfg: ExperimentConfig,
                  log: Any = None) -> List[TechniqueResult]:
-    """Chạy tuần tự mọi pipeline của danh mục (Baseline → Single → Hybrid)."""
+    """Run every pipeline in the catalog in order: baseline, then single, then hybrid."""
     logger = log or (lambda message: LOGGER.info(message))
     results: List[TechniqueResult] = []
     for index, spec in enumerate(specs, start=1):
-        logger(f"\n[{index}/{len(specs)}] {spec.name} ({spec.group}) — {spec.note}")
+        logger(f"\n[{index}/{len(specs)}] {spec.name} ({spec.group}) - {spec.note}")
         results.append(evaluate_technique(spec, dataset, cfg, log=logger))
     return results
 
 
 def summary_rows(results: List[TechniqueResult], *, source: str = "cv") -> List[Dict[str, Any]]:
-    """Bảng phẳng (dạng CSV/DataFrame) của mọi pipeline: mean ± std (CV) hoặc metric holdout.
+    """Flat table of every pipeline for CSV or DataFrame output.
 
     Args:
-        results: kết quả của các pipeline.
-        source: `"cv"` (mean ± std qua fold) hoặc `"holdout"` (metric trên test).
+        results: pipeline results.
+        source: "cv" for per-fold mean and std, or "holdout" for test metrics.
     """
     rows: List[Dict[str, Any]] = []
     for result in results:
@@ -264,14 +260,14 @@ def summary_rows(results: List[TechniqueResult], *, source: str = "cv") -> List[
 
 def _markdown_from_rows(rows: List[Dict[str, Any]], columns: List[str],
                         headers: List[str]) -> str:
-    """Bảng Markdown: dùng `pandas.DataFrame.to_markdown()` nếu có pandas, ngược lại tự sinh."""
+    """Markdown table using `DataFrame.to_markdown()` when pandas is available, otherwise built by hand."""
     try:  # pragma: no cover - đường nhanh khi có pandas
         import pandas as pd
 
         frame = pd.DataFrame(rows, columns=columns)
         frame.columns = headers
         return frame.to_markdown(index=False)
-    except Exception:  # noqa: BLE001 - không có pandas hoặc lỗi phiên bản
+    except Exception:  # noqa: BLE001 - pandas missing or a version issue
         lines = ["| " + " | ".join(headers) + " |",
                  "|" + "|".join(["---"] * len(headers)) + "|"]
         for row in rows:
@@ -280,9 +276,9 @@ def _markdown_from_rows(rows: List[Dict[str, Any]], columns: List[str],
 
 
 def _fmt_cell(value: Any, digits: int = 4) -> str:
-    """Định dạng một ô của bảng Markdown (số → 4 chữ số, None/NaN → '—')."""
+    """Format one Markdown table cell: numbers to the given precision, None and NaN to '-'."""
     if value is None:
-        return "—"
+        return "-"
     if isinstance(value, bool):
         return "PASS" if value else "FAIL"
     if isinstance(value, (int, np.integer)):
@@ -291,12 +287,12 @@ def _fmt_cell(value: Any, digits: int = 4) -> str:
         number = float(value)
     except (TypeError, ValueError):
         return str(value)
-    return "—" if number != number else f"{number:.{digits}f}"
+    return "-" if number != number else f"{number:.{digits}f}"
 
 
 def format_mean_std(result: TechniqueResult, metric: str = "pr_auc", digits: int = 3) -> str:
-    """Chuỗi `mean ± std` của một metric (dùng cho bảng tổng hợp)."""
+    """`mean +/- std` string for one metric, used in summary tables."""
     if metric not in result.mean:
-        return "—"
-    return f"{result.mean[metric]:.{digits}f} ± {result.std.get(metric, float('nan')):.{digits}f}"
+        return "-"
+    return f"{result.mean[metric]:.{digits}f} +/- {result.std.get(metric, float('nan')):.{digits}f}"
 

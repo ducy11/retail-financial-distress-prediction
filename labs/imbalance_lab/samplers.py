@@ -1,15 +1,8 @@
-"""Resampling KHÔNG rò rỉ: `imblearn.pipeline.Pipeline` là đường chính.
+"""Leak-free resampling built on `imblearn.pipeline.Pipeline`.
 
-Vì sao phải dùng `imblearn.pipeline.Pipeline` (không phải `sklearn.pipeline.Pipeline`):
-- Chỉ `imblearn` mới chạy được bước `fit_resample` **bên trong** pipeline, nên khi pipeline được
-  fit trên tập train của một fold thì resampling chỉ xảy ra trên chính tập đó.
-- Nếu resample TRƯỚC khi chia fold (hoặc sau khi chia nhưng ngoài pipeline) thì mẫu tổng hợp của
-  lớp thiểu số trong train có thể sinh ra từ thông tin của fold validation ⇒ rò rỉ dữ liệu.
-
-`resampling_backend()` trả về `"imblearn"` nếu thư viện có mặt. Nếu môi trường offline không cài
-được `imbalanced-learn`, lab dùng bản cài đặt nội bộ tương thích API (`SMOTE`, `RandomUnderSampler`,
-`Pipeline` có `fit_resample`) — bản này được log rõ ràng và đã có unit test, nhưng **đường chuẩn của
-đồ án vẫn là imblearn** (`pip install -r imbalance_lab/requirements.txt`).
+Only imblearn runs `fit_resample` inside a pipeline, so resampling happens on fold-train data alone. The
+module provides in-house SMOTE, RandomUnderSampler and a sampler pipeline as fallbacks, used only when
+`imbalanced-learn` is unavailable.
 """
 from __future__ import annotations
 
@@ -24,23 +17,21 @@ MINORITY_LABEL = 1
 
 
 def resampling_backend(prefer_imblearn: bool = True) -> str:
-    """`"imblearn"` nếu dùng được `imbalanced-learn`, ngược lại `"builtin"`."""
+    """Return "imblearn" when imbalanced-learn is usable, otherwise "builtin"."""
     if not prefer_imblearn:
         return "builtin"
-    try:  # pragma: no cover - phụ thuộc môi trường
+    try:  # pragma: no cover - environment dependent
         import imblearn  # noqa: F401
     except Exception:
         return "builtin"
     return "imblearn"
 
 
-# ---------------------------------------------------------------------------
-# Bản nội bộ (chỉ dùng khi thiếu imbalanced-learn) — tương thích API fit_resample
-# ---------------------------------------------------------------------------
+# In-house implementations, used only when imbalanced-learn is missing, API-compatible with fit_resample.
 class SMOTE(BaseEstimator):
-    """SMOTE tối giản: nội suy giữa mẫu thiểu số và một trong `k_neighbors` láng giềng thiểu số.
+    """Minimal SMOTE: interpolate between a minority sample and one of its `k_neighbors` minority neighbors.
 
-    `sampling_strategy` = tỉ lệ (thiểu/đa) MONG MUỐN sau khi oversample (giống imblearn).
+    `sampling_strategy` is the desired minority/majority ratio after oversampling, matching imblearn.
     """
 
     def __init__(self, sampling_strategy: float = 0.1, k_neighbors: int = 5,
@@ -73,7 +64,7 @@ class SMOTE(BaseEstimator):
 
 
 class RandomUnderSampler(BaseEstimator):
-    """Giữ toàn bộ lớp thiểu số và lấy ngẫu nhiên lớp đa số để đạt tỉ lệ `sampling_strategy`."""
+    """Keep every minority sample and randomly drop majority samples to reach the sampling_strategy ratio."""
 
     def __init__(self, sampling_strategy: float = 0.5, random_state: Any = None) -> None:
         self.sampling_strategy = sampling_strategy
@@ -96,7 +87,7 @@ class RandomUnderSampler(BaseEstimator):
 
 
 class RandomOverSampler(BaseEstimator):
-    """Oversampling NGẪU NHIÊN: sao chép mẫu thiểu số tới tỉ lệ `sampling_strategy` (thiểu/đa)."""
+    """Random oversampling: duplicate minority samples to reach the sampling_strategy minority/majority ratio."""
 
     def __init__(self, sampling_strategy: float = 0.5, random_state: Any = None) -> None:
         self.sampling_strategy = sampling_strategy
@@ -120,11 +111,12 @@ class RandomOverSampler(BaseEstimator):
 
 
 class BorderlineSMOTE(BaseEstimator):
-    """Borderline-SMOTE (biến thể borderline-1): chỉ nội suy từ mẫu thiểu số nằm ở BIÊN.
+    """Borderline-SMOTE, borderline-1 variant: interpolate only from minority samples on the boundary.
 
-    Mẫu thiểu số gọi là "DANGER" nếu trong `m_neighbors` láng giềng gần nhất (toàn bộ dữ liệu) số
-    mẫu đa số NHIỀU HƠN số mẫu thiểu số — tức nó nằm sát vùng đa số. Nội suy chỉ diễn ra giữa mẫu
-    DANGER và láng giềng thiểu số của nó, nên mẫu tổng hợp bám biên quyết định.
+    A minority sample is labeled DANGER when, among its `m_neighbors` nearest neighbors over the whole
+    dataset, majority samples outnumber minority samples, meaning it sits against the majority region.
+    Interpolation runs only between DANGER samples and their minority neighbors, so synthetic samples
+    follow the decision boundary.
     """
 
     def __init__(self, sampling_strategy: float = 0.5, k_neighbors: int = 5,
@@ -136,7 +128,7 @@ class BorderlineSMOTE(BaseEstimator):
 
     def _danger_indices(self, X: np.ndarray, y: np.ndarray,
                         minority: np.ndarray) -> List[int]:
-        """Chỉ số (trong `minority`) của các mẫu thiểu số nằm vùng DANGER."""
+        """Indices within `minority` of the samples that fall in the DANGER region."""
         m = max(1, min(self.m_neighbors, len(X) - 1))
         neighbours = NearestNeighbors(n_neighbors=m + 1).fit(X).kneighbors(
             X[minority], return_distance=False)[:, 1:]
@@ -170,10 +162,11 @@ class BorderlineSMOTE(BaseEstimator):
 
 
 class ADASYN(BaseEstimator):
-    """ADASYN: số mẫu tổng hợp cho mỗi mẫu thiểu số TỈ LỆ với số láng giềng đa số của nó.
+    """ADASYN: the number of synthetic samples per minority sample is proportional to its majority neighbors.
 
-    Mẫu thiểu số càng "khó" (càng nhiều láng giềng đa số) càng được sinh thêm ⇒ tập trung vào vùng
-    quyết định thay vì rải đều như SMOTE.
+    The harder a minority sample, meaning the more majority neighbors it has, the more samples are
+    generated around it, so the method concentrates on the decision region instead of spreading evenly
+    as SMOTE does.
     """
 
     def __init__(self, sampling_strategy: float = 0.5, n_neighbors: int = 5,
@@ -199,7 +192,7 @@ class ADASYN(BaseEstimator):
         neighbours = NearestNeighbors(n_neighbors=k + 1).fit(X).kneighbors(
             X[minority], return_distance=False)[:, 1:]
         difficulty = np.array([np.mean(y[row] != MINORITY_LABEL) for row in neighbours], dtype=float)
-        if difficulty.sum() <= 0:            # không có láng giềng đa số ⇒ thoái hoá về SMOTE
+        if difficulty.sum() <= 0:            # no majority neighbor, so fall back to plain SMOTE
             difficulty = np.ones(len(minority), dtype=float)
         quotas = difficulty / difficulty.sum() * n_new
         quotas_int = np.floor(quotas).astype(int)
@@ -221,10 +214,11 @@ class ADASYN(BaseEstimator):
 
 
 class TomekLinks(BaseEstimator):
-    """Tomek Links — LÀM SẠCH biên: bỏ mẫu ĐA SỐ trong cặp (đa số, thiểu số) là láng giềng của nhau.
+    """Tomek Links, boundary cleaning: drop the majority sample in a mutually-nearest majority/minority pair.
 
-    Đây là "clean-sampling" nên KHÔNG nhận tỉ lệ mục tiêu (giống imblearn): nó gọt biên chứ không tự
-    cân bằng tập 98/2 — muốn cân bằng phải dùng kèm oversampling (xem hybrid `SMOTE+TomekLinks`).
+    This is clean sampling without a target ratio, matching imblearn: it trims the boundary rather than
+    balancing a 98/2 set, so balancing requires oversampling alongside it, as in the SMOTE plus Tomek
+    Links hybrid.
     """
 
     def __init__(self, n_neighbors: int = 1) -> None:
@@ -240,18 +234,20 @@ class TomekLinks(BaseEstimator):
         for i, j in enumerate(nearest):
             if y[i] == y[j]:
                 continue
-            if y[i] != MINORITY_LABEL and nearest[j] == i:      # cặp Tomek ⇒ bỏ mẫu đa số
+            if y[i] != MINORITY_LABEL and nearest[j] == i:      # Tomek pair, so drop the majority sample
                 keep[i] = False
         return X[keep], y[keep]
 
 
 class EditedNearestNeighbours(BaseEstimator):
-    """ENN — LÀM SẠCH biên: bỏ mẫu mà `n_neighbors` láng giềng gần nhất bầu cho lớp KHÁC.
+    """ENN, boundary cleaning: drop a sample when its `n_neighbors` nearest neighbors vote for another class.
 
-    Tương thích `imblearn`: láng giềng tìm trên TOÀN BỘ dữ liệu (loại chính nó), mặc định
-    `sampling_strategy="auto"` chỉ dọn lớp ĐA SỐ, và `kind_sel="all"` bỏ mẫu nếu có BẤT KỲ láng giềng
-    nào khác lớp (imblearn 0.14: `np.all(nhood_label == target_class)`); `kind_sel="mode"` bỏ mẫu nếu
-    lớp của nó khác lớp chiếm đa số trong các láng giềng. Cũng là "clean-sampling" (không có tỉ lệ).
+    Matches imblearn: neighbors are searched over the whole dataset excluding the sample itself, the
+    default `sampling_strategy="auto"` cleans only the majority class, and `kind_sel="all"` drops a
+    sample when any neighbor has a different class, corresponding to
+    `np.all(nhood_label == target_class)` in imblearn 0.14. `kind_sel="mode"` drops a sample when its
+    class differs from the majority class among its neighbors. This is clean sampling with no target
+    ratio.
     """
 
     def __init__(self, n_neighbors: int = 3, kind_sel: str = "all",
@@ -283,7 +279,7 @@ class EditedNearestNeighbours(BaseEstimator):
 
 
 class SamplerChain(BaseEstimator):
-    """Ghép nhiều sampler cho bản nội bộ (dùng cho hybrid SMOTE + TomekLinks / + ENN)."""
+    """Chain several samplers for the in-house path, used by the SMOTE+TomekLinks and SMOTE+ENN hybrids."""
 
     def __init__(self, steps: Sequence[Tuple[str, Any]]) -> None:
         self.steps = list(steps)
@@ -296,10 +292,10 @@ class SamplerChain(BaseEstimator):
 
 
 class Pipeline(BaseEstimator):
-    """Bản `imblearn.pipeline.Pipeline` tối giản: sampler chạy TRƯỚC, classifier fit SAU.
+    """Minimal version of `imblearn.pipeline.Pipeline`: samplers run first, the classifier fits after.
 
-    Hỗ trợ: `fit`, `fit_resample` (chỉ chạy các bước sampler — dùng để LOG phân phối sau resample),
-    `predict`, `predict_proba`, và `pipe[:-1]`.
+    Supports `fit`, `fit_resample` (sampler steps only, used to log the post-resampling distribution),
+    `predict`, `predict_proba` and slicing such as `pipe[:-1]`.
     """
 
     def __init__(self, steps: Sequence[Tuple[str, Any]]) -> None:
@@ -315,7 +311,7 @@ class Pipeline(BaseEstimator):
         return self.steps[-1][1]
 
     def fit_resample(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Chạy tuần tự các bước sampler trên dữ liệu TRAIN của fold."""
+        """Run the sampler steps in order over the fold's train data."""
         return self._resample(X, y)
 
     def _resample(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -323,7 +319,7 @@ class Pipeline(BaseEstimator):
         for _name, step in self.steps[:-1]:
             if hasattr(step, "fit_resample"):
                 X_out, y_out = step.fit_resample(X_out, y_out)
-            else:  # transformer thường (vd. scaler) — vẫn giữ đúng thứ tự
+            else:  # a plain transformer such as a scaler, still run in order
                 X_out = step.fit_transform(X_out, y_out)
         return X_out, y_out
 
@@ -341,15 +337,15 @@ class Pipeline(BaseEstimator):
 
 def build_sampler_pipeline(steps: Sequence[Tuple[str, Any]], classifier: Any,
                            prefer_imblearn: bool = True) -> Any:
-    """Ghép các bước sampler + classifier thành pipeline (imblearn nếu có, ngược lại bản nội bộ).
+    """Combine sampler steps and the classifier into one pipeline, imblearn when available, else in-house.
 
     Args:
-        steps: danh sách `(tên, sampler)` — sampler phải có `fit_resample`.
-        classifier: estimator cuối cùng (có `fit`/`predict_proba`).
-        prefer_imblearn: ưu tiên `imblearn.pipeline.Pipeline` (mặc định, đường chuẩn).
+        steps: list of `(name, sampler)` pairs; each sampler must expose `fit_resample`.
+        classifier: the final estimator, exposing `fit` and `predict_proba`.
+        prefer_imblearn: prefer `imblearn.pipeline.Pipeline`, the default and standard path.
     """
     backend = resampling_backend(prefer_imblearn)
-    if backend == "imblearn":  # pragma: no cover - phụ thuộc môi trường
+    if backend == "imblearn":  # pragma: no cover - environment dependent
         from imblearn.pipeline import Pipeline as ImbPipeline
         return ImbPipeline(list(steps) + [("classifier", classifier)])
     return Pipeline(list(steps) + [("classifier", classifier)])
@@ -357,8 +353,8 @@ def build_sampler_pipeline(steps: Sequence[Tuple[str, Any]], classifier: Any,
 
 def make_samplers(prefer_imblearn: bool = True, *, smote_strategy: float, k_neighbors: int,
                   under_strategy: float, random_state: Any) -> List[Tuple[str, Any]]:
-    """Tạo cặp sampler hỗn hợp: SMOTE (oversample) → RandomUnderSampler (undersample)."""
-    if resampling_backend(prefer_imblearn) == "imblearn":  # pragma: no cover - môi trường
+    """Build the mixed sampler pair: SMOTE for oversampling, then RandomUnderSampler for undersampling."""
+    if resampling_backend(prefer_imblearn) == "imblearn":  # pragma: no cover - environment dependent
         from imblearn.over_sampling import SMOTE as ImbSMOTE
         from imblearn.under_sampling import RandomUnderSampler as ImbRUS
         return [("smote", ImbSMOTE(sampling_strategy=smote_strategy, k_neighbors=k_neighbors,
@@ -370,21 +366,19 @@ def make_samplers(prefer_imblearn: bool = True, *, smote_strategy: float, k_neig
                                          random_state=random_state))]
 
 
-# ---------------------------------------------------------------------------
-# Danh mục kỹ thuật (yêu cầu #2) — tên kỹ thuật → bước sampler
-# ---------------------------------------------------------------------------
-#: Kỹ thuật ĐƠN của danh mục: `key` → nhãn hiển thị.
+# Technique catalog from the rubric, mapping a technique key to its sampler steps.
+#: Single techniques in the catalog, mapping the key to a display name.
 SINGLE_SAMPLERS: Dict[str, str] = {
     "ros": "RandomOverSampler",
     "smote": "SMOTE",
     "borderline_smote": "BorderlineSMOTE",
     "adasyn": "ADASYN",
     "rus": "RandomUnderSampler",
-    "tomek": "TomekLinks (làm sạch biên)",
-    "enn": "EditedNearestNeighbours (làm sạch biên)",
+    "tomek": "TomekLinks (boundary cleaning)",
+    "enn": "EditedNearestNeighbours (boundary cleaning)",
 }
 
-#: Kỹ thuật HYBRID của danh mục: `key` → nhãn hiển thị.
+#: Hybrid techniques in the catalog, mapping the key to a display name.
 HYBRID_SAMPLERS: Dict[str, str] = {
     "smote_tomek": "SMOTE + TomekLinks",
     "smote_enn": "SMOTE + EditedNearestNeighbours",
@@ -394,10 +388,10 @@ HYBRID_SAMPLERS: Dict[str, str] = {
 def make_single_sampler(kind: str, prefer_imblearn: bool = True, *,
                         over_strategy: float, under_strategy: float, k_neighbors: int,
                         random_state: Any) -> List[Tuple[str, Any]]:
-    """Bước sampler cho MỘT kỹ thuật đơn (imblearn nếu có, ngược lại bản nội bộ)."""
+    """Sampler steps for one single technique, using imblearn when available and the in-house path otherwise."""
     if kind not in SINGLE_SAMPLERS:
-        raise KeyError(f"Kỹ thuật không hợp lệ: {kind!r}; có {sorted(SINGLE_SAMPLERS)}")
-    if resampling_backend(prefer_imblearn) == "imblearn":  # pragma: no cover - môi trường
+        raise KeyError(f"Unknown technique: {kind!r}; have {sorted(SINGLE_SAMPLERS)}")
+    if resampling_backend(prefer_imblearn) == "imblearn":  # pragma: no cover - environment dependent
         return _imblearn_single(kind, over_strategy, under_strategy, k_neighbors, random_state)
     return _builtin_single(kind, over_strategy, under_strategy, k_neighbors, random_state)
 
@@ -405,10 +399,10 @@ def make_single_sampler(kind: str, prefer_imblearn: bool = True, *,
 def make_hybrid_sampler(kind: str, prefer_imblearn: bool = True, *,
                         over_strategy: float, under_strategy: float, k_neighbors: int,
                         random_state: Any) -> List[Tuple[str, Any]]:
-    """Bước sampler cho kỹ thuật HYBRID: SMOTE (oversample) rồi làm sạch bằng TomekLinks / ENN."""
+    """Sampler steps for a hybrid technique: SMOTE for oversampling, then TomekLinks or ENN for cleaning."""
     if kind not in HYBRID_SAMPLERS:
-        raise KeyError(f"Hybrid không hợp lệ: {kind!r}; có {sorted(HYBRID_SAMPLERS)}")
-    if resampling_backend(prefer_imblearn) == "imblearn":  # pragma: no cover - môi trường
+        raise KeyError(f"Unknown hybrid: {kind!r}; have {sorted(HYBRID_SAMPLERS)}")
+    if resampling_backend(prefer_imblearn) == "imblearn":  # pragma: no cover - environment dependent
         from imblearn.combine import SMOTEENN as ImbSMOTEENN
         from imblearn.combine import SMOTETomek as ImbSMOTETomek
         from imblearn.over_sampling import SMOTE as ImbSMOTE
@@ -425,8 +419,8 @@ def make_hybrid_sampler(kind: str, prefer_imblearn: bool = True, *,
 
 
 def _imblearn_single(kind: str, over_strategy: float, under_strategy: float, k_neighbors: int,
-                     random_state: Any) -> List[Tuple[str, Any]]:  # pragma: no cover - môi trường
-    """Nhánh imblearn của `make_single_sampler` (đường chuẩn)."""
+                     random_state: Any) -> List[Tuple[str, Any]]:  # pragma: no cover - environment
+    """imblearn branch of `make_single_sampler`, the standard path."""
     from imblearn.over_sampling import ADASYN as ImbADASYN
     from imblearn.over_sampling import BorderlineSMOTE as ImbBorderline
     from imblearn.over_sampling import RandomOverSampler as ImbROS
@@ -455,7 +449,7 @@ def _imblearn_single(kind: str, over_strategy: float, under_strategy: float, k_n
 
 def _builtin_single(kind: str, over_strategy: float, under_strategy: float, k_neighbors: int,
                     random_state: Any) -> List[Tuple[str, Any]]:
-    """Nhánh nội bộ của `make_single_sampler` (dùng khi thiếu imbalanced-learn)."""
+    """In-house branch of `make_single_sampler`, used when imbalanced-learn is missing."""
     if kind == "ros":
         return [(kind, RandomOverSampler(sampling_strategy=over_strategy,
                                          random_state=random_state))]

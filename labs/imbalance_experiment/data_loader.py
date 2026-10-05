@@ -1,14 +1,7 @@
-"""Tạo/tải dataset MẤT CÂN BẰNG và chia tập stratified (yêu cầu #2 của đề bài).
+"""Build or load an imbalanced dataset and split it while preserving class proportions.
 
-Hai nguồn dữ liệu:
-1. `"synthetic"` (mặc định): `sklearn.datasets.make_classification` với tỉ lệ 1:50 (hoặc 1:100 qua
-   `--imbalance-ratio`). Ưu điểm: chạy offline, tái lập tuyệt đối, biết chắc nhãn ⇒ đo được ảnh hưởng
-   của từng kỹ thuật mà không lẫn nhiễu của dữ liệu thật.
-2. Đường dẫn CSV: dùng cho `Credit Card Fraud Detection` (cột nhãn `Class`) hoặc bất kỳ CSV nhị phân
-   nào. File CSV **không** đi kèm repo (dung lượng lớn) nên phải trỏ `--data path/to/creditcard.csv`.
-
-Chia tập: `train_test_split(test_size=cfg.test_size, stratify=y, random_state=seed)` — giữ nguyên tỉ lệ
-lớp; test tách TRƯỚC và chỉ dùng một lần để chốt kết quả.
+Two sources are supported: synthetic data from `make_classification` at a 1:50 or 1:100 ratio, or a
+binary CSV such as the Credit Card Fraud dataset. The test split is created first and used once.
 """
 from __future__ import annotations
 
@@ -28,13 +21,13 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Dataset:
-    """Dataset đã chia tập: train (dùng cho CV) + test (holdout, chốt một lần).
+    """Train and test split of one dataset.
 
     Attributes:
-        name: tên dataset để ghi log/artifact.
-        X_train, y_train: tập train (CV chạy trên đây).
-        X_test, y_test: tập holdout.
-        meta: thông tin phụ (nguồn, tỉ lệ lớp, số đặc trưng...).
+        name: dataset name for logs and artifacts.
+        X_train, y_train: train split used by cross-validation.
+        X_test, y_test: holdout split scored once.
+        meta: extra information such as source and class ratio.
     """
 
     name: str
@@ -45,7 +38,7 @@ class Dataset:
     meta: Dict[str, Any]
 
     def distribution(self, y: np.ndarray) -> Dict[str, float]:
-        """Tỉ lệ lớp dương và imbalance ratio (đa số/thiểu số) của một mảng nhãn."""
+        """Positive-class rate and majority/minority ratio for one label array."""
         y = np.asarray(y, dtype=int)
         n_positive = int((y == 1).sum())
         n_negative = int(len(y) - n_positive)
@@ -54,17 +47,17 @@ class Dataset:
                 "imbalance_ratio": (n_negative / n_positive) if n_positive else float("inf")}
 
     def describe(self) -> str:
-        """Chuỗi một dòng để log: kích thước + tỉ lệ lớp của train/test."""
+        """Single-line log string with the train and test sizes and class ratios."""
         train = self.distribution(self.y_train)
         test = self.distribution(self.y_test)
-        return (f"{self.name}: train n={train['n']} (dương {train['n_positive']} = "
+        return (f"{self.name}: train n={train['n']} (positive {train['n_positive']} = "
                 f"{train['positive_pct']:.2f}%, IR={train['imbalance_ratio']:.1f}) | "
-                f"test n={test['n']} (dương {test['n_positive']} = {test['positive_pct']:.2f}%, "
-                f"IR={test['imbalance_ratio']:.1f}) | {self.X_train.shape[1]} đặc trưng")
+                f"test n={test['n']} (positive {test['n_positive']} = {test['positive_pct']:.2f}%, "
+                f"IR={test['imbalance_ratio']:.1f}) | {self.X_train.shape[1]} features")
 
 
 def make_synthetic_dataset(cfg: ExperimentConfig) -> Dataset:
-    """Sinh dataset mất cân bằng bằng `make_classification` rồi chia stratified."""
+    """Build an imbalanced synthetic dataset and split it with stratification."""
     X, y = make_classification(
         n_samples=int(cfg.n_samples),
         n_features=int(cfg.n_features),
@@ -92,10 +85,10 @@ def make_synthetic_dataset(cfg: ExperimentConfig) -> Dataset:
 
 
 def load_csv_dataset(cfg: ExperimentConfig) -> Dataset:
-    """Đọc dataset nhị phân từ CSV (ví dụ `creditcard.csv`) rồi chia stratified.
+    """Read a binary dataset from CSV, such as `creditcard.csv`, then split it with stratification.
 
-    Hỗ trợ pandas nếu có (nhanh hơn với file lớn), ngược lại dùng `csv` thuần. Nhãn phải là 0/1 và
-    cột nhãn do `cfg.target_column` chỉ định.
+    pandas is used when available because it is faster on large files, otherwise the standard `csv`
+    module is used. Labels must be 0/1 and the label column is named by `cfg.target_column`.
     """
     path = cfg.source
     meta_extra: Dict[str, Any]
@@ -104,17 +97,17 @@ def load_csv_dataset(cfg: ExperimentConfig) -> Dataset:
 
         frame = pd.read_csv(path)
         if cfg.target_column not in frame.columns:
-            raise KeyError(f"CSV không có cột nhãn {cfg.target_column!r}; "
-                           f"có {list(frame.columns)[:10]}")
+            raise KeyError(f"CSV has no label column {cfg.target_column!r}; "
+                           f"has {list(frame.columns)[:10]}")
         y = frame[cfg.target_column].to_numpy().astype(int)
         X = frame.drop(columns=[cfg.target_column]).to_numpy().astype(np.float64)
         meta_extra = {"reader": "pandas"}
-    except ImportError:  # pragma: no cover - môi trường không có pandas
+    except ImportError:  # pragma: no cover - environment without pandas
         with open(path, "r", encoding="utf-8", newline="") as handle:
             reader = csv.reader(handle)
             header = next(reader)
             if cfg.target_column not in header:
-                raise KeyError(f"CSV không có cột nhãn {cfg.target_column!r}")
+                raise KeyError(f"CSV has no label column {cfg.target_column!r}")
             target_index = header.index(cfg.target_column)
             feature_indexes = [i for i in range(len(header)) if i != target_index]
             rows: List[List[float]] = []
@@ -129,7 +122,7 @@ def load_csv_dataset(cfg: ExperimentConfig) -> Dataset:
         meta_extra = {"reader": "csv"}
 
     if set(np.unique(y).tolist()) - {0, 1}:
-        raise ValueError("Nhãn phải là 0/1 (bài toán phân loại nhị phân)")
+        raise ValueError("Labels must be 0/1 for a binary classification task")
     name = str(path).replace("\\", "/").rsplit("/", 1)[-1]
     return _split_dataset(X, y, name=f"csv:{name}",
                           meta={"source": str(path), **meta_extra}, cfg=cfg)
@@ -137,7 +130,7 @@ def load_csv_dataset(cfg: ExperimentConfig) -> Dataset:
 
 def _split_dataset(X: np.ndarray, y: np.ndarray, *, name: str, meta: Dict[str, Any],
                    cfg: ExperimentConfig) -> Dataset:
-    """Chia stratified train/test (giữ nguyên tỉ lệ lớp) và kiểm tra chênh lệch tỉ lệ."""
+    """Split train and test with stratification and warn when the class ratios diverge."""
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=float(cfg.test_size), stratify=y, random_state=int(cfg.seed), shuffle=True)
     dataset = Dataset(name=name, X_train=X_train, y_train=y_train.astype(int), X_test=X_test,
@@ -145,24 +138,24 @@ def _split_dataset(X: np.ndarray, y: np.ndarray, *, name: str, meta: Dict[str, A
     train_rate = dataset.distribution(dataset.y_train)["positive_pct"]
     test_rate = dataset.distribution(dataset.y_test)["positive_pct"]
     if abs(train_rate - test_rate) > 1.0:
-        LOGGER.warning("Tỉ lệ lớp train/test lệch %.2f điểm %% — kiểm tra lại stratify",
+        LOGGER.warning("Train/test class rates differ by %.2f points, check the stratification",
                        abs(train_rate - test_rate))
-    LOGGER.info("Đã chia tập — %s", dataset.describe())
+    LOGGER.info("Split complete - %s", dataset.describe())
     return dataset
 
 
 def load_dataset(cfg: ExperimentConfig) -> Dataset:
-    """Nạp dataset theo `cfg.source` (`"synthetic"` hoặc đường dẫn CSV)."""
+    """Load the dataset selected by `cfg.source`, either "synthetic" or a CSV path."""
     if str(cfg.source).lower() in ("synthetic", "make", ""):
         return make_synthetic_dataset(cfg)
     return load_csv_dataset(cfg)
 
 
 def stratified_folds(y: np.ndarray, cfg: ExperimentConfig) -> List[Tuple[np.ndarray, np.ndarray]]:
-    """Danh sách (train_index, val_index) của `StratifiedKFold` — mỗi fold GIỮ NGUYÊN tỉ lệ lớp."""
+    """List of (train_index, val_index) from `StratifiedKFold`, each fold keeping class proportions."""
     splitter = StratifiedKFold(n_splits=int(cfg.n_splits), shuffle=True, random_state=int(cfg.seed))
     folds = [(train_index, val_index)
              for train_index, val_index in splitter.split(np.zeros(len(y)), y)]
-    if len(folds) != int(cfg.n_splits):  # pragma: no cover - phòng vệ
-        raise AssertionError(f"StratifiedKFold trả {len(folds)} fold, mong đợi {cfg.n_splits}")
+    if len(folds) != int(cfg.n_splits):  # pragma: no cover - defensive
+        raise AssertionError(f"StratifiedKFold returned {len(folds)} folds, expected {cfg.n_splits}")
     return folds

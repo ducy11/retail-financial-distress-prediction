@@ -1,27 +1,8 @@
-"""FOCAL LOSS cho bài toán mất cân bằng — custom objective của LightGBM.
+"""Focal Loss for imbalanced classification, implemented as a LightGBM custom objective.
 
-Vì sao cần (algorithm-level): `scale_pos_weight` / `class_weight` chỉ dịch mức độ quan trọng giữa hai
-lớp; Focal Loss còn **giảm trọng số mẫu DỄ** bằng hệ số `(1 - p_t)^gamma`, nên mô hình tập trung vào
-mẫu khó (thường là mẫu thiểu số nằm sát biên). Với dữ liệu 98/2, đây là can thiệp vào HÀM MẤT MÁT
-(không đổi dữ liệu, không sinh mẫu) nên không thể gây rò rỉ.
-
-Công thức (nhãn `y ∈ {0,1}`, xác suất dự đoán `p`, logit `z = logit(p)`):
-
-    FL(p) = -[ alpha·y·(1-p)^gamma·ln p + (1-alpha)·(1-y)·p^gamma·ln(1-p) ]
-
-Đạo hàm bậc 1/2 theo **logit** (LightGBM yêu cầu grad/hess theo raw score) — suy ra giải tích và được
-kiểm chứng bằng sai phân số trong `tests/test_imbalance_techniques.py`:
-
-    y = 1:  g = alpha·(1-p)^gamma·(gamma·p·ln p + p - 1)
-            h = alpha·p·(1-p)·[ -gamma·(1-p)^(gamma-1)·(gamma·p·ln p + p - 1)
-                               + (1-p)^gamma·(gamma·ln p + gamma + 1) ]
-    y = 0:  g = (1-alpha)·p^gamma·(p - gamma·(1-p)·ln(1-p))
-            h = (1-alpha)·p·(1-p)·[ gamma·p^(gamma-1)·(p - gamma·(1-p)·ln(1-p))
-                                   + p^gamma·(1 + gamma·ln(1-p) + gamma) ]
-
-`gamma = 0` ⇒ thoái hoá về weighted BCE (kiểm chứng trong test). `alpha` là trọng số lớp DƯƠNG;
-`alpha=None` ⇒ tính ĐỘNG trong `fit` bằng tỉ lệ lớp nhận được (`n_âm/n`) — chỉ dùng nhãn của tập được
-truyền vào, nên khi nằm trong cross-validation nó chỉ thấy fold-train (chống rò rỉ).
+It down-weights easy samples by `(1 - p_t)^gamma` and weights the positive class by `alpha`, changing
+the loss function without touching the data. Gradients and hessians are analytic and derived only from
+the labels received in `fit`, so cross-validation stays leak-free.
 """
 from __future__ import annotations
 
@@ -32,19 +13,34 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 
 from . import config as C
 
-#: Sàn cho xác suất (tránh log(0)) và sàn cho Hessian (LightGBM yêu cầu h > 0).
+#: Floor for probabilities to avoid log(0), and floor for the hessian since LightGBM requires h > 0.
 EPS = 1e-6
 HESS_FLOOR = 1e-6
 
 
 def _sigmoid(z: np.ndarray) -> np.ndarray:
-    """Sigmoid ổn định số (không tràn với |z| lớn)."""
+    """Numerically stable sigmoid that cannot overflow for large |z|."""
     return 1.0 / (1.0 + np.exp(-np.clip(z, -60.0, 60.0)))
 
 
 def focal_grad_hess(y_true: np.ndarray, raw_score: np.ndarray, gamma: float,
                     alpha: float) -> Tuple[np.ndarray, np.ndarray]:
-    """(gradient, hessian) của Focal Loss theo logit — công thức giải tích (xem docstring module)."""
+    """Gradient and hessian of Focal Loss with respect to the logit.
+
+    With label `y`, predicted probability `p` and logit `z`, the loss is
+    `FL(p) = -(alpha*y*(1-p)^gamma*ln p + (1-alpha)*(1-y)*p^gamma*ln(1-p))`. LightGBM needs grad/hess on
+    the raw logit:
+
+        y = 1:  g = alpha*(1-p)^gamma*(gamma*p*ln p + p - 1)
+                h = alpha*p*(1-p)*[ -gamma*(1-p)^(gamma-1)*(gamma*p*ln p + p - 1)
+                                   + (1-p)^gamma*(gamma*ln p + gamma + 1) ]
+        y = 0:  g = (1-alpha)*p^gamma*(p - gamma*(1-p)*ln(1-p))
+                h = (1-alpha)*p*(1-p)*[ gamma*p^(gamma-1)*(p - gamma*(1-p)*ln(1-p))
+                                       + p^gamma*(1 + gamma*ln(1-p) + gamma) ]
+
+    A gamma of 0 degenerates to weighted binary cross-entropy. The derivatives are checked against
+    finite differences in `tests/test_imbalance_techniques.py`.
+    """
     y = np.asarray(y_true, dtype=float).ravel()
     p = np.clip(_sigmoid(np.asarray(raw_score, dtype=float).ravel()), EPS, 1.0 - EPS)
     log_p, log_q = np.log(p), np.log1p(-p)
@@ -67,7 +63,7 @@ def focal_grad_hess(y_true: np.ndarray, raw_score: np.ndarray, gamma: float,
 
 def focal_loss_value(y_true: np.ndarray, proba: np.ndarray, gamma: float = C.FOCAL_GAMMA,
                      alpha: float = 0.75) -> float:
-    """Giá trị Focal Loss trung bình (để báo cáo so sánh với BCE) — không dùng để huấn luyện."""
+    """Mean Focal Loss value for reporting against BCE; not used for training."""
     y = np.asarray(y_true, dtype=float).ravel()
     p = np.clip(np.asarray(proba, dtype=float).ravel(), EPS, 1.0 - EPS)
     loss = -(y * alpha * (1.0 - p) ** gamma * np.log(p)
@@ -77,7 +73,7 @@ def focal_loss_value(y_true: np.ndarray, proba: np.ndarray, gamma: float = C.FOC
 
 def make_focal_objective(gamma: float, alpha: float) -> Callable[[np.ndarray, np.ndarray],
                                                                 Tuple[np.ndarray, np.ndarray]]:
-    """Trả `objective` cho LightGBM: `(y_true, raw_score) → (grad, hess)`."""
+    """Return a LightGBM objective mapping `(y_true, raw_score)` to `(grad, hess)`."""
 
     def objective(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         return focal_grad_hess(y_true, y_pred, gamma, alpha)
@@ -87,11 +83,11 @@ def make_focal_objective(gamma: float, alpha: float) -> Callable[[np.ndarray, np
 
 
 class FocalLossClassifier(BaseEstimator, ClassifierMixin):
-    """Bộ phân loại LightGBM huấn luyện bằng FOCAL LOSS (custom objective).
+    """LightGBM classifier trained with Focal Loss as a custom objective.
 
-    `alpha=None` ⇒ alpha = n_âm/n tính TRONG `fit` từ nhãn được truyền vào (chỉ fold-train khi CV).
-    Xác suất dự đoán suy từ raw score (`predict(..., raw_score=True)` rồi sigmoid) vì LightGBM KHÔNG
-    áp hàm liên kết cho custom objective.
+    alpha=None sets alpha = n_negative/n inside fit from the received labels, which is the fold-train
+    set under CV. Predicted probabilities come from the raw score (`predict(..., raw_score=True)`
+    followed by a sigmoid) because LightGBM does not apply a link function to a custom objective.
     """
 
     def __init__(self, gamma: float = C.FOCAL_GAMMA, alpha: Optional[float] = C.FOCAL_ALPHA,
@@ -114,17 +110,17 @@ class FocalLossClassifier(BaseEstimator, ClassifierMixin):
 
     @staticmethod
     def available() -> bool:
-        """Focal Loss của lab cần LightGBM (backend chính của lab)."""
+        """The lab's Focal Loss requires LightGBM, the lab's primary backend."""
         try:
             import lightgbm  # noqa: F401
-        except Exception:  # pragma: no cover - môi trường thiếu lightgbm
+        except Exception:  # pragma: no cover - environment without lightgbm
             return False
         return True
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "FocalLossClassifier":
-        if not self.available():  # pragma: no cover - môi trường thiếu lightgbm
-            raise RuntimeError("Focal Loss cần lightgbm; môi trường hiện tại không có. "
-                               "Cài `python -m pip install lightgbm`.")
+        if not self.available():  # pragma: no cover - environment without lightgbm
+            raise RuntimeError("Focal Loss requires lightgbm, which is not available. "
+                               "Install it with `python -m pip install lightgbm`.")
         from lightgbm import LGBMClassifier
 
         y = np.asarray(y, dtype=int).ravel()
@@ -153,7 +149,7 @@ class FocalLossClassifier(BaseEstimator, ClassifierMixin):
         return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
     def get_params(self, deep: bool = True) -> Dict[str, Any]:
-        """Tham số công khai (đủ để clone/pickle lại mô hình trong CV)."""
+        """Public parameters, sufficient to clone or pickle the model inside CV."""
         return {"gamma": self.gamma, "alpha": self.alpha, "n_estimators": self.n_estimators,
                 "learning_rate": self.learning_rate, "num_leaves": self.num_leaves,
                 "min_child_samples": self.min_child_samples, "subsample": self.subsample,

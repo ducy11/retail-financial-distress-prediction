@@ -1,44 +1,8 @@
-"""DANH MỤC ĐẦY ĐỦ các nhóm kỹ thuật xử lý mất cân bằng (yêu cầu #2) + runner so sánh không rò rỉ.
+"""Catalog of imbalance-handling techniques with a leak-free comparison runner.
 
-Danh mục (đúng theo danh sách yêu cầu):
-
-| Nhóm | Kỹ thuật | Khoá |
-|---|---|---|
-| **Baseline (tham chiếu, yêu cầu #3)** | boosting mặc định — KHÔNG can thiệp mất cân bằng | `baseline` |
-| Data-level / Oversampling | RandomOverSampler · SMOTE · BorderlineSMOTE · ADASYN | `ros`, `smote`, `borderline_smote`, `adasyn` |
-| Data-level / Undersampling | RandomUnderSampler · Tomek Links · Edited Nearest Neighbours | `rus`, `tomek`, `enn` |
-| Hybrid | SMOTE + Tomek Links · SMOTE + ENN | `smote_tomek`, `smote_enn` |
-| Algorithm-level | `scale_pos_weight` động · `class_weight='balanced'` · Focal Loss | `cost_sensitive_scale_pos_weight`, `cost_sensitive_class_weight`, `focal_loss` |
-| Ensemble | BalancedRandomForest · EasyEnsemble · RUSBoost | `balanced_rf`, `easy_ensemble`, `rusboost` |
-| Threshold tuning | Ngưỡng chọn trên ĐƯỜNG PR của xác suất out-of-fold (3 chế độ + mốc 0.5) | áp cho MỌI kỹ thuật |
-
-Chống rò rỉ (được kiểm chứng và ghi PASS/FAIL trong artifact):
-1. Mọi sampler nằm TRONG `imblearn.pipeline.Pipeline` ⇒ `fit_resample` chỉ chạy trên train của fold;
-   validation của fold được so với bản sao trước khi fit (`cv.assert_val_untouched`).
-2. Trọng số cost-sensitive / Focal Loss tính TRONG `fit` từ nhãn nhận được (fold-train).
-3. Ensemble undersampling (BalancedRF/EasyEnsemble/RUSBoost) chỉ lấy mẫu bên trong `fit` của chính tập
-   train được truyền vào.
-4. Ngưỡng chọn trên **xác suất out-of-fold của train_pool**, KHÔNG chọn trên test; test chỉ được chấm
-   điểm một lần sau khi đã chốt mô hình + ngưỡng.
-
-Đánh giá (yêu cầu #3): **Accuracy KHÔNG phải thước đo chính** — bảng so sánh chỉ dùng Precision,
-Recall, F1 (binary/macro/weighted/F-beta), PR-AUC (Average Precision), ROC-AUC, MCC và Confusion Matrix
-(`metrics.PRIMARY_METRICS`); accuracy chỉ xuất hiện như chỉ số CHẨN ĐOÁN kèm mốc "đoán lớp đa số"
-(`metrics.accuracy_diagnostic`). Artifact có sẵn bảng **Baseline (chưa xử lý) vs từng kỹ thuật**
-(`compare_with_baseline`, `comparison_markdown`, `techniques_comparison.csv`).
-
-Resampling được tích hợp QUA `imblearn.pipeline.Pipeline` (`samplers.build_sampler_pipeline`) — không
-dùng pipeline chuẩn của scikit-learn cho các bước lấy mẫu, nhờ đó `fit_resample` chỉ chạy trên train
-của từng fold khi vào Cross-Validation.
-
-Lệnh:
-    python -m imbalance_lab.techniques                     # 20.000 mẫu, 5 fold, tất cả kỹ thuật
-    python -m imbalance_lab.techniques --quick             # lưới nhẹ (ensemble ít estimator hơn)
-    python -m imbalance_lab.techniques --techniques smote,adasyn,focal_loss --cv 3
-    python -m imbalance_lab.techniques --no-imblearn       # dùng bản nội bộ của lab
-
-Artifact (mặc định `reports/imbalance/`): `techniques.md`, `techniques.csv`, `techniques.json`,
-`techniques.log`.
+Every sampler runs inside `imblearn.pipeline.Pipeline`, cost-sensitive and Focal Loss weights are
+derived inside `fit`, and thresholds are tuned on out-of-fold probabilities of the train pool, so
+validation and test never leak into fitting. Accuracy is reported as a diagnostic only.
 """
 from __future__ import annotations
 
@@ -53,11 +17,9 @@ import numpy as np
 
 from . import config as C
 
-# ---------------------------------------------------------------------------
-# Danh mục: nhóm → kỹ thuật (nguồn duy nhất cho runner, báo cáo VÀ test)
-# ---------------------------------------------------------------------------
-#: Nhóm kỹ thuật theo yêu cầu #2. Test `test_catalog_covers_every_required_group` đối chiếu trực tiếp
-#: danh sách này, nên KHÔNG được bỏ sót mục nào khi sửa code.
+# Catalog mapping groups to techniques, the single source for the runner, the report and the tests.
+#: Required technique groups. `test_catalog_covers_every_required_group` checks this list directly, so no
+#: entry may be dropped when editing the code.
 REQUIRED_GROUPS: Dict[str, Tuple[str, ...]] = {
     "data-level/oversampling": ("ros", "smote", "borderline_smote", "adasyn"),
     "data-level/undersampling": ("rus", "tomek", "enn"),
@@ -68,80 +30,80 @@ REQUIRED_GROUPS: Dict[str, Tuple[str, ...]] = {
 }
 
 
-#: Nhóm THAM CHIẾU — KHÔNG thuộc danh sách yêu cầu #2 nhưng bắt buộc có để so sánh: mô hình gốc
-#: CHƯA xử lý mất cân bằng (yêu cầu #3: "bảng/hàm so sánh Baseline vs các kỹ thuật xử lý").
+#: Reference group that is not part of the required list but is needed for comparison: the unmodified
+#: model with no imbalance handling.
 REFERENCE_GROUPS: Dict[str, Tuple[str, ...]] = {"baseline": ("baseline",)}
 
-#: Mô tả từng kỹ thuật (dùng trong log/báo cáo).
+#: Description of each technique, used in logs and the report.
 TECHNIQUE_DOCS: Dict[str, str] = {
-    "baseline": "BASELINE — boosting mặc định, KHÔNG can thiệp mất cân bằng (mốc so sánh)",
-    "ros": "RandomOverSampler — sao chép mẫu thiểu số (không tạo mẫu mới)",
-    "smote": "SMOTE — nội suy giữa mẫu thiểu số và láng giềng thiểu số",
-    "borderline_smote": "BorderlineSMOTE — chỉ nội suy từ mẫu thiểu số nằm ở BIÊN (vùng DANGER)",
-    "adasyn": "ADASYN — sinh thêm tỉ lệ với độ khó (số láng giềng đa số) của từng mẫu thiểu số",
-    "rus": "RandomUnderSampler — hạ ngẫu nhiên lớp đa số về tỉ lệ mục tiêu",
-    "tomek": "Tomek Links — làm sạch biên: bỏ mẫu đa số trong cặp láng giềng khác lớp",
-    "enn": "EditedNearestNeighbours — làm sạch biên: bỏ mẫu có láng giềng khác lớp",
-    "smote_tomek": "HYBRID SMOTE + Tomek Links",
-    "smote_enn": "HYBRID SMOTE + EditedNearestNeighbours",
-    "cost_sensitive_scale_pos_weight": "LightGBM + `scale_pos_weight = n_âm/n_dương` tính TRONG fit",
-    "cost_sensitive_class_weight": "`class_weight='balanced'` — trọng số mẫu suy trong fit",
-    "focal_loss": "Focal Loss — custom objective của LightGBM (gamma làm mờ mẫu dễ, alpha theo lớp)",
-    "balanced_rf": "BalancedRandomForestClassifier (undersample từng cây, TRONG fit)",
-    "easy_ensemble": "EasyEnsembleClassifier (nhiều AdaBoost trên các tập con cân bằng)",
-    "rusboost": "RUSBoostClassifier (boosting + undersample từng vòng)",
+    "baseline": "Baseline: default boosting with no imbalance intervention, used as the reference",
+    "ros": "RandomOverSampler: duplicate minority samples without creating new ones",
+    "smote": "SMOTE: interpolate between a minority sample and its minority neighbors",
+    "borderline_smote": "BorderlineSMOTE: interpolate only from minority samples on the boundary (DANGER region)",
+    "adasyn": "ADASYN: generate more samples in proportion to each minority sample's difficulty",
+    "rus": "RandomUnderSampler: randomly drop majority samples to reach the target ratio",
+    "tomek": "Tomek Links: boundary cleaning that drops the majority sample in a mixed-class neighbor pair",
+    "enn": "EditedNearestNeighbours: boundary cleaning that drops samples with differently labeled neighbors",
+    "smote_tomek": "Hybrid SMOTE + Tomek Links",
+    "smote_enn": "Hybrid SMOTE + EditedNearestNeighbours",
+    "cost_sensitive_scale_pos_weight": "LightGBM with `scale_pos_weight = n_negative/n_positive` computed in fit",
+    "cost_sensitive_class_weight": "`class_weight='balanced'`, deriving sample weights inside fit",
+    "focal_loss": "Focal Loss as a LightGBM custom objective, with gamma down-weighting easy samples",
+    "balanced_rf": "BalancedRandomForestClassifier, undersampling inside each tree during fit",
+    "easy_ensemble": "EasyEnsembleClassifier, many AdaBoost models over balanced subsets",
+    "rusboost": "RUSBoostClassifier, boosting with undersampling in each round",
 }
 
-#: Yêu cầu thư viện của từng kỹ thuật (thiếu ⇒ runner ghi trạng thái `skipped` kèm lý do).
+#: Library requirements per technique; a missing library makes the runner record a `skipped` status.
 REQUIRES: Dict[str, Tuple[str, ...]] = {
     "balanced_rf": ("imblearn",), "easy_ensemble": ("imblearn",), "rusboost": ("imblearn",),
     "focal_loss": ("lightgbm",),
 }
 
-#: Bảng anchor để report/test đối chiếu "yêu cầu ↔ kỹ thuật ↔ nơi cài đặt".
+#: Anchor table mapping each requirement to its technique and implementation site, for the report and tests.
 IMPLEMENTATION: Dict[str, str] = {
-    "baseline": "models.make_base_classifier (boosting mặc định, KHÔNG can thiệp)",
-    "ros": "samplers.RandomOverSampler / imblearn RandomOverSampler",
-    "smote": "samplers.SMOTE / imblearn SMOTE",
-    "borderline_smote": "samplers.BorderlineSMOTE / imblearn BorderlineSMOTE",
-    "adasyn": "samplers.ADASYN / imblearn ADASYN",
-    "rus": "samplers.RandomUnderSampler / imblearn RandomUnderSampler",
-    "tomek": "samplers.TomekLinks / imblearn TomekLinks",
-    "enn": "samplers.EditedNearestNeighbours / imblearn EditedNearestNeighbours",
-    "smote_tomek": "samplers.make_hybrid_sampler('smote_tomek') / imblearn SMOTETomek",
-    "smote_enn": "samplers.make_hybrid_sampler('smote_enn') / imblearn SMOTEENN",
+    "baseline": "models.make_base_classifier, default boosting with no intervention",
+    "ros": "samplers.RandomOverSampler or imblearn RandomOverSampler",
+    "smote": "samplers.SMOTE or imblearn SMOTE",
+    "borderline_smote": "samplers.BorderlineSMOTE or imblearn BorderlineSMOTE",
+    "adasyn": "samplers.ADASYN or imblearn ADASYN",
+    "rus": "samplers.RandomUnderSampler or imblearn RandomUnderSampler",
+    "tomek": "samplers.TomekLinks or imblearn TomekLinks",
+    "enn": "samplers.EditedNearestNeighbours or imblearn EditedNearestNeighbours",
+    "smote_tomek": "samplers.make_hybrid_sampler('smote_tomek') or imblearn SMOTETomek",
+    "smote_enn": "samplers.make_hybrid_sampler('smote_enn') or imblearn SMOTEENN",
     "cost_sensitive_scale_pos_weight": "models.ScalePosWeightClassifier",
     "cost_sensitive_class_weight": "models.BalancedWeightClassifier",
-    "focal_loss": "losses.FocalLossClassifier (grad/hess giải tích)",
+    "focal_loss": "losses.FocalLossClassifier using analytic grad/hess",
     "balanced_rf": "imblearn BalancedRandomForestClassifier",
     "easy_ensemble": "imblearn EasyEnsembleClassifier",
     "rusboost": "imblearn RUSBoostClassifier",
 }
 
-#: Thứ tự chạy: BASELINE trước (mốc so sánh, yêu cầu #3), rồi các nhóm theo yêu cầu #2.
+#: Run order: the baseline first as the reference, then the required groups.
 TECHNIQUE_ORDER: Tuple[str, ...] = tuple(
     key for group in (*REFERENCE_GROUPS.values(), *REQUIRED_GROUPS.values()) for key in group)
 
-#: Khoá của mô hình gốc CHƯA xử lý (dùng trong bảng so sánh baseline).
+#: Key of the unmodified model, used in the baseline comparison table.
 BASELINE_TECHNIQUE = "baseline"
 
 
-#: Các CHẾ ĐỘ ngưỡng (khoá có `threshold`) — mọi hàm chọn ngưỡng của lab trả đúng bộ này + vài số
-#: tổng hợp (`pr_auc`, `n_candidates`) nên khi lặp phải lọc theo danh sách này.
+#: Threshold modes, the keys that carry a `threshold`. Every threshold function returns this set plus a
+#: few summary values (`pr_auc`, `n_candidates`), so iteration filters by this list.
 THRESHOLD_MODES: Tuple[str, ...] = ("best_f1", "best_cost", "min_precision", "fixed_0.5")
 
 
 def technique_group(key: str) -> str:
-    """Nhóm của một kỹ thuật (gồm cả nhóm tham chiếu `baseline`)."""
+    """Group of one technique, including the reference group `baseline`."""
     for groups in (REQUIRED_GROUPS, REFERENCE_GROUPS):
         for group, keys in groups.items():
             if key in keys:
                 return group
-    raise KeyError(f"Kỹ thuật không có trong danh mục: {key!r}")
+    raise KeyError(f"Technique not in the catalog: {key!r}")
 
 
 def all_techniques_available(prefer_imblearn: bool = True) -> Dict[str, List[str]]:
-    """{kỹ thuật: [thư viện còn thiếu]} — rỗng nghĩa là chạy được hết."""
+    """Map each technique to its missing libraries; an empty dict means everything can run."""
     from .losses import FocalLossClassifier
     from .samplers import resampling_backend
 
@@ -160,14 +122,12 @@ def all_techniques_available(prefer_imblearn: bool = True) -> Dict[str, List[str
     return missing
 
 
-# ---------------------------------------------------------------------------
-# Dựng estimator cho một kỹ thuật
-# ---------------------------------------------------------------------------
+# Estimator construction for one technique.
 def _ensemble_factory(key: str, random_state: int, quick: bool) -> Callable[[], Any]:
-    """Factory cho nhóm ENSEMBLE (BalancedRandomForest / EasyEnsemble / RUSBoost).
+    """Factory for the ensemble group: BalancedRandomForest, EasyEnsemble and RUSBoost.
 
-    Cả ba đều undersample BÊN TRONG `fit` của tập train được truyền vào ⇒ trong CV chỉ lấy mẫu từ
-    fold-train, không bao giờ đụng validation/test.
+    All three undersample inside `fit` over the train set passed to them, so under CV they sample only
+    from the fold train and never touch validation or test.
     """
     from imblearn.ensemble import (BalancedRandomForestClassifier, EasyEnsembleClassifier,
                                   RUSBoostClassifier)
@@ -186,13 +146,13 @@ def _ensemble_factory(key: str, random_state: int, quick: bool) -> Callable[[], 
 
 def build_technique(key: str, *, prefer_imblearn: bool = C.PREFER_IMBLEARN,
                     random_state: int = C.SEED, quick: bool = False) -> Dict[str, Any]:
-    """Spec của một kỹ thuật: `factory` (estimator mới mỗi fold) + `probe_factory` (log resampling).
+    """Spec for one technique: `factory` for a fresh estimator per fold and `probe_factory` for resampling logs.
 
-    `probe_factory` chỉ được trả khi kỹ thuật có resampling: nó là pipeline CHỈ có sampler
-    (`pipe[:-1]`) để gọi `fit_resample` và ghi phân phối nhãn TRƯỚC/SAU của fold-train.
+    `probe_factory` is returned only for resampling techniques. It is a sampler-only pipeline (`pipe[:-1]`)
+    used to call `fit_resample` and record the fold-train label distribution before and after.
     """
     if key not in TECHNIQUE_ORDER:
-        raise KeyError(f"Kỹ thuật không có trong danh mục: {key!r}; có {list(TECHNIQUE_ORDER)}")
+        raise KeyError(f"Technique not in the catalog: {key!r}; have {list(TECHNIQUE_ORDER)}")
 
     from .models import BalancedWeightClassifier, ScalePosWeightClassifier, make_base_classifier
     from .samplers import (HYBRID_SAMPLERS, SINGLE_SAMPLERS, build_sampler_pipeline,
@@ -214,11 +174,11 @@ def build_technique(key: str, *, prefer_imblearn: bool = C.PREFER_IMBLEARN,
                 prefer_imblearn=prefer_imblearn)
 
         def probe_factory() -> Any:
-            return factory()[:-1]          # chỉ sampler ⇒ gọi được `fit_resample`
+            return factory()[:-1]          # sampler only, so fit_resample is available
 
         kind = "data-level"
     elif key == "baseline":
-        # Mốc so sánh (yêu cầu #3): KHÔNG resampling, KHÔNG trọng số lớp, KHÔNG custom loss.
+        # Reference model: no resampling, no class weights, no custom loss.
         factory = lambda: make_base_classifier(None, random_state=random_state)  # noqa: E731
         probe_factory = None
         kind = "baseline"
@@ -248,9 +208,7 @@ def build_technique(key: str, *, prefer_imblearn: bool = C.PREFER_IMBLEARN,
             "is_resampling": samplers is not None, "requires": list(REQUIRES.get(key, ()))}
 
 
-# ---------------------------------------------------------------------------
-# Chạy một kỹ thuật: CV stratified trên train_pool → chọn ngưỡng trên OOF (đường PR) → chốt test
-# ---------------------------------------------------------------------------
+# Run one technique: stratified CV on the train pool, thresholds from the OOF PR curve, then a test score.
 def _write_json(path: Any, obj: Any) -> None:
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2, default=float) + "\n",
                     encoding="utf-8")
@@ -271,10 +229,10 @@ def _write_csv(path: Any, rows: List[Dict[str, Any]], header: Optional[List[str]
 def evaluate_technique(spec: Dict[str, Any], X_pool: Any, y_pool: Any, X_test: Any, y_test: Any, *,
                        n_splits: int, seed: int, log: Callable[[str], None],
                        threshold_fn: Callable[..., Dict[str, Any]]) -> Dict[str, Any]:
-    """Đánh giá một kỹ thuật KHÔNG rò rỉ: resampling trong pipeline, ngưỡng chọn trên OOF.
+    """Evaluate one technique without leakage: resampling inside the pipeline, thresholds from OOF.
 
-    Trả về `rows` (metric trên test theo từng ngưỡng), `fold_rows`, `resample_rows`, `thresholds`,
-    `checks` (PASS/FAIL chống rò rỉ) và `oof_pr_auc`.
+    Returns `rows` (test metrics per threshold), `fold_rows`, `resample_rows`, `thresholds`,
+    `checks` (PASS/FAIL anti-leak flags) and `oof_pr_auc`.
     """
     from .cv import cross_validate_strategy, refit_and_score
     from .metrics import metrics_at_threshold
@@ -285,9 +243,9 @@ def evaluate_technique(spec: Dict[str, Any], X_pool: Any, y_pool: Any, X_test: A
                          precision_target=C.PRECISION_TARGET)
     threshold_map = {mode: float(tuned[mode]["threshold"]) for mode in THRESHOLD_MODES
                      if mode in tuned}
-    log("    Ngưỡng chọn trên ĐƯỜNG PR của xác suất OOF: "
+    log("    Thresholds from the PR curve of OOF probabilities: "
         + ", ".join(f"{mode}={value:.4f}" for mode, value in threshold_map.items())
-        + f" | PR-AUC OOF={tuned['pr_auc']:.4f} ({tuned['n_candidates']} điểm ứng viên)")
+        + f" | OOF PR-AUC={tuned['pr_auc']:.4f} ({tuned['n_candidates']} candidates)")
 
     X_test_before, y_test_before = X_test.copy(), y_test.copy()
     scored = refit_and_score(spec, X_pool, y_pool, X_test, y_test, threshold_map)
@@ -302,10 +260,10 @@ def evaluate_technique(spec: Dict[str, Any], X_pool: Any, y_pool: Any, X_test: A
                      "delta_recall_vs_0.5": float(metrics["recall"] - baseline_recall),
                      **metrics})
     checks = {
-        "fold_val_nguyên_vẹn": True,       # `cv.assert_val_untouched` đã chạy trong từng fold
-        "test_nguyên_vẹn": bool(np.array_equal(X_test, X_test_before)
-                                and np.array_equal(y_test, y_test_before)),
-        "ngưỡng_chọn_trên_oof": bool(set(threshold_map) == set(THRESHOLD_MODES)),
+        "fold_validation_untouched": True,   # cv.assert_val_untouched ran inside each fold
+        "test_untouched": bool(np.array_equal(X_test, X_test_before)
+                               and np.array_equal(y_test, y_test_before)),
+        "thresholds_from_oof": bool(set(threshold_map) == set(THRESHOLD_MODES)),
     }
     resample_rows = []
     for entry in cv["folds"]:
@@ -317,10 +275,10 @@ def evaluate_technique(spec: Dict[str, Any], X_pool: Any, y_pool: Any, X_test: A
             "train_pos_after": after["n_positive"], "train_ir_after": after["imbalance_ratio"],
             "val_n": entry["val"]["n"], "val_pos": entry["val"]["n_positive"],
             "val_pos_pct": entry["val"]["positive_pct"]})
-    log(f"    → test: F1@{threshold_map['best_f1']:.3f}="
+    log(f"    -> test: F1@{threshold_map['best_f1']:.3f}="
         f"{scored['at_threshold']['best_f1']['f1']:.3f} (F1@0.5={baseline_f1:.3f}) | "
         f"PR-AUC={scored['at_threshold']['best_f1']['pr_auc']:.4f} | "
-        f"rò rỉ: {'PASS' if all(checks.values()) else 'FAIL'}")
+        f"leakage: {'PASS' if all(checks.values()) else 'FAIL'}")
 
     return {"technique": spec["key"], "group": spec["group"], "kind": spec["kind"],
             "doc": spec["doc"], "implementation": spec["implementation"],
@@ -335,7 +293,7 @@ def evaluate_technique(spec: Dict[str, Any], X_pool: Any, y_pool: Any, X_test: A
 
 
 def _empty_result(spec: Dict[str, Any], status: str, reason: str) -> Dict[str, Any]:
-    """Bản ghi cho kỹ thuật bị BỎ QUA/LỖI (giữ nguyên schema để báo cáo không phải xử lý đặc biệt)."""
+    """Record for a skipped or failed technique, keeping the schema so the report needs no special case."""
     return {"technique": spec["key"], "group": spec["group"], "kind": spec["kind"],
             "doc": spec["doc"], "implementation": spec["implementation"],
             "is_resampling": spec["is_resampling"], "status": status, "reason": reason,
@@ -344,7 +302,7 @@ def _empty_result(spec: Dict[str, Any], status: str, reason: str) -> Dict[str, A
 
 
 def _has(package: str) -> bool:
-    """True nếu `package` có metadata phiên bản (để in mà không cần import)."""
+    """True when `package` has version metadata, so it can be printed without importing it."""
     try:
         md.version(package)
     except Exception:
@@ -355,7 +313,7 @@ def _has(package: str) -> bool:
 def run(n_samples: Optional[int] = None, n_splits: Optional[int] = None,
         techniques: Optional[Sequence[str]] = None, prefer_imblearn: bool = C.PREFER_IMBLEARN,
         write: bool = True, quick: bool = False) -> Dict[str, Any]:
-    """Chạy danh mục: sinh dữ liệu 98/2 → CV stratified từng kỹ thuật → ngưỡng PR trên OOF → test."""
+    """Run the catalog: generate 98/2 data, cross-validate each technique, tune thresholds on OOF, then test."""
     from .data import (format_distribution, label_distribution, make_imbalanced_dataset,
                        stratified_holdout_split)
     from .models import classifier_backend
@@ -366,12 +324,12 @@ def run(n_samples: Optional[int] = None, n_splits: Optional[int] = None,
     log_lines: List[str] = []
 
     def log(message: str = "") -> None:
-        try:  # console Windows (cp1252)/stdout bị redirect: ép UTF-8 để không UnicodeEncodeError
+        try:  # force UTF-8 so a redirected Windows console does not raise UnicodeEncodeError
             reconfigure = getattr(sys.stdout, "reconfigure", None)
             encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
             if reconfigure is not None and encoding not in ("utf-8", "utf8"):
                 reconfigure(encoding="utf-8")
-        except Exception:  # pragma: no cover - stream không hỗ trợ reconfigure
+        except Exception:  # pragma: no cover - stream does not support reconfigure
             pass
         print(message)
         log_lines.append(message)
@@ -382,19 +340,19 @@ def run(n_samples: Optional[int] = None, n_splits: Optional[int] = None,
     keys = list(techniques) if techniques else list(TECHNIQUE_ORDER)
     unknown = [key for key in keys if key not in TECHNIQUE_ORDER]
     if unknown:
-        raise ValueError(f"Kỹ thuật không có trong danh mục: {unknown}; có {list(TECHNIQUE_ORDER)}")
+        raise ValueError(f"Techniques not in the catalog: {unknown}; have {list(TECHNIQUE_ORDER)}")
 
     missing_libs = all_techniques_available(prefer_imblearn)
-    log("=== DANH MỤC KỸ THUẬT MẤT CÂN BẰNG (yêu cầu #2) — pipeline không rò rỉ dữ liệu ===")
-    log(f"Backend phân loại   : {classifier_backend()} "
-        f"(lightgbm {md.version('lightgbm') if _has('lightgbm') else '—'}, "
+    log("=== Imbalance technique catalog: pipeline with no data leakage ===")
+    log(f"Classifier backend  : {classifier_backend()} "
+        f"(lightgbm {md.version('lightgbm') if _has('lightgbm') else '-'}, "
         f"scikit-learn {md.version('scikit-learn')})")
-    log(f"Backend resampling  : {resampling_backend(prefer_imblearn)} "
-        f"(imbalanced-learn {md.version('imbalanced-learn') if _has('imbalanced-learn') else '—'})")
-    log(f"Danh mục            : {len(keys)} kỹ thuật × {folds} fold | n_samples={n} | seed={seed}"
-        + (" | chế độ --quick" if quick else ""))
+    log(f"Resampling backend  : {resampling_backend(prefer_imblearn)} "
+        f"(imbalanced-learn {md.version('imbalanced-learn') if _has('imbalanced-learn') else '-'})")
+    log(f"Catalog             : {len(keys)} techniques x {folds} folds | n_samples={n} | seed={seed}"
+        + (" | --quick mode" if quick else ""))
     if missing_libs:
-        log(f"Thiếu thư viện      : {missing_libs} ⇒ các kỹ thuật đó bị BỎ QUA (ghi rõ lý do)")
+        log(f"Missing libraries   : {missing_libs}, so those techniques are skipped with a recorded reason")
     for group, group_keys in (*REFERENCE_GROUPS.items(), *REQUIRED_GROUPS.items()):
         log(f"  - {group:26s}: {', '.join(key for key in group_keys if key in keys)}")
 
@@ -402,35 +360,35 @@ def run(n_samples: Optional[int] = None, n_splits: Optional[int] = None,
     split = stratified_holdout_split(X, y, seed=seed)
     X_pool, y_pool = split["X_train"], split["y_train"]
     X_test, y_test = split["X_test"], split["y_test"]
-    log("\n[1] Dữ liệu (mất cân bằng 98/2)")
-    log(f"    toàn bộ     : {format_distribution(label_distribution(y))}")
+    log("\n[1] Data with a 98/2 imbalance")
+    log(f"    all         : {format_distribution(label_distribution(y))}")
     log(f"    train_pool  : {format_distribution(label_distribution(y_pool))}")
     log(f"    holdout test: {format_distribution(label_distribution(y_test))}"
-        "  ← KHÔNG resample, chỉ dùng một lần để chốt")
+        "  <- never resampled, scored once")
 
     results: List[Dict[str, Any]] = []
     for index, key in enumerate(keys, start=2):
         spec = build_technique(key, prefer_imblearn=prefer_imblearn, random_state=seed, quick=quick)
-        log(f"\n[{index}] `{key}` ({spec['group']}) — {spec['doc']}")
+        log(f"\n[{index}] `{key}` ({spec['group']}): {spec['doc']}")
         gaps = missing_libs.get(key, [])
         if gaps:
-            reason = f"thiếu {', '.join(gaps)}"
-            log(f"    BỎ QUA — {reason}")
+            reason = f"missing {', '.join(gaps)}"
+            log(f"    SKIPPED: {reason}")
             results.append(_empty_result(spec, "skipped", reason))
             continue
         try:
             results.append(evaluate_technique(spec, X_pool, y_pool, X_test, y_test,
                                               n_splits=folds, seed=seed, log=log,
                                               threshold_fn=tune_thresholds_from_pr_curve))
-        except Exception as exc:  # noqa: BLE001 - một kỹ thuật lỗi không làm hỏng cả danh mục
+        except Exception as exc:  # noqa: BLE001 - one failing technique must not stop the catalog
             reason = f"{type(exc).__name__}: {exc}"
-            log(f"    LỖI — {reason}")
+            log(f"    ERROR: {reason}")
             results.append(_empty_result(spec, "error", reason))
 
     failed = [item["technique"] for item in results
               if item["status"] == "ok" and not all(item["checks"].values())]
-    log(f"\n[{len(keys) + 2}] Kiểm chứng chống rò rỉ: "
-        f"{'TẤT CẢ PASS' if not failed else 'FAIL ở: ' + ', '.join(failed)}")
+    log(f"\n[{len(keys) + 2}] Anti-leak checks: "
+        f"{'ALL PASS' if not failed else 'FAIL at: ' + ', '.join(failed)}")
 
     result: Dict[str, Any] = {
         "n_samples": n, "n_splits": folds, "seed": seed, "quick": quick,
@@ -454,57 +412,55 @@ def run(n_samples: Optional[int] = None, n_splits: Optional[int] = None,
 
 
 
-# ---------------------------------------------------------------------------
-# Báo cáo (Markdown/CSV/JSON/log)
-# ---------------------------------------------------------------------------
+# Reporting: Markdown, CSV, JSON and log artifacts.
 def _fmt(value: Any, digits: int = 3) -> str:
-    """Định dạng số cho bảng (None/NaN → '—')."""
+    """Format a number for tables, mapping None and NaN to '-'."""
     try:
         number = float(value)
     except (TypeError, ValueError):
-        return "—"
-    return "—" if number != number else f"{number:.{digits}f}"
+        return "-"
+    return "-" if number != number else f"{number:.{digits}f}"
 
 
 def _row_for(item: Dict[str, Any], mode: str) -> Dict[str, Any]:
-    """Dòng metric trên test của một kỹ thuật tại một chế độ ngưỡng."""
+    """Test metric row for one technique at one threshold mode."""
     return next((row for row in item["rows"] if row["threshold_mode"] == mode), {})
 
 
 def _train_summary(item: Dict[str, Any]) -> str:
-    """Chuỗi `IR trước → IR sau` (trung bình qua fold) cho cột phân phối nhãn."""
+    """`IR before -> IR after` string, averaged over folds, for the label-distribution column."""
     rows = item["resample_rows"]
     if not rows:
-        return "—"
+        return "-"
     before = float(np.mean([row["train_ir_before"] for row in rows]))
     after = float(np.mean([row["train_ir_after"] for row in rows]))
-    return f"{before:.1f} → {after:.1f}"
+    return f"{before:.1f} -> {after:.1f}"
 
 
 def _val_pos_range(item: Dict[str, Any]) -> str:
-    """Khoảng % dương của fold-validation (chứng minh validation giữ tỉ lệ lớp)."""
+    """Range of fold-validation positive percentages, showing that validation keeps the class ratio."""
     rows = item["resample_rows"]
     if not rows:
-        return "—"
+        return "-"
     values = [row["val_pos_pct"] for row in rows]
-    return f"{min(values):.2f}–{max(values):.2f}%"
+    return f"{min(values):.2f}-{max(values):.2f}%"
 
 
 def compare_with_baseline(result: Dict[str, Any],
                           mode: str = "best_f1") -> Dict[str, Any]:
-    """Bảng so sánh **BASELINE (chưa xử lý)** với từng kỹ thuật xử lý mất cân bằng (yêu cầu #3).
+    """Comparison table of the baseline against every imbalance-handling technique.
 
-    Mỗi dòng gồm metric CHÍNH tại ngưỡng `mode` (mặc định `best_f1` — ngưỡng chọn trên đường PR của
-    xác suất out-of-fold): Precision, Recall, F1, F1-macro, F1-weighted, F-beta, PR-AUC, ROC-AUC, MCC
-    và Confusion Matrix (TN/FP/FN/TP). Kèm chênh lệch so với baseline: ΔPR-AUC, ΔF1, ΔF1-macro,
-    ΔFbeta, ΔRecall.
+    Each row lists the primary metrics at threshold `mode`, which defaults to `best_f1`, a threshold
+    selected on the PR curve of out-of-fold probabilities: precision, recall, F1, F1-macro, F1-weighted,
+    F-beta, PR-AUC, ROC-AUC, MCC and the confusion matrix (TN/FP/FN/TP). Deltas against the baseline are
+    included for PR-AUC, F1, F1-macro, F-beta and recall.
 
-    **Accuracy KHÔNG có trong bảng này** — nó là chỉ số chẩn đoán (`metrics.accuracy_diagnostic`)
-    vì ở tỉ lệ 98/2 quy tắc "đoán lớp đa số" đã đạt ~98% accuracy.
+    Accuracy is absent on purpose. It is a diagnostic (`metrics.accuracy_diagnostic`) because at a 98/2
+    ratio the always-predict-the-majority-class rule already reaches roughly 98% accuracy.
 
     Returns:
-        dict gồm `mode`, `metrics` (thứ tự cột), `baseline` (dòng mốc), `rows` (baseline trước rồi
-        theo thứ tự danh mục), `n_better_than_baseline` và `best_by_metric`.
+        A dict with `mode`, `metrics` (column order), `baseline` (the reference row), `rows` (the baseline
+        first, then catalog order), `n_better_than_baseline` and `best_by_metric`.
     """
     from .metrics import COMPARISON_COLUMNS
 
@@ -548,14 +504,14 @@ def compare_with_baseline(result: Dict[str, Any],
 
 
 def comparison_markdown(result: Dict[str, Any], mode: str = "best_f1") -> str:
-    """Bảng Markdown: Baseline (chưa xử lý) vs từng kỹ thuật xử lý (dùng cả trong báo cáo)."""
+    """Markdown table of the baseline against every handling technique, also used in the report."""
     table = compare_with_baseline(result, mode)
-    lines = [f"| Kỹ thuật | Nhóm | PR-AUC | F1 | F1-macro | F1-weighted | F-beta({_fmt(C.FBETA_BETA, 1)}) "
-             "| ROC-AUC | MCC | TN/FP/FN/TP | ΔPR-AUC | ΔF1 | ΔF1-macro |",
+    lines = [f"| Technique | Group | PR-AUC | F1 | F1-macro | F1-weighted | F-beta({_fmt(C.FBETA_BETA, 1)}) "
+             "| ROC-AUC | MCC | TN/FP/FN/TP | dPR-AUC | dF1 | dF1-macro |",
              "|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|"]
     for row in table["rows"]:
         confusion = (f"{row.get('tn')}/{row.get('fp')}/{row.get('fn')}/{row.get('tp')}"
-                     if row.get("tn") is not None else "—")
+                     if row.get("tn") is not None else "-")
         lines.append(
             f"| `{row['technique']}` | `{row['group']}` | {_fmt(row.get('pr_auc'), 4)} | "
             f"{_fmt(row.get('f1'))} | {_fmt(row.get('macro_f1'))} | {_fmt(row.get('weighted_f1'))} | "
@@ -563,26 +519,27 @@ def comparison_markdown(result: Dict[str, Any], mode: str = "best_f1") -> str:
             f"{confusion} | {_fmt(row.get('delta_pr_auc'))} | {_fmt(row.get('delta_f1'))} | "
             f"{_fmt(row.get('delta_macro_f1'))} |")
     if table["baseline"] is None:
-        lines.append("| _(thiếu baseline — bảng chỉ có kỹ thuật xử lý)_ |  |  |  |  |  |  |  |  |  |  |  |  |")
+        lines.append("| _(baseline missing, so the table lists handling techniques only)_ |  |  |  |  |  |  |  |  |  |  |  |  |")
     else:
         better = table["n_better_than_baseline"]
         total = table["n_techniques_compared"]
-        lines += ["", f"- Ngưỡng chấm điểm: `{mode}` (chọn trên đường PR của xác suất out-of-fold). "
-                      f"Baseline: **PR-AUC {_fmt(table['baseline'].get('pr_auc'), 4)}, "
+        lines += ["", f"- Scoring threshold: `{mode}`, selected on the PR curve of out-of-fold "
+                      f"probabilities. Baseline: **PR-AUC {_fmt(table['baseline'].get('pr_auc'), 4)}, "
                       f"F1 {_fmt(table['baseline'].get('f1'))}**.",
-                  f"- Số kỹ thuật có PR-AUC CAO HƠN baseline: **{better}/{total}**"
-                  + (f"; cao nhất ở `{table['best_by_metric']['pr_auc']['technique']}` "
+                  f"- Techniques with higher PR-AUC than the baseline: **{better}/{total}**"
+                  + (f", the highest being `{table['best_by_metric']['pr_auc']['technique']}` "
                      f"({_fmt(table['best_by_metric']['pr_auc']['value'], 4)})."
                      if "pr_auc" in table["best_by_metric"] else "."),
-                  "- Bảng KHÔNG có Accuracy: ở tỉ lệ 98/2, đoán 'lớp đa số' đã đạt ~98% ⇒ accuracy "
-                  "chỉ là chỉ số chẩn đoán (`metrics.accuracy_diagnostic`)."]
+                  "- The table omits accuracy because at a 98/2 ratio the majority-class rule reaches "
+                  "roughly 98%, so accuracy is treated as a diagnostic only."]
     return "\n".join(lines) + "\n"
 
 
 def _diagnostic_accuracy_lines(result: Dict[str, Any]) -> List[str]:
-    """Dòng CHẨN ĐOÁN về accuracy (yêu cầu #3: accuracy không phải thước đo chính).
+    """Diagnostic lines about accuracy, reported only to show why it is not the primary measure.
 
-    In accuracy tại điểm vận hành + MỐC ĐA SỐ, để thấy ngay vì sao accuracy vô dụng ở tỉ lệ 98/2.
+    Accuracy at the operating point is printed next to the majority-class baseline, which makes the
+    issue with a 98/2 ratio immediately visible.
     """
     ok = [item for item in result["results"] if item["status"] == "ok"]
     rows = [(item["technique"], _row_for(item, "best_f1")) for item in ok]
@@ -593,37 +550,38 @@ def _diagnostic_accuracy_lines(result: Dict[str, Any]) -> List[str]:
     majority = baseline.get("majority_baseline_accuracy_pct")
     values = [float(row["accuracy"]) * 100.0 for _name, row in rows
               if row.get("accuracy") is not None]
-    lines = ["**Chỉ số CHẨN ĐOÁN (không dùng để kết luận):**",
-             f"- Mốc \"luôn đoán lớp đa số\" = **{_fmt(majority, 2)}% accuracy**; accuracy của các kỹ "
-             f"thuật nằm trong {_fmt(min(values), 2)}%–{_fmt(max(values), 2)}%.",
-             "- ⇒ Chênh lệch accuracy giữa các kỹ thuật ở đây KHÔNG chứng minh kỹ thuật nào tốt hơn; "
-             "phải đọc Precision/Recall/F1(−macro/−weighted/−beta), PR-AUC, ROC-AUC và Confusion Matrix."]
+    lines = ["**Diagnostic metric, not used to draw conclusions:**",
+             f"- The always-predict-the-majority-class rule reaches **{_fmt(majority, 2)}% accuracy**, "
+             f"while the techniques fall between {_fmt(min(values), 2)}% and {_fmt(max(values), 2)}%.",
+             "- Accuracy differences here do not show that one technique is better; read precision, "
+             "recall, F1 with its macro, weighted and beta variants, PR-AUC, ROC-AUC and the confusion "
+             "matrix instead."]
     return lines
 
 
 def _markdown(result: Dict[str, Any]) -> str:
-    """Bảng Markdown đầy đủ: danh mục, metric test, ngưỡng PR, chống rò rỉ, kết luận."""
+    """Full Markdown report: catalog, test metrics, PR thresholds, anti-leak checks and conclusions."""
     results = result["results"]
     ok = [item for item in results if item["status"] == "ok"]
     dist = result["label_distribution"]
-    lines = ["# Danh mục kỹ thuật xử lý mất cân bằng (yêu cầu #2) — so sánh không rò rỉ dữ liệu", "",
-             f"- Backend phân loại: **{result['backend']}** · resampling: "
-             f"**{result['resampling_backend']}** · n_samples {result['n_samples']} · "
-             f"{result['n_splits']} fold · seed {result['seed']}"
-             + (" · chế độ `--quick`" if result["quick"] else ""),
-             "- Phân phối nhãn: toàn bộ "
-             f"n={dist['all']['n']} (dương {dist['all']['positive_pct']:.2f}%, IR="
+    lines = ["# Imbalance technique catalog: leak-free comparison", "",
+             f"- Classifier backend **{result['backend']}**, resampling "
+             f"**{result['resampling_backend']}**, n_samples {result['n_samples']}, "
+             f"{result['n_splits']} folds, seed {result['seed']}"
+             + (" --quick mode" if result["quick"] else ""),
+             "- Label distribution: all "
+             f"n={dist['all']['n']} (positive {dist['all']['positive_pct']:.2f}%, IR="
              f"{dist['all']['imbalance_ratio']:.1f}); train_pool "
-             f"n={dist['train_pool']['n']} (dương {dist['train_pool']['positive_pct']:.2f}%); test "
-             f"n={dist['test']['n']} (dương {dist['test']['positive_pct']:.2f}%)",
-             "- **Threshold tuning**: ngưỡng chọn trên **đường Precision-Recall của xác suất "
-             "out-of-fold** (chỉ train_pool): `best_f1` (PR), `best_cost` (chi phí FN/FP), "
-             "`min_precision`; kèm mốc 0.5 để so sánh. Test chỉ được chấm **một lần** sau khi chốt.",
-             "- Chống rò rỉ: mọi sampler nằm TRONG `imblearn.pipeline.Pipeline`; cost-sensitive / Focal "
-             "Loss tính trọng số trong `fit`; ensemble lấy mẫu bên trong `fit`; "
-             "`cv.assert_val_untouched` chạy từng fold.", "",
-             "## 1. Danh mục ↔ cài đặt ↔ trạng thái", "",
-             "| Nhóm | Kỹ thuật | Mô tả | Cài đặt | Trạng thái |", "|---|---|---|---|---|"]
+             f"n={dist['train_pool']['n']} (positive {dist['train_pool']['positive_pct']:.2f}%); test "
+             f"n={dist['test']['n']} (positive {dist['test']['positive_pct']:.2f}%)",
+             "- Threshold tuning: thresholds selected on the precision-recall curve of out-of-fold "
+             "probabilities (train_pool only), namely `best_f1`, `best_cost` for FN/FP cost and "
+             "`min_precision`, plus a 0.5 reference. Test is scored once after freezing.",
+             "- Anti-leak: every sampler sits inside `imblearn.pipeline.Pipeline`; cost-sensitive and "
+             "Focal Loss weights are computed inside `fit`; ensembles sample inside `fit`; "
+             "`cv.assert_val_untouched` runs on every fold.", "",
+             "## 1. Catalog, implementation and status", "",
+             "| Group | Technique | Description | Implementation | Status |", "|---|---|---|---|---|"]
     for item in results:
         if item["status"] == "ok":
             status = "PASS" if all(item["checks"].values()) else "FAIL"
@@ -651,15 +609,15 @@ def _markdown(result: Dict[str, Any]) -> str:
                 f"{_fmt(row.get('delta_recall_vs_0.5'))} | {_fmt(row['pr_auc'], 4)} | "
                 f"{_fmt(row['roc_auc'])} | {_fmt(row.get('brier'), 4)} | {_fmt(row['mcc'])} |")
 
-    lines += ["", "## 3. Bảng so sánh BASELINE (chưa xử lý) vs các kỹ thuật xử lý (yêu cầu #3)", "",
+    lines += ["", "## 3. Baseline (untreated) versus handling techniques", "",
               comparison_markdown(result).rstrip("\n")]
     diagnostic = _diagnostic_accuracy_lines(result)
     if diagnostic:
         lines += ["", *diagnostic]
 
-    lines += ["", "## 4. Ngưỡng chọn trên xác suất out-of-fold + PR-AUC (OOF)", "",
-              "| Kỹ thuật | PR-AUC (OOF) | best_f1 | best_cost | min_precision | 0.5 | IR train "
-              "(trung bình) | % dương fold-val |", "|---|---:|---:|---:|---:|---:|---|---|"]
+    lines += ["", "## 4. Thresholds from out-of-fold probabilities and OOF PR-AUC", "",
+              "| Technique | OOF PR-AUC | best_f1 | best_cost | min_precision | 0.5 | Train IR "
+              "(mean) | Fold-val positive % |", "|---|---:|---:|---:|---:|---:|---|---|"]
     for item in ok:
         thresholds = item["thresholds"]
         lines.append(f"| `{item['technique']}` | {_fmt(item['oof_pr_auc'], 4)} | "
@@ -667,52 +625,52 @@ def _markdown(result: Dict[str, Any]) -> str:
                      f"{_fmt(thresholds.get('min_precision'), 4)} | 0.5000 | {_train_summary(item)} | "
                      f"{_val_pos_range(item)} |")
 
-    lines += ["", "## 5. Kiểm chứng chống rò rỉ dữ liệu", ""]
+    lines += ["", "## 5. Data leakage checks", ""]
     if not ok:
-        lines.append("- (không có kỹ thuật nào chạy được)")
+        lines.append("- No technique completed successfully.")
     for item in ok:
         detail = ", ".join(f"{name}: {'PASS' if value else 'FAIL'}"
                            for name, value in item["checks"].items())
-        lines.append(f"- {'PASS' if all(item['checks'].values()) else 'FAIL'} — "
+        lines.append(f"- {'PASS' if all(item['checks'].values()) else 'FAIL'} - "
                      f"`{item['technique']}` ({detail})")
-    lines += ["", "## 6. Kết luận & khuyến nghị", "", *_conclusions(result), "",
-              "## 7. Tái lập", "", "```powershell",
-              "python -m pip install -r imbalance_lab/requirements.txt",
-              "python -m imbalance_lab.techniques            # toàn bộ danh mục (ghi artifact)",
-              "python -m imbalance_lab.techniques --quick --techniques smote,adasyn,focal_loss",
-              "python -m unittest discover -s tests -v       # gồm test danh mục + chống rò rỉ",
+    lines += ["", "## 6. Conclusions and recommendations", "", *_conclusions(result), "",
+              "## 7. Reproduction", "", "```powershell",
+              "python -m pip install -r requirements-labs.txt",
+              "python -m labs.imbalance_lab.techniques            # full catalog, writes artifacts",
+              "python -m labs.imbalance_lab.techniques --quick --techniques smote,adasyn,focal_loss",
+              "python -m unittest discover -s tests -v       # includes catalog and anti-leak tests",
               "```"]
     return "\n".join(lines) + "\n"
 
 
 def _conclusions(result: Dict[str, Any]) -> List[str]:
-    """Kết luận TỰ ĐỘNG từ số liệu (không nhập tay) — gồm cả các phát hiện phủ định."""
+    """Automatic conclusions derived from the numbers, including negative findings."""
     ok = [item for item in result["results"] if item["status"] == "ok"]
     if not ok:
-        return ["(không có kỹ thuật nào chạy được — kiểm tra thư viện rồi chạy lại)"]
+        return ["No technique completed successfully; check the libraries and rerun."]
     lines: List[str] = []
 
-    # (1) So sánh với BASELINE (mô hình CHƯA xử lý mất cân bằng) — yêu cầu #3.
+    # 1. Compare against the baseline, the model with no imbalance handling.
     table = compare_with_baseline(result)
     if table["baseline"] is not None and table["n_techniques_compared"]:
         best_delta = max((row for row in table["rows"]
                           if row["technique"] != BASELINE_TECHNIQUE
                           and row.get("delta_pr_auc") is not None),
                          key=lambda row: float(row["delta_pr_auc"]), default=None)
-        text = (f"**So với BASELINE (chưa xử lý)**: baseline PR-AUC "
+        text = (f"**Against the baseline (untreated)**: baseline PR-AUC "
                 f"{_fmt(table['baseline'].get('pr_auc'), 4)} / F1 "
-                f"{_fmt(table['baseline'].get('f1'))}; có "
-                f"**{table['n_better_than_baseline']}/{table['n_techniques_compared']}** kỹ thuật "
-                f"vượt baseline về PR-AUC")
+                f"{_fmt(table['baseline'].get('f1'))}; "
+                f"**{table['n_better_than_baseline']}/{table['n_techniques_compared']}** techniques "
+                f"beat the baseline on PR-AUC")
         if best_delta is not None:
-            text += (f", cao nhất là `{best_delta['technique']}` "
-                     f"(ΔPR-AUC {float(best_delta['delta_pr_auc']):+.4f})")
+            text += (f", the highest being `{best_delta['technique']}` "
+                     f"(dPR-AUC {float(best_delta['delta_pr_auc']):+.4f})")
         lines.append(text + ".")
 
     best_pr = max(ok, key=lambda item: item["oof_pr_auc"] or -1.0)
-    lines.append(f"1. **Thứ hạng xác suất (PR-AUC out-of-fold)** tốt nhất là `{best_pr['technique']}` "
-                 f"({_fmt(best_pr['oof_pr_auc'], 4)}). PR-AUC không phụ thuộc ngưỡng nên đây là so "
-                 "sánh 'công bằng' nhất giữa các kỹ thuật.")
+    lines.append(f"1. **Ranking quality (out-of-fold PR-AUC)** is best for `{best_pr['technique']}` "
+                 f"({_fmt(best_pr['oof_pr_auc'], 4)}). PR-AUC is threshold-free, so it is the fairest "
+                 "comparison between techniques.")
 
     gains = []
     for item in ok:
@@ -726,11 +684,11 @@ def _conclusions(result: Dict[str, Any]) -> List[str]:
         best_gain = max(gains, key=lambda pair: pair[1])
         worse = [name for name, gain in gains if gain < -1e-9]
         lines.append(
-            f"2. **Tinh chỉnh ngưỡng theo đường PR thay cho 0.5**: F1 thay đổi trung bình "
-            f"**{mean_gain:+.3f}**; tốt nhất ở `{best_gain[0]}` ({best_gain[1]:+.3f})"
-            + (f"; riêng {len(worse)} kỹ thuật GIẢM ("
+            f"2. **Threshold tuning on the PR curve instead of 0.5**: F1 changes by "
+            f"**{mean_gain:+.3f}** on average, best for `{best_gain[0]}` ({best_gain[1]:+.3f})"
+            + (f"; {len(worse)} techniques decrease ("
                + ", ".join(f"`{name}`" for name in worse)
-               + ") — ngưỡng tốt nhất không phải lúc nào cũng cao hơn 0.5." if worse else "."))
+               + "), so the best threshold is not always above 0.5." if worse else "."))
 
     cleaning = [item for item in ok if item["technique"] in ("tomek", "enn")]
     parts = []
@@ -738,48 +696,51 @@ def _conclusions(result: Dict[str, Any]) -> List[str]:
         rows = item["resample_rows"]
         if rows:
             parts.append(f"`{item['technique']}`: IR "
-                         f"{np.mean([row['train_ir_before'] for row in rows]):.1f} → "
+                         f"{np.mean([row['train_ir_before'] for row in rows]):.1f} -> "
                          f"{np.mean([row['train_ir_after'] for row in rows]):.1f}")
     if parts:
-        lines.append("3. **Tomek Links / ENN là kỹ thuật LÀM SẠCH biên, không phải cân bằng tỉ lệ** ("
-                     + "; ".join(parts) + "): chúng chỉ bỏ mẫu sát biên nên IR gần như giữ nguyên ở "
-                     "98/2 ⇒ phải dùng kèm oversampling (nhóm hybrid) mới có tác dụng cân bằng.")
+        lines.append("3. **Tomek Links and ENN clean the boundary rather than balance the ratio** ("
+                     + "; ".join(parts) + "): they only drop samples near the boundary, so the IR stays "
+                     "close to its 98/2 value and balancing requires oversampling alongside them, as in "
+                     "the hybrid group.")
 
     algorithm = [item for item in ok if item["group"] == "algorithm-level"]
     if algorithm:
         best = max(algorithm, key=lambda item: _row_for(item, "best_f1").get("f1", -1.0))
         row = _row_for(best, "best_f1")
-        lines.append(f"4. **Algorithm-level** (không đổi dữ liệu): tốt nhất theo F1 là "
-                     f"`{best['technique']}` — F1={_fmt(row.get('f1'))}, recall="
-                     f"{_fmt(row.get('recall'))}, PR-AUC={_fmt(row.get('pr_auc'), 4)}. Focal Loss dùng "
-                     "custom objective (`gamma`, `alpha`) nên đổi cả HÌNH DẠNG hàm mất mát, không chỉ "
-                     "trọng số lớp.")
+        lines.append(f"4. **Algorithm-level** techniques leave the data unchanged; best F1 is "
+                     f"`{best['technique']}` with F1={_fmt(row.get('f1'))}, recall="
+                     f"{_fmt(row.get('recall'))}, PR-AUC={_fmt(row.get('pr_auc'), 4)}. Focal Loss uses a "
+                     "custom objective with `gamma` and `alpha`, so it changes the shape of the loss "
+                     "rather than only the class weights.")
 
     ensemble = [item for item in ok if item["group"] == "ensemble"]
     if ensemble:
         best = max(ensemble, key=lambda item: _row_for(item, "best_f1").get("f1", -1.0))
         row = _row_for(best, "best_f1")
-        lines.append(f"5. **Ensemble**: tốt nhất theo F1 là `{best['technique']}` — "
+        lines.append(f"5. **Ensemble** techniques: best F1 is `{best['technique']}` with "
                      f"F1={_fmt(row.get('f1'))}, PR-AUC={_fmt(row.get('pr_auc'), 4)}. Undersampling "
-                     "nằm bên trong `fit` nên vẫn chỉ chạm train của fold.")
+                     "happens inside `fit`, so it still only touches the fold train.")
 
-    lines.append("6. **Khuyến nghị cho pipeline chính**: chọn kỹ thuật theo PR-AUC, chọn ngưỡng trên "
-                 "đường PR của xác suất out-of-fold (không dùng 0.5 mặc định, không chọn trên test), "
-                 "và ưu tiên can thiệp KHÔNG sinh mẫu (`class_weight`/`scale_pos_weight`/Focal Loss) "
-                 "khi nhãn gắn với thực thể — mẫu tổng hợp dễ rơi vào 'vùng' của chính thực thể đã có "
-                 "trong train.")
+    lines.append("6. **Recommendation for the main pipeline**: choose the technique by PR-AUC, pick the "
+                 "threshold on the PR curve of out-of-fold probabilities rather than a default 0.5 or a "
+                 "test-based choice, and prefer interventions that do not generate samples "
+                 "(`class_weight`, `scale_pos_weight`, Focal Loss) when labels attach to entities, "
+                 "because synthetic samples tend to fall inside the region of entities already in train.")
     return lines
 
 
 def _write_artifacts(result: Dict[str, Any]) -> None:
-    """Ghi artifact vào `reports/imbalance/`: `techniques.{md,csv,json,log}`, `techniques_by_fold.csv`,
-    `techniques_comparison.csv` (bảng Baseline vs kỹ thuật — yêu cầu #3)."""
+    """Write `techniques.md`, `techniques.csv`, `techniques.json`, `techniques.log` and the by-fold CSV.
+
+    A separate `techniques_comparison.csv` holds the baseline-versus-technique table.
+    """
     out = C.ARTIFACTS_DIR
     out.mkdir(parents=True, exist_ok=True)
     _write_csv(out / "techniques.csv", result["rows"])
     payload = {key: value for key, value in result.items()
                if key not in ("log", "rows", "resample_rows", "fold_rows", "results")}
-    # `results` chứa xác suất out-of-fold (mảng numpy) — bỏ khi ghi JSON để file đọc được bằng mọi tool.
+    # Drop the out-of-fold probability arrays so the JSON stays readable by any tool.
     payload["results"] = [{key: value for key, value in item.items()
                            if key not in ("oof_proba", "oof_y")}
                           for item in result["results"]]
@@ -795,16 +756,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--n-samples", type=int, default=C.CATALOG_N_SAMPLES,
-                        help=f"Số mẫu dữ liệu giả lập (mặc định {C.CATALOG_N_SAMPLES}).")
+                        help=f"Number of synthetic samples (default {C.CATALOG_N_SAMPLES}).")
     parser.add_argument("--cv", type=int, default=C.CATALOG_N_SPLITS,
-                        help=f"Số fold StratifiedKFold trên train_pool (mặc định {C.CATALOG_N_SPLITS}).")
+                        help=f"StratifiedKFold splits over the train pool (default {C.CATALOG_N_SPLITS}).")
     parser.add_argument("--techniques", default="",
-                        help="Danh sách khoá kỹ thuật, phân tách bằng dấu phẩy (mặc định: tất cả).")
+                        help="Comma-separated technique keys (default: all).")
     parser.add_argument("--no-imblearn", action="store_true",
-                        help="Bắt buộc dùng bản sampler nội bộ thay vì imbalanced-learn.")
+                        help="Force the in-house sampler implementation instead of imbalanced-learn.")
     parser.add_argument("--quick", action="store_true",
-                        help="Lưới nhẹ: ensemble ít estimator hơn (chạy nhanh hơn).")
-    parser.add_argument("--no-write", action="store_true", help="Không ghi artifact.")
+                        help="Lighter grid with fewer ensemble estimators for a faster run.")
+    parser.add_argument("--no-write", action="store_true", help="Do not write artifacts.")
     args = parser.parse_args(argv)
     keys = [key.strip() for key in args.techniques.split(",") if key.strip()]
     run(n_samples=args.n_samples, n_splits=args.cv, techniques=keys or None,

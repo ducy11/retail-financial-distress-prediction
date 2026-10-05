@@ -1,25 +1,24 @@
-# `imbalance_lab` — pipeline xử lý dữ liệu mất cân bằng, KHÔNG rò rỉ dữ liệu
+# `labs.imbalance_lab` — pipeline xử lý dữ liệu mất cân bằng, KHÔNG rò rỉ dữ liệu
 
 Lab độc lập (không thuộc `scripts.run_all`) gồm **hai phần**:
 
-1. `python -m imbalance_lab.run` — so sánh 3 chiến lược + 1 biến thể hiệu chuẩn trên dữ liệu giả lập
+1. `python -m labs.imbalance_lab.run` — so sánh 3 chiến lược + 1 biến thể hiệu chuẩn trên dữ liệu giả lập
    **98% / 2%**, kèm mốc MINH HOẠ SAI (resample trước khi chia) để đo mức lạc quan hoá.
-2. `python -m imbalance_lab.techniques` — **danh mục đầy đủ 5 nhóm kỹ thuật** theo yêu cầu #2
+2. `python -m labs.imbalance_lab.techniques` — **danh mục đầy đủ 5 nhóm kỹ thuật** theo yêu cầu #2
    (data-level oversampling/undersampling, hybrid, algorithm-level gồm Focal Loss, ensemble) và
-   **threshold tuning trên đường Precision-Recall**. Chi tiết: mục 7 dưới đây và
-   `docs/cac-ky-thuat-mat-can-bang.md`.
+   **threshold tuning trên đường Precision-Recall**. Chi tiết: mục 7 dưới đây.
 
 Yêu cầu bắt buộc cho cả hai: mọi bước resampling chỉ chạy trên tập train của từng fold.
 
 ## 1. Cài đặt & chạy
 
 ```powershell
-python -m pip install -r imbalance_lab/requirements.txt
-python -m imbalance_lab.run                        # 50.000 mẫu, 5 fold, có mốc minh hoạ rò rỉ
-python -m imbalance_lab.run --n-samples 10000 --skip-leaky
-python -m imbalance_lab.run --no-imblearn          # dùng sampler nội bộ (khi offline)
-python -m imbalance_lab.techniques                 # danh mục 15 kỹ thuật × 5 fold (yêu cầu #2)
-python -m imbalance_lab.techniques --quick         # ensemble ít estimator hơn (chạy nhanh)
+python -m pip install -r requirements-labs.txt
+python -m labs.imbalance_lab.run                        # 50.000 mẫu, 5 fold, có mốc minh hoạ rò rỉ
+python -m labs.imbalance_lab.run --n-samples 10000 --skip-leaky
+python -m labs.imbalance_lab.run --no-imblearn          # dùng sampler nội bộ (khi offline)
+python -m labs.imbalance_lab.techniques                 # danh mục 15 kỹ thuật × 5 fold (yêu cầu #2)
+python -m labs.imbalance_lab.techniques --quick         # ensemble ít estimator hơn (chạy nhanh)
 python -m unittest discover -s tests -v            # gồm test chống rò rỉ của cả hai phần
 ```
 
@@ -86,7 +85,7 @@ validation phải nguyên vẹn từng byte) và `TestThresholds` (hàm ngưỡn
 ## 6. Cấu trúc mã
 
 ```
-imbalance_lab/
+labs/imbalance_lab/
   config.py     # tham số duy nhất: 98/2, 5 fold, SMOTE 0.1 → under 0.5, chi phí FN/FP, tham số danh mục
   data.py       # make_classification + chia tập stratified + thống kê phân phối nhãn
   samplers.py   # imblearn (đường chính) + bản nội bộ: SMOTE/RandomOverSampler/BorderlineSMOTE/ADASYN/
@@ -105,7 +104,7 @@ imbalance_lab/
 Xem kết quả đo mới nhất trong `reports/imbalance/summary.md` và
 `reports/imbalance/techniques.md`.
 
-## 7. Danh mục kỹ thuật (yêu cầu #2) — `python -m imbalance_lab.techniques`
+## 7. Danh mục kỹ thuật (yêu cầu #2) — `python -m labs.imbalance_lab.techniques`
 
 | Nhóm | Kỹ thuật | Khoá |
 |---|---|---|

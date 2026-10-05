@@ -1,11 +1,7 @@
-"""Cross-validation STRATIFIED theo tỉ lệ lớp + log phân phối nhãn TRƯỚC/SAU resampling mỗi fold.
+"""Stratified cross-validation with a per-fold log of the label distribution before and after resampling.
 
-Quy tắc chống rò rỉ được thực thi trong `cross_validate_strategy()`:
-1. Mỗi fold: `X_tr, y_tr` / `X_va, y_va` lấy từ `StratifiedKFold` trên **train_pool**.
-2. Resampling (SMOTE/undersample) nằm TRONG pipeline ⇒ chỉ chạy trên `X_tr, y_tr`.
-3. Log "sau resampling" lấy từ một pipeline THỨ HAI cùng cấu hình (chỉ chạy `fit_resample`), nên
-   không ảnh hưởng mô hình; và có `assert_val_untouched()` xác nhận `X_va/y_va` không bị thay đổi.
-4. Xác suất **out-of-fold** dùng để chọn ngưỡng; test holdout không tham gia bước này.
+Resampling sits inside the pipeline, so it runs on the fold train only, and `assert_val_untouched`
+confirms the fold validation set is unchanged. Out-of-fold probabilities drive threshold selection.
 """
 from __future__ import annotations
 
@@ -20,19 +16,20 @@ from .metrics import metrics_at_threshold
 
 def assert_val_untouched(X_va: np.ndarray, y_va: np.ndarray,
                          X_va_before: np.ndarray, y_va_before: np.ndarray) -> None:
-    """Bảo đảm tập validation KHÔNG bị resampling/model thay đổi (kiểm tra cấu trúc)."""
+    """Confirm the validation set is unchanged by resampling or the model."""
     if X_va.shape != X_va_before.shape or y_va.shape != y_va_before.shape:
-        raise AssertionError("Validation bị đổi kích thước ⇒ nghi ngờ rò rỉ dữ liệu")
+        raise AssertionError("Validation changed shape, which suggests data leakage")
     if not (np.array_equal(X_va, X_va_before) and np.array_equal(y_va, y_va_before)):
-        raise AssertionError("Giá trị validation bị thay đổi ⇒ nghi ngờ rò rỉ dữ liệu")
+        raise AssertionError("Validation values changed, which suggests data leakage")
 
 
 def fold_distribution_report(estimator: Any, X_tr: np.ndarray, y_tr: np.ndarray,
                              factory: Callable[[], Any] | None = None
                              ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """(phân phối trước, phân phối sau) resampling của một fold.
+    """Return the before and after resampling distributions for one fold.
 
-    `factory` tạo pipeline MỚI cùng cấu hình (chỉ có sampler) để đếm — tránh ảnh hưởng mô hình.
+    `factory` creates a fresh pipeline with the same configuration that contains only samplers, so the
+    counting does not affect the model.
     """
     before = label_distribution(y_tr)
     if factory is None:
@@ -46,10 +43,11 @@ def cross_validate_strategy(strategy: Dict[str, Any], X_pool: np.ndarray, y_pool
                             n_splits: int, seed: int,
                             probe_factory: Callable[[], Any] | None = None,
                             log: Callable[[str], None] = print) -> Dict[str, Any]:
-    """Chạy CV cho một chiến lược; trả OOF proba, metric từng fold và log resampling.
+    """Run cross-validation for one strategy and return out-of-fold probabilities, per-fold metrics and logs.
 
     Returns:
-        dict gồm `oof_proba`, `fold_metrics` (metric tại 0.5), `folds` (log phân phối) và `n_splits`.
+        A dict with `oof_proba`, `fold_metrics` (metrics at 0.5), `folds` (distribution logs) and
+        `n_splits`.
     """
     splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
     oof = np.full(len(y_pool), np.nan)
@@ -75,7 +73,7 @@ def cross_validate_strategy(strategy: Dict[str, Any], X_pool: np.ndarray, y_pool
         fold_logs.append({"fold": fold, "train_before": before, "train_after": after,
                           "val": label_distribution(y_va)})
         log(f"    fold {fold}/{n_splits}: train {format_distribution(before)}"
-            f" → sau resample {format_distribution(after)} | "
+            f" -> after resample {format_distribution(after)} | "
             f"val {format_distribution(fold_logs[-1]['val'])} | "
             f"val F1@0.5={metrics['f1']:.3f} PR-AUC={metrics['pr_auc']:.3f}")
 
@@ -86,7 +84,7 @@ def cross_validate_strategy(strategy: Dict[str, Any], X_pool: np.ndarray, y_pool
 def refit_and_score(strategy: Dict[str, Any], X_tr: np.ndarray, y_tr: np.ndarray,
                     X_test: np.ndarray, y_test: np.ndarray,
                     thresholds: Dict[str, float]) -> Dict[str, Any]:
-    """Fit lại trên TOÀN BỘ train_pool rồi đánh giá trên holdout test tại nhiều ngưỡng."""
+    """Refit on the whole train pool, then score the holdout test at several thresholds."""
     estimator = strategy["factory"]() if "factory" in strategy else strategy["estimator"]
     estimator.fit(X_tr, y_tr)
     proba = estimator.predict_proba(X_test)[:, 1]

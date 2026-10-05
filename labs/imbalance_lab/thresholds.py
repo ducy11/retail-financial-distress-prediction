@@ -1,12 +1,7 @@
-"""Tìm NGƯỠNG QUYẾT ĐỊNH tối ưu thay vì cố định 0.5.
+"""Search for an optimal decision threshold instead of fixing it at 0.5.
 
-Ba chế độ:
-- `best_f1`        — ngưỡng đạt F1 cao nhất;
-- `best_cost`      — ngưỡng tối thiểu chi phí kỳ vọng `FN·COST_FN + FP·COST_FP`;
-- `min_precision`  — ngưỡng nhỏ nhất đạt precision mục tiêu (giữ recall cao nhất có thể).
-
-QUAN TRỌNG (chống rò rỉ): ngưỡng chỉ được chọn trên xác suất **out-of-fold** của tập train; không
-bao giờ chọn trên validation/test rồi báo cáo trên chính tập đó.
+Three modes are supported: `best_f1`, `best_cost` on expected FN/FP cost, and `min_precision`. Thresholds
+are selected only on out-of-fold probabilities from the train split, never on validation or test.
 """
 from __future__ import annotations
 
@@ -16,7 +11,7 @@ import numpy as np
 
 
 def candidate_thresholds(proba: np.ndarray, n_grid: int = 1001) -> np.ndarray:
-    """Lưới ngưỡng ứng viên: lượng tử của phân phối xác suất + 0.5."""
+    """Candidate threshold grid: quantiles of the probability distribution plus 0.5."""
     proba = np.asarray(proba, float)
     grid = np.unique(np.quantile(proba, np.linspace(0.0, 1.0, n_grid)))
     return np.unique(np.concatenate([grid, np.array([0.0, 0.5, 1.0])]))
@@ -24,17 +19,17 @@ def candidate_thresholds(proba: np.ndarray, n_grid: int = 1001) -> np.ndarray:
 
 def scan_counts(y_true: np.ndarray, proba: np.ndarray,
                 thresholds: np.ndarray) -> Dict[str, np.ndarray]:
-    """Đếm (tp, fp, fn) cho MỌI ngưỡng cùng lúc (O(n log n + m log n)).
+    """Count (tp, fp, fn) for every threshold at once, in O(n log n + m log n).
 
-    Lưu ý kỹ thuật: `np.searchsorted` yêu cầu mảng ĐI LÊN, nên phải đảo dấu (mảng xác suất sắp
-    giảm dần ⇒ `-p_desc` tăng dần).
+    `np.searchsorted` requires an ascending array, so the descending probability array is negated to
+    make it ascending.
     """
     y_true = np.asarray(y_true, int)
     proba = np.asarray(proba, float)
-    order = np.argsort(-proba, kind="mergesort")          # thứ tự xác suất giảm dần
-    cumulative_positive = np.cumsum(y_true[order])        # số dương trong top-k
-    neg_ascending = -np.sort(proba)[::-1]                 # -p_desc là mảng TĂNG để searchsorted
-    k = np.searchsorted(neg_ascending, -thresholds, side="right")  # số mẫu có proba >= ngưỡng
+    order = np.argsort(-proba, kind="mergesort")          # order by descending probability
+    cumulative_positive = np.cumsum(y_true[order])        # positive count within the top-k
+    neg_ascending = -np.sort(proba)[::-1]                 # -p_desc is ascending for searchsorted
+    k = np.searchsorted(neg_ascending, -thresholds, side="right")  # samples with proba >= threshold
     k = np.clip(k, 0, len(y_true))
     tp = np.where(k > 0, cumulative_positive[np.maximum(k - 1, 0)], 0.0).astype(float)
     fp = k - tp
@@ -70,7 +65,7 @@ def _result(thresholds: np.ndarray, counts: Dict[str, np.ndarray], index: int,
 
 def best_f1_threshold(y_true: np.ndarray, proba: np.ndarray,
                       n_grid: int = 1001) -> Dict[str, Any]:
-    """Ngưỡng tối đa hoá F1 (chọn trên xác suất OOF)."""
+    """Threshold that maximizes F1, selected on out-of-fold probabilities."""
     thresholds = candidate_thresholds(proba, n_grid)
     counts = scan_counts(y_true, proba, thresholds)
     return _result(thresholds, counts, int(np.argmax(_f1(counts))))
@@ -78,7 +73,7 @@ def best_f1_threshold(y_true: np.ndarray, proba: np.ndarray,
 
 def best_cost_threshold(y_true: np.ndarray, proba: np.ndarray, cost_fn: float,
                         cost_fp: float, n_grid: int = 1001) -> Dict[str, Any]:
-    """Ngưỡng tối thiểu chi phí kỳ vọng `FN·cost_fn + FP·cost_fp`."""
+    """Threshold that minimizes expected cost `FN*cost_fn + FP*cost_fp`."""
     thresholds = candidate_thresholds(proba, n_grid)
     counts = scan_counts(y_true, proba, thresholds)
     cost = counts["fn"] * float(cost_fn) + counts["fp"] * float(cost_fp)
@@ -90,7 +85,7 @@ def best_cost_threshold(y_true: np.ndarray, proba: np.ndarray, cost_fn: float,
 
 def threshold_for_precision(y_true: np.ndarray, proba: np.ndarray, target_precision: float,
                             n_grid: int = 1001) -> Dict[str, Any]:
-    """Ngưỡng NHỎ NHẤT đạt `precision >= target_precision` (ưu tiên recall cao)."""
+    """Lowest threshold that reaches `precision >= target_precision`, prioritizing recall."""
     thresholds = candidate_thresholds(proba, n_grid)
     counts = scan_counts(y_true, proba, thresholds)
     ok = np.flatnonzero(_precision(counts) >= float(target_precision))
@@ -104,7 +99,7 @@ def threshold_for_precision(y_true: np.ndarray, proba: np.ndarray, target_precis
 
 def tune_thresholds(y_true: np.ndarray, proba: np.ndarray, *, cost_fn: float, cost_fp: float,
                     precision_target: float, n_grid: int = 1001) -> Dict[str, Dict[str, Any]]:
-    """Gọi cả 3 chế độ và trả dict — dùng một lần trong `cv.py` để chọn ngưỡng."""
+    """Run all three modes and return a dict; called once in `cv.py` to pick the threshold."""
 
     def _at(threshold: float) -> Dict[str, Any]:
         thresholds = np.array([threshold])
@@ -119,13 +114,12 @@ def tune_thresholds(y_true: np.ndarray, proba: np.ndarray, *, cost_fn: float, co
     return tuned
 
 
-# ---------------------------------------------------------------------------
-# Ngưỡng theo ĐƯỜNG CONG PRECISION-RECALL (yêu cầu #2: "dựa trên PR curve thay vì 0.5")
-# ---------------------------------------------------------------------------
+# Thresholds from the precision-recall curve, as required instead of a fixed 0.5.
 def pr_curve_points(y_true: np.ndarray, proba: np.ndarray) -> Dict[str, np.ndarray]:
-    """Đường cong Precision-Recall (đúng như `sklearn.metrics.precision_recall_curve`).
+    """Precision-recall curve, matching `sklearn.metrics.precision_recall_curve`.
 
-    Trả `precision`, `recall` (độ dài n+1) và `thresholds` (độ dài n) + `pr_auc` (Average Precision).
+    Returns `precision` and `recall` of length n+1, `thresholds` of length n, and `pr_auc` from average
+    precision.
     """
     from sklearn.metrics import average_precision_score, precision_recall_curve
 
@@ -139,13 +133,13 @@ def pr_curve_points(y_true: np.ndarray, proba: np.ndarray) -> Dict[str, np.ndarr
 def tune_thresholds_from_pr_curve(y_true: np.ndarray, proba: np.ndarray, *,
                                   cost_fn: float, cost_fp: float, precision_target: float,
                                   ) -> Dict[str, Dict[str, Any]]:
-    """Chọn ngưỡng trên các ĐIỂM CỦA ĐƯỜNG PR (thay vì lưới lượng tử) — 3 chế độ như `tune_thresholds`.
+    """Pick thresholds from the points on the PR curve instead of a quantile grid, with the same three modes.
 
-    Vì sao: điểm vận hành tốt chỉ nằm trên đường PR; lấy ứng viên từ chính đường PR nên mỗi ngưỡng
-    đều là một điểm thực của đường cong (không phải điểm nội suy), và số ứng viên = n mẫu (nhỏ hơn lưới
-    1001 nhưng vẫn phủ đủ mọi "bước nhảy" precision/recall).
+    A good operating point lies on the PR curve, so taking candidates from the curve itself means every
+    threshold is a real curve point rather than an interpolated one, and the candidate count equals the
+    sample count. That is smaller than the 1001-point grid yet still covers every precision/recall jump.
 
-    `y_true/proba` phải là xác suất OUT-OF-FOLD của train (chống rò rỉ): không truyền test vào đây.
+    `y_true` and `proba` must be out-of-fold train probabilities; never pass test data here.
     """
     y = np.asarray(y_true, int)
     p = np.asarray(proba, float)

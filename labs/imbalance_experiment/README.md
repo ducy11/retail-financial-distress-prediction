@@ -1,4 +1,4 @@
-# `imbalance_experiment` — Phương pháp ĐƠN LẺ vs PHƯƠNG PHÁP KẾT HỢP (imbalanced learning)
+# `labs.imbalance_experiment` — Phương pháp ĐƠN LẺ vs PHƯƠNG PHÁP KẾT HỢP (imbalanced learning)
 
 Thực nghiệm độc lập, modular, tái lập được: so sánh **17 pipeline** xử lý mất cân bằng trên dataset
 **1:50** (tuỳ chọn 1:100 hoặc CSV như *Credit Card Fraud Detection*), có **Chống rò rỉ dữ liệu** ở mọi
@@ -6,19 +6,19 @@ bước resampling và **phân tích chuyên sâu tự động** từ số liệ
 
 ```powershell
 # cấu hình đầy đủ (20.000 mẫu, 1:50, 5 fold) — vài phút tuỳ máy
-python -m imbalance_experiment.main
+python -m labs.imbalance_experiment.main
 
 # thử nhanh
-python -m imbalance_experiment.main --quick --n-samples 5000
+python -m labs.imbalance_experiment.main --quick --n-samples 5000
 
 # mất cân bằng 1:100, mô hình nền Random Forest
-python -m imbalance_experiment.main --imbalance-ratio 100 --model random_forest
+python -m labs.imbalance_experiment.main --imbalance-ratio 100 --model random_forest
 
 # dữ liệu thật: Credit Card Fraud Detection (tải riêng, không kèm repo)
-python -m imbalance_experiment.main --data data/creditcard.csv --target Class --n-samples 0
+python -m labs.imbalance_experiment.main --data data/creditcard.csv --target Class --n-samples 0
 
 # chạy một vài kỹ thuật
-python -m imbalance_experiment.main --techniques baseline,smote,smote_enn,class_weight
+python -m labs.imbalance_experiment.main --techniques baseline,smote,smote_enn,class_weight
 ```
 
 ## 1. Cấu trúc mã (theo yêu cầu #4)
@@ -32,7 +32,7 @@ python -m imbalance_experiment.main --techniques baseline,smote,smote_enn,class_
 | `insights.py` | `analyse` + `render_markdown` — 3 câu hỏi bắt buộc của yêu cầu #5, mọi con số lấy từ kết quả đo |
 | `main.py` | `run(cfg)`: điều phối, in bảng so sánh, ghi artifact + biểu đồ PR curve, CLI |
 
-Tái sử dụng có kiểm thử từ `imbalance_lab` (sampler, `metrics_at_threshold`, Focal Loss, `imblearn`
+Tái sử dụng có kiểm thử từ `labs.imbalance_lab` (sampler, `metrics_at_threshold`, Focal Loss, `imblearn`
 pipeline) ⇒ không viết lại công thức, không lệch số liệu giữa hai nơi.
 
 ## 2. Danh mục 17 pipeline
@@ -50,7 +50,7 @@ pipeline) ⇒ không viết lại công thức, không lệch số liệu giữa
 1. **Mọi sampler nằm TRONG `imblearn.pipeline.Pipeline`** (`samplers.build_sampler_pipeline`) ⇒
    `fit_resample` chỉ chạy trên dữ liệu mà pipeline được `fit` = **train của fold**.
    Không có lệnh resample nào ở ngoài pipeline; `inspect_pipeline` chặn cấu hình sai ngay khi dựng.
-2. **Fold-validation được so với bản sao trước khi fit** (`imbalance_lab.cv.assert_val_untouched`);
+2. **Fold-validation được so với bản sao trước khi fit** (`labs.imbalance_lab.cv.assert_val_untouched`);
    tập test cũng được so trước/sau và chỉ chấm **đúng một lần** sau khi refit trên toàn bộ train.
 3. **Class weights / Focal Loss tính trong `fit`** từ nhãn nhận được (chỉ fold-train), không dùng hằng
    số tính trước trên toàn bộ dữ liệu.
@@ -62,7 +62,7 @@ pipeline) ⇒ không viết lại công thức, không lệch số liệu giữa
 
 **Không dùng Accuracy** làm tiêu chí chính: PR-AUC (Average Precision), ROC-AUC, F1 (lớp thiểu số),
 F1-macro, **Balanced Accuracy**, Recall, **FPR** (+ Precision, MCC, confusion counts để chẩn đoán).
-Accuracy chỉ in kèm **mốc “đoán lớp đa số”** (xem `imbalance_lab.metrics.accuracy_diagnostic`).
+Accuracy chỉ in kèm **mốc “đoán lớp đa số”** (xem `labs.imbalance_lab.metrics.accuracy_diagnostic`).
 
 Trong bảng báo cáo, metric CV được trình bày dạng **mean ± std qua các fold** (`evaluation._cv_table`),
 metric holdout kèm **thời gian fit** và **hệ số phình dữ liệu** (`n train sau resample`).
@@ -172,8 +172,8 @@ thuật ensemble (undersampling mạnh) có accuracy tương tự nhưng PR-AUC 
 ## 8. Tái lập & kiểm thử
 
 ```powershell
-python -m pip install -r imbalance_lab/requirements.txt
-python -m imbalance_experiment.main                    # tái tạo đúng bộ số liệu ở mục 6/7
+python -m pip install -r requirements-labs.txt
+python -m labs.imbalance_experiment.main                    # tái tạo đúng bộ số liệu ở mục 6/7
 python -m unittest tests.test_experiment -v            # test dữ liệu, danh mục pipeline, CV, insights
 python -m unittest discover -s tests -v                # toàn bộ test của repo
 ```
@@ -194,7 +194,7 @@ Test đáng chú ý: `test_catalogue_covers_every_required_technique` (đối ch
 - **Giới hạn**: dataset mặc định là giả lập (`make_classification`) — kết luận định tính chuyển được,
   con số thì không; mỗi kỹ thuật dùng MỘT cấu hình hợp lý (chưa grid-search) nên đây là so sánh “cùng
   ngân sách”; ngưỡng báo cáo cố định 0,5 để so sánh trực tiếp (muốn tối ưu ngưỡng dùng
-  `imbalance_lab.thresholds.tune_thresholds_from_pr_curve`, chọn trên xác suất out-of-fold).
+  `labs.imbalance_lab.thresholds.tune_thresholds_from_pr_curve`, chọn trên xác suất out-of-fold).
 - **Bài học phương pháp luận**: (1) luôn báo cáo baseline cùng mọi kỹ thuật; (2) so bằng PR-AUC + F1 +
   FPR chứ không bằng accuracy; (3) mọi can thiệp resampling phải nằm trong pipeline để CV không rò rỉ;
   (4) cải thiện phải lớn hơn độ lệch chuẩn giữa các fold mới đáng tin.

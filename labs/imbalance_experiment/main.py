@@ -1,19 +1,8 @@
-"""Điều phối thực nghiệm: chạy danh mục pipeline, in bảng so sánh và xuất artifact (yêu cầu #4).
+"""Orchestrate the single-vs-hybrid imbalance experiment and export its artifacts.
 
-Lệnh:
-    python -m imbalance_experiment.main --quick --n-samples 5000      # thử nhanh
-    python -m imbalance_experiment.main                               # cấu hình đầy đủ
-    python -m imbalance_experiment.main --imbalance-ratio 100 --cv 5  # mất cân bằng 1:100
-    python -m imbalance_experiment.main --data data/creditcard.csv --target Class
-
-Artifact (mặc định `reports/experiment/`):
-- `summary.md`      — báo cáo đầy đủ: danh mục pipeline, bảng mean ± std (CV), bảng holdout,
-                      xếp hạng, PASS/FAIL chống rò rỉ, phân tích chuyên sâu;
-- `summary.csv`     — bảng holdout (mở bằng Excel/pandas được);
-- `cv_mean_std.csv` — metric dạng mean ± std qua các fold;
-- `results.json`    — toàn bộ số liệu + cấu hình (tái lập được);
-- `pr_curves.png`   — biểu đồ so sánh đường Precision-Recall của mọi pipeline;
-- `run.log`         — log đầy đủ (phân phối nhãn + thời gian từng fold).
+Runs `python -m labs.imbalance_experiment.main` end to end: builds the pipeline catalogue, cross-validates
+every entry, scores the holdout once, prints the comparison tables, and writes summary.md, the CSV and JSON
+files, the PR curve figure and run.log into the output directory.
 """
 from __future__ import annotations
 
@@ -29,8 +18,8 @@ import numpy as np
 
 from runtime_warnings import quiet_library_warnings
 
-# Cảnh báo vô hại của cặp phiên bản thư viện (scikit-learn/scipy `iprint`, matplotlib/pyparsing):
-# lọc ngay khi import để log chạy thực nghiệm sạch; chi tiết ở `runtime_warnings.py`.
+# Silence the harmless warnings this library pair emits so the experiment log stays readable.
+# The exact filters are documented in `runtime_warnings.py`.
 quiet_library_warnings()
 
 from .config import DEFAULT_OUT_DIR, ExperimentConfig
@@ -41,20 +30,20 @@ from .insights import analyse as analyse_findings
 from .insights import render_markdown
 from .pipeline_builder import build_pipelines, pipeline_table
 
-LOGGER = logging.getLogger("imbalance_experiment")
+LOGGER = logging.getLogger("labs.imbalance_experiment")
 
 
 def _setup_logging(log_path: Path | None) -> logging.Logger:
-    """Cấu hình logging ra console (UTF-8) và ghi file log nếu có.
+    """Attach a UTF-8 console handler plus an optional file handler and return the logger.
 
-    Lưu ý Windows: console mặc định là cp1252 nên phải reconfigure stdout sang UTF-8 trước khi gắn
-    handler, nếu không log tiếng Việt sẽ lỗi `UnicodeEncodeError` (giống `ensure_utf8_stdio` của repo).
+    The console handler is installed after stdout is reconfigured, because the default Windows codepage
+    cannot encode the non-ASCII report text.
     """
-    try:  # pragma: no cover - phụ thuộc console
+    try:  # pragma: no cover - console dependent
         sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:  # noqa: BLE001 - stream không hỗ trợ reconfigure
+    except Exception:  # noqa: BLE001 - the stream does not support reconfigure
         pass
-    logger = logging.getLogger("imbalance_experiment")
+    logger = logging.getLogger("labs.imbalance_experiment")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
     formatter = logging.Formatter("%(message)s")
@@ -70,7 +59,7 @@ def _setup_logging(log_path: Path | None) -> logging.Logger:
 
 
 def _cv_table(results: Sequence[TechniqueResult]) -> str:
-    """Bảng Markdown: metric **mean ± std** qua các fold cho từng pipeline."""
+    """Render the cross-validated mean and standard deviation per pipeline as Markdown."""
     rows: List[Dict[str, Any]] = []
     for result in results:
         row: Dict[str, Any] = {"group": result.group, "key": result.key,
@@ -86,7 +75,7 @@ def _cv_table(results: Sequence[TechniqueResult]) -> str:
 
 
 def _holdout_table(results: Sequence[TechniqueResult]) -> str:
-    """Bảng Markdown: metric trên holdout test (chấm đúng một lần) + chi phí tính toán."""
+    """Render the holdout metrics and the compute cost per pipeline as Markdown."""
     rows = summary_rows(results, source="holdout")
     columns = ["group", "key", *METRIC_KEYS, "n_train_after", "resample_seconds_per_fold",
                "fit_seconds_per_fold"]
@@ -95,9 +84,8 @@ def _holdout_table(results: Sequence[TechniqueResult]) -> str:
     return _markdown_from_rows(rows, columns, headers)
 
 
-
 def _group_table(results: Sequence[TechniqueResult]) -> str:
-    """Bảng Markdown: trung bình theo NHÓM (baseline / đơn lẻ / kết hợp) + Δ so baseline."""
+    """Render the per-group averages and their delta against the baseline as Markdown."""
     baseline = next((r for r in results if r.key == "baseline" and r.ok), None)
     base_pr = baseline.holdout.get("pr_auc", float("nan")) if baseline else float("nan")
 
@@ -124,7 +112,7 @@ def _group_table(results: Sequence[TechniqueResult]) -> str:
 
 
 def _ranking_table(results: Sequence[TechniqueResult]) -> str:
-    """Bảng Markdown: xếp hạng theo PR-AUC (metric chính) kèm F1/Recall/FPR và Δ vs baseline."""
+    """Render the pipelines ranked by PR-AUC, with F1, recall and FPR alongside."""
     baseline = next((r for r in results if r.key == "baseline" and r.ok), None)
     base_pr = baseline.holdout.get("pr_auc", float("nan")) if baseline else float("nan")
     ok = sorted((r for r in results if r.ok),
@@ -147,7 +135,7 @@ def _ranking_table(results: Sequence[TechniqueResult]) -> str:
 
 
 def _leak_table(results: Sequence[TechniqueResult]) -> str:
-    """Bảng Markdown: PASS/FAIL các lớp chống rò rỉ dữ liệu cho từng pipeline."""
+    """Render the per-pipeline leakage checks as a PASS/FAIL Markdown table."""
     lines = ["| Kỹ thuật | Nhóm | Kiểm chứng chống rò rỉ | Kết quả |", "|---|---|---|---|"]
     for result in results:
         if not result.ok:
@@ -161,34 +149,33 @@ def _leak_table(results: Sequence[TechniqueResult]) -> str:
     return "\n".join(lines)
 
 
-
 def plot_pr_curves(results: Sequence[TechniqueResult], path: Path,
                    *, highlight: Sequence[str] = ("baseline", "smote", "smote_class_weight")
                    ) -> bool:
-    """Vẽ biểu đồ so sánh: (trái) đường Precision-Recall, (phải) điểm Recall–FPR tại ngưỡng 0.5.
+    """Draw the two-panel comparison figure and report whether it could be produced.
 
-    Args:
-        results: kết quả các pipeline (chỉ vẽ pipeline chạy thành công).
-        path: đường dẫn file PNG.
-        highlight: các kỹ thuật vẽ nét đậm để dễ đọc.
+    The left panel holds the precision-recall curves, the right panel places every pipeline at the 0.5
+    operating point in recall-FPR space. Pipelines listed in `highlight` are drawn thicker.
 
     Returns:
-        True nếu vẽ được, False nếu thiếu matplotlib/dữ liệu.
+        True when the PNG was written, False when matplotlib or the PR curve data is unavailable.
     """
     try:
         import matplotlib
 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-    except Exception as exc:  # pragma: no cover - môi trường thiếu matplotlib
-        LOGGER.warning("Bỏ qua biểu đồ PR curve: %s", exc)
+    except Exception as exc:  # pragma: no cover - matplotlib is unavailable
+        LOGGER.warning("Skipping the PR curve figure: %s", exc)
         return False
 
+    # 1. Keep only the pipelines that produced a curve.
     plottable = [r for r in results if r.ok and r.pr_curve is not None]
     if not plottable:
-        LOGGER.warning("Không có dữ liệu PR curve để vẽ")
+        LOGGER.warning("No PR curve data to plot")
         return False
 
+    # 2. Draw the curves, emphasising the highlighted techniques.
     path.parent.mkdir(parents=True, exist_ok=True)
     figure, axes = plt.subplots(1, 2, figsize=(13, 5.5))
     for result in plottable:
@@ -216,13 +203,13 @@ def plot_pr_curves(results: Sequence[TechniqueResult], path: Path,
     figure.tight_layout()
     figure.savefig(path, dpi=130)
     plt.close(figure)
-    LOGGER.info("Đã vẽ biểu đồ PR curve: %s", path)
+    LOGGER.info("Wrote the PR curve figure: %s", path)
     return True
 
 
 def _write_csv(path: Path, rows: Sequence[Dict[str, Any]],
                header: Sequence[str] | None = None) -> None:
-    """Ghi CSV bằng module `csv` thuần (không cần pandas)."""
+    """Write rows to CSV with the standard library, so pandas is not required."""
     if not rows:
         path.write_text("", encoding="utf-8")
         return
@@ -235,7 +222,7 @@ def _write_csv(path: Path, rows: Sequence[Dict[str, Any]],
 
 
 def _serialise(results: Sequence[TechniqueResult]) -> List[Dict[str, Any]]:
-    """Chuyển kết quả sang cấu trúc ghi được JSON (bỏ mảng numpy của PR curve)."""
+    """Flatten the results into a JSON-friendly payload, dropping the numpy PR curve arrays."""
     payload: List[Dict[str, Any]] = []
     for result in results:
         payload.append({
@@ -256,13 +243,11 @@ def _serialise(results: Sequence[TechniqueResult]) -> List[Dict[str, Any]]:
     return payload
 
 
-
 def _close_file_handlers(logger: logging.Logger) -> None:
-    """Đóng và gỡ mọi `FileHandler` sau khi ghi xong artifact.
+    """Close and detach file handlers once the artifacts are written.
 
-    Vì sao cần: trên Windows, giữ file `run.log` mở sẽ chặn việc xoá/di chuyển thư mục output
-    (`PermissionError: [WinError 32]`) — ví dụ khi `tempfile.TemporaryDirectory()` dọn thư mục tạm,
-    hoặc khi người dùng muốn nén/chép thư mục kết quả.
+    On Windows an open run.log blocks deleting or moving the output directory, for example when
+    `tempfile.TemporaryDirectory()` cleans up.
     """
     for handler in list(logger.handlers):
         if isinstance(handler, logging.FileHandler):
@@ -271,36 +256,40 @@ def _close_file_handlers(logger: logging.Logger) -> None:
 
 
 def run(cfg: ExperimentConfig) -> Dict[str, Any]:
-    """Chạy toàn bộ thực nghiệm: nạp dữ liệu → CV mọi pipeline → bảng + artifact.
+    """Run the experiment: load the dataset, evaluate every pipeline, then build the tables.
 
     Args:
-        cfg: cấu hình thực nghiệm (xem `ExperimentConfig`).
+        cfg: experiment configuration, see `ExperimentConfig`.
 
     Returns:
-        dict gồm `dataset`, `results`, `findings`, `tables` (Markdown), `artifacts`, `summary_markdown`.
+        Mapping with `dataset`, `results`, `findings`, `tables`, `artifacts`, `config` and
+        `summary_markdown`.
     """
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     logger = _setup_logging(cfg.out_dir / "run.log" if cfg.write else None)
 
+    # 1. Load the dataset and describe the run before any model is fitted.
     dataset = load_dataset(cfg)
-    logger.info("=" * 100)
-    logger.info("THỰC NGHIỆM: PHƯƠNG PHÁP ĐƠN LẺ vs PHƯƠNG PHÁP KẾT HỢP (dữ liệu mất cân bằng)")
-    logger.info("=" * 100)
-    logger.info("Dữ liệu   : %s", dataset.describe())
-    logger.info("Cấu hình  : %s", {key: value for key, value in cfg.to_dict().items()
-                                    if key not in ("out_dir", "techniques")})
-    logger.info("Chống rò rỉ: mọi sampler nằm TRONG imblearn.pipeline.Pipeline; test chấm đúng 1 lần")
+    logger.info("EXPERIMENT: single techniques vs hybrid techniques on imbalanced data")
+    logger.info("Data      : %s", dataset.describe())
+    logger.info("Config    : %s", {key: value for key, value in cfg.to_dict().items()
+                                  if key not in ("out_dir", "techniques")})
+    logger.info("Leakage   : every sampler stays inside imblearn.pipeline.Pipeline; "
+                "the holdout is scored once")
 
+    # 2. Build the catalogue and evaluate every entry.
     specs = build_pipelines(cfg, keys=cfg.techniques)
-    logger.info("\nDanh mục %d pipeline:\n%s", len(specs), pipeline_table(specs))
+    logger.info("\nCatalogue of %d pipelines:\n%s", len(specs), pipeline_table(specs))
 
     results = evaluate_all(specs, dataset, cfg, log=logger.info)
     findings = analyse_findings(results, cfg)
 
+    # 3. Report the leakage verdict before the metric tables.
     failed = [r.key for r in results if r.ok and not all(r.checks.values())]
-    logger.info("\nKiểm chứng chống rò rỉ: %s",
-                "TẤT CẢ PASS" if not failed else f"FAIL ở: {', '.join(failed)}")
+    logger.info("\nLeakage checks: %s",
+                "ALL PASS" if not failed else f"FAIL for: {', '.join(failed)}")
 
+    # 4. Render each table once, then reuse it for the console and the report.
     tables = {
         "pipeline_catalogue": pipeline_table(specs),
         "cv_mean_std": _cv_table(results),
@@ -309,16 +298,17 @@ def run(cfg: ExperimentConfig) -> Dict[str, Any]:
         "ranking": _ranking_table(results),
         "leakage": _leak_table(results),
     }
-    logger.info("\n=== XẾP HẠNG THEO PR-AUC (holdout test) ===\n%s", tables["ranking"])
-    logger.info("\n=== TRUNG BÌNH THEO NHÓM ===\n%s", tables["by_group"])
-    logger.info("\n=== METRIC TỪNG PIPELINE: mean ± std qua %d fold ===\n%s", cfg.n_splits,
+    logger.info("\nRanking by PR-AUC (holdout test)\n%s", tables["ranking"])
+    logger.info("\nAverages by group\n%s", tables["by_group"])
+    logger.info("\nMetrics per pipeline: mean and standard deviation over %d folds\n%s", cfg.n_splits,
                 tables["cv_mean_std"])
 
+    # 5. Write the artifacts and release the log file handle.
     summary_md = _build_summary_markdown(dataset, results, findings, tables, cfg)
     artifacts: Dict[str, str] = {}
     if cfg.write:
         write_artifacts(cfg, results, findings, tables, summary_md, logger, artifacts)
-    logger.info("\nHoàn tất. Pipeline tốt nhất theo PR-AUC: %s",
+    logger.info("\nDone. Best pipeline by PR-AUC: %s",
                 findings["ranking"].get("pr_auc", {}).get("key", "—"))
     _close_file_handlers(logger)
     return {"dataset": dataset, "results": results, "findings": findings, "tables": tables,
@@ -328,7 +318,7 @@ def run(cfg: ExperimentConfig) -> Dict[str, Any]:
 def _build_summary_markdown(dataset: Dataset, results: Sequence[TechniqueResult],
                             findings: Dict[str, Any], tables: Dict[str, str],
                             cfg: ExperimentConfig) -> str:
-    """Ghép báo cáo Markdown đầy đủ từ các bảng + phần phân tích chuyên sâu."""
+    """Assemble the full Markdown report from the rendered tables and the insight section."""
     lines = ["# Thực nghiệm: Phương pháp đơn lẻ vs Phương pháp kết hợp (imbalanced learning)", "",
              f"- Dữ liệu: **{dataset.describe()}**",
              f"- Cấu hình: `n_samples={cfg.n_samples}`, `imbalance_ratio=1:{cfg.imbalance_ratio}`, "
@@ -353,7 +343,7 @@ def _build_summary_markdown(dataset: Dataset, results: Sequence[TechniqueResult]
 def write_artifacts(cfg: ExperimentConfig, results: Sequence[TechniqueResult],
                     findings: Dict[str, Any], tables: Dict[str, str], summary_md: str,
                     logger: logging.Logger, artifacts: Dict[str, str]) -> Dict[str, str]:
-    """Ghi toàn bộ artifact vào `cfg.out_dir` và trả dict đường dẫn."""
+    """Write every artifact into `cfg.out_dir` and return the mapping of names to paths."""
     out = cfg.out_dir
     out.mkdir(parents=True, exist_ok=True)
 
@@ -376,40 +366,40 @@ def write_artifacts(cfg: ExperimentConfig, results: Sequence[TechniqueResult],
     if plot_pr_curves(results, out / "pr_curves.png"):
         artifacts["pr_curves"] = str(out / "pr_curves.png")
     artifacts["run_log"] = str(out / "run.log")
-    logger.info("Đã ghi artifact: %s", ", ".join(sorted(Path(path).name
-                                                       for path in artifacts.values())))
+    logger.info("Wrote artifacts: %s", ", ".join(sorted(Path(path).name
+                                                        for path in artifacts.values())))
     return artifacts
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Tham số dòng lệnh của thực nghiệm."""
+    """Build the command line parser for the experiment."""
     parser = argparse.ArgumentParser(
-        description="So sánh phương pháp đơn lẻ vs kết hợp trên dữ liệu mất cân bằng (không rò rỉ).",
+        description="Compare single techniques against hybrid techniques on imbalanced data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--data", default="synthetic",
-                        help="'synthetic' hoặc đường dẫn CSV (ví dụ data/creditcard.csv)")
-    parser.add_argument("--target", default="Class", help="Tên cột nhãn khi đọc CSV")
+                        help="'synthetic' or a path to a CSV file (for example data/creditcard.csv)")
+    parser.add_argument("--target", default="Class", help="Label column name when reading a CSV file")
     parser.add_argument("--n-samples", type=int, default=ExperimentConfig.n_samples)
     parser.add_argument("--imbalance-ratio", type=int, default=ExperimentConfig.imbalance_ratio,
-                        help="Tỉ lệ đa số:thiểu số (50 ⇒ 1:50)")
+                        help="Majority to minority ratio (50 means 1:50)")
     parser.add_argument("--test-size", type=float, default=ExperimentConfig.test_size)
     parser.add_argument("--cv", type=int, default=ExperimentConfig.n_splits,
-                        help="Số fold StratifiedKFold")
+                        help="Number of StratifiedKFold folds")
     parser.add_argument("--threshold", type=float, default=ExperimentConfig.threshold)
     parser.add_argument("--model", default=ExperimentConfig.base_model,
-                        choices=("lightgbm", "random_forest"), help="Bộ phân loại nền")
+                        choices=("lightgbm", "random_forest"), help="Base classifier")
     parser.add_argument("--techniques", default="",
-                        help="Danh sách khoá kỹ thuật, phân tách bằng dấu phẩy (mặc định: tất cả)")
+                        help="Comma separated technique keys (default: all of them)")
     parser.add_argument("--over-strategy", type=float, default=ExperimentConfig.over_strategy)
     parser.add_argument("--under-strategy", type=float, default=ExperimentConfig.under_strategy)
-    parser.add_argument("--quick", action="store_true", help="Ít estimator hơn (chạy nhanh)")
+    parser.add_argument("--quick", action="store_true", help="Fewer estimators, for a faster run")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
-    parser.add_argument("--no-write", action="store_true", help="Không ghi artifact")
+    parser.add_argument("--no-write", action="store_true", help="Skip writing artifacts")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point CLI: dựng cấu hình từ tham số rồi chạy thực nghiệm."""
+    """CLI entry point: build the configuration from the arguments and run the experiment."""
     args = build_parser().parse_args(argv)
     keys = tuple(key.strip() for key in args.techniques.split(",") if key.strip())
     cfg = ExperimentConfig(

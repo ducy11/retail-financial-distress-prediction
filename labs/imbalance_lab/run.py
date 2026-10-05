@@ -1,17 +1,8 @@
-"""Chạy toàn bộ lab: 3 chiến lược + mốc minh hoạ SAI, ghi artifact và log phân phối nhãn.
+"""Run the 98/2 imbalance lab: three strategies, one calibrated variant and a leaky reference.
 
-Lệnh:
-    python -m imbalance_lab.run                    # cấu hình mặc định (50.000 mẫu, 98/2)
-    python -m imbalance_lab.run --n-samples 20000 --no-imblearn
-    python -m imbalance_lab.run --skip-leaky       # bỏ phần minh hoạ rò rỉ
-
-Artifact (mặc định `reports/imbalance/`):
-- `summary.md`            — bảng so sánh + kết luận + cách tái lập;
-- `summary.csv`           — metric trên holdout test theo chiến lược × ngưỡng;
-- `metrics_by_fold.csv`   — metric từng fold tại ngưỡng 0.5;
-- `resampling_by_fold.csv`— phân phối nhãn TRƯỚC/SAU resampling từng fold;
-- `thresholds.json`       — ngưỡng chọn trên xác suất out-of-fold;
-- `run.log`               — toàn bộ log (gồm phân phối nhãn trước/sau mỗi fold).
+Scores every strategy with StratifiedKFold on the train pool, tunes the threshold modes on out-of-fold
+probabilities, then refits once and reports the holdout. Resampling stays inside the pipeline, so validation
+and test never see a resampled row. Artifacts and the transcript go to `reports/imbalance/`.
 """
 from __future__ import annotations
 
@@ -35,24 +26,27 @@ from .models import (STRATEGIES, build_leaky_reference, build_strategy, classifi
 from .samplers import resampling_backend
 from .thresholds import tune_thresholds
 
-#: Thứ tự cột metric in ra bảng console/CSV.
+#: Metric column order used by the console table and the CSV exports.
 CSV_METRICS = ("precision", "recall", "f1", "pr_auc", "roc_auc", "brier", "mcc",
                "n_predicted_positive", "tn", "fp", "fn", "tp")
 
 
 def _version(package: str) -> str:
+    """Return the installed version of `package`, or "?" when metadata is unavailable."""
     try:
         return md.version(package)
-    except Exception:  # pragma: no cover - package có thể không cài dạng metadata
+    except Exception:  # pragma: no cover - the package may lack installed metadata
         return "?"
 
 
 def _write_json(path: Path, obj: Any) -> None:
+    """Write `obj` as UTF-8 JSON with a trailing newline."""
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2, default=float) + "\n",
                     encoding="utf-8")
 
 
 def _write_csv(path: Path, rows: List[Dict[str, Any]], header: Optional[List[str]] = None) -> None:
+    """Write rows as CSV, falling back to the first row's keys when no header is given."""
     if not rows:
         path.write_text("", encoding="utf-8")
         return
@@ -65,10 +59,10 @@ def _write_csv(path: Path, rows: List[Dict[str, Any]], header: Optional[List[str
 
 
 def _print_metrics_table(title: str, rows: List[Dict[str, Any]], log) -> None:
-    """In bảng metric dạng cột cố định (Precision/Recall/F1/PR-AUC/ROC-AUC/Brier/MCC)."""
+    """Print the fixed-width metric table used for the console transcript."""
     log(f"\n    {title}")
     log("      {:<26s} {:>7s} {:>7s} {:>7s} {:>7s} {:>7s} {:>7s} {:>7s} {:>7s}".format(
-        "cấu hình", "thr", "prec", "recall", "f1", "pr_auc", "roc_auc", "brier", "mcc"))
+        "config", "thr", "prec", "recall", "f1", "pr_auc", "roc_auc", "brier", "mcc"))
     for row in rows:
         log("      {:<26s} {:>7.3f} {:>7.3f} {:>7.3f} {:>7.3f} {:>7.3f} {:>7.3f} {:>7.3f} "
             "{:>7.3f}".format(
@@ -79,80 +73,90 @@ def _print_metrics_table(title: str, rows: List[Dict[str, Any]], log) -> None:
 
 
 def _majority_note(y_test: np.ndarray) -> str:
+    """Describe what the majority-class rate alone would score on this label vector."""
     positive_rate = 100.0 * float((np.asarray(y_test) == 1).mean())
-    return (f"nhãn test: {positive_rate:.2f}% dương ⇒ đoán “toàn bộ là lớp đa số” đã đạt "
+    return (f"test label: {positive_rate:.2f}% positive, so predicting the majority class already scores "
             f"{100.0 - positive_rate:.2f}% accuracy")
 
 
 def leaky_demo(n_samples: int, prefer_imblearn: bool, seed: int, log) -> Dict[str, Any]:
-    """Mốc MINH HOẠ SAI: SMOTE+undersample trên TOÀN BỘ dữ liệu rồi mới chia train/test.
+    """Score the deliberately leaky reference: resample the whole dataset, then split.
 
-    Kết quả sẽ lạc quan hơn thực tế vì tập test chứa mẫu TỔNG HỢP nội suy từ cả mẫu train.
-    Hàm đếm số mẫu test "không tồn tại trong dữ liệu gốc" để chứng minh bằng số.
+    The metrics come out optimistically high because the test set holds synthetic rows interpolated from
+    training rows. The function counts those rows to quantify the leak.
     """
+    # 1. Resample before the split, which is the mistake this reference demonstrates.
     X, y = make_imbalanced_dataset(n_samples=n_samples, random_state=seed)
     leaky = build_leaky_reference(prefer_imblearn, seed)
     X_res, y_res = resample_once(leaky, X, y)
+
+    # 2. Count the test rows that do not exist in the original data.
     original_rows = {row.tobytes() for row in X}
     split = stratified_holdout_split(X_res, y_res, seed=seed)
     synthetic_in_test = int(sum(1 for row in split["X_test"] if row.tobytes() not in original_rows))
 
+    # 3. Fit, score and tune the threshold modes on the same leaky probabilities.
     model = leaky["classifier"]
     model.fit(split["X_train"], split["y_train"])
     proba = model.predict_proba(split["X_test"])[:, 1]
     thresholds = tune_thresholds(split["y_test"], proba, cost_fn=C.COST_FN, cost_fp=C.COST_FP,
                                  precision_target=C.PRECISION_TARGET)
     rows = []
+    # The row label is serialized into summary.json, so it stays in the report language.
     for name, cfg in thresholds.items():
         rows.append({"label": f"NÊN TRÁNH · {name}", "strategy": "leaky_resample_before_split",
                      "threshold_mode": name, "split": "test",
                      **metrics_at_threshold(split["y_test"], proba, cfg["threshold"])})
-    log(f"    resample trước khi chia: {format_distribution(label_distribution(y))} → "
-        f"{format_distribution(label_distribution(y_res))}; test chứa "
-        f"{synthetic_in_test}/{len(split['y_test'])} mẫu TỔNG HỢP (không có trong dữ liệu gốc)")
-    _print_metrics_table("Mốc minh hoạ SAI (rò rỉ) — chỉ để so sánh", rows, log)
+    log(f"    resampled before the split: {format_distribution(label_distribution(y))} -> "
+        f"{format_distribution(label_distribution(y_res))}; the test set holds "
+        f"{synthetic_in_test}/{len(split['y_test'])} synthetic rows absent from the original data")
+    _print_metrics_table("Leaky reference (resampling before the split) - comparison only", rows, log)
     return {"rows": rows, "synthetic_rows_in_test": synthetic_in_test,
             "n_test": int(len(split["y_test"])), "thresholds": thresholds}
 
 
 def run(n_samples: Optional[int] = None, prefer_imblearn: bool = C.PREFER_IMBLEARN,
         include_leaky: bool = True, write: bool = True) -> Dict[str, Any]:
-    """Chạy lab: sinh dữ liệu → CV từng chiến lược → chọn ngưỡng trên OOF → chốt trên test."""
+    """Run the lab: build the data, cross-validate each strategy, then score the holdout once.
+
+    With `write` enabled the CSV, JSON and Markdown artifacts go to `C.ARTIFACTS_DIR`. The returned mapping
+    also carries the console transcript under "log".
+    """
     C.ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     log_lines: List[str] = []
 
     def log(message: str = "") -> None:
-        import sys  # nội bộ để không phụ thuộc import cấp module
+        import sys  # re-imported inside the closure so the helper stays self-contained
 
-        try:  # console Windows (cp1252) hoặc stdout bị redirect: ép UTF-8 để không UnicodeEncodeError
+        try:  # the Windows console (cp1252) cannot encode the report text, so force UTF-8
             reconfigure = getattr(sys.stdout, "reconfigure", None)
             encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
             if reconfigure is not None and encoding not in ("utf-8", "utf8"):
                 reconfigure(encoding="utf-8")
-        except Exception:  # pragma: no cover - stream không hỗ trợ reconfigure
+        except Exception:  # pragma: no cover - stream does not support reconfigure
             pass
         print(message)
         log_lines.append(message)
 
     seed, n = C.SEED, n_samples or C.N_SAMPLES
-    log("=== LAB MẤT CÂN BẰNG LỚP — pipeline không rò rỉ dữ liệu ===")
-    log(f"Backend phân loại   : {classifier_backend()} "
+    log("IMBALANCE LAB: leak-free pipeline")
+    log(f"Classifier backend  : {classifier_backend()} "
         f"(lightgbm {_version('lightgbm')}, scikit-learn {_version('scikit-learn')})")
-    log(f"Backend resampling  : {resampling_backend(prefer_imblearn)} "
+    log(f"Resampling backend  : {resampling_backend(prefer_imblearn)} "
         f"(imbalanced-learn {_version('imbalanced-learn')})")
-    log(f"Chiến lược          : {', '.join(STRATEGIES)} (+1 mốc minh hoạ SAI)")
+    log(f"Strategies          : {', '.join(STRATEGIES)} (+1 leaky reference)")
 
     X, y = make_imbalanced_dataset(n_samples=n, random_state=seed)
     split = stratified_holdout_split(X, y, seed=seed)
     X_pool, y_pool = split["X_train"], split["y_train"]
     X_test, y_test = split["X_test"], split["y_test"]
 
-    log("\n[1] Dữ liệu (mất cân bằng 98/2)")
-    log(f"    toàn bộ     : {format_distribution(label_distribution(y))}")
+    log("\n[1] Data (98/2 imbalance)")
+    log(f"    all         : {format_distribution(label_distribution(y))}")
     log(f"    train_pool  : {format_distribution(label_distribution(y_pool))}")
     log(f"    holdout test: {format_distribution(label_distribution(y_test))}"
-        f"  ← KHÔNG resample, chỉ dùng một lần để chốt")
-    log(f"    Lưu ý Accuracy: {_majority_note(y_test)}")
+        f"  <- never resampled, scored once")
+    log(f"    Accuracy note: {_majority_note(y_test)}")
 
     strategy_rows: List[Dict[str, Any]] = []
     fold_rows: List[Dict[str, Any]] = []
@@ -162,27 +166,31 @@ def run(n_samples: Optional[int] = None, prefer_imblearn: bool = C.PREFER_IMBLEA
 
     for index, name in enumerate(STRATEGIES, start=2):
         strategy = build_strategy(name, prefer_imblearn=prefer_imblearn, random_state=seed)
-        log(f"\n[{index}] Chiến lược `{name}` — {strategy['doc']}")
+        log(f"\n[{index}] Strategy `{name}` - {strategy['doc']}")
+
+        # 1. Cross-validate on the train pool, so every threshold comes from out-of-fold scores.
         cv = cross_validate_strategy(strategy, X_pool, y_pool, n_splits=C.N_SPLITS, seed=seed,
                                      probe_factory=strategy["probe_factory"], log=log)
         tuned = tune_thresholds(y_pool, cv["oof_proba"], cost_fn=C.COST_FN, cost_fp=C.COST_FP,
                                 precision_target=C.PRECISION_TARGET)
         thresholds_json[name] = {mode: cfg["threshold"] for mode, cfg in tuned.items()}
-        log("    Ngưỡng chọn trên xác suất OOF (chỉ dùng train_pool): "
+        log("    Thresholds from out-of-fold probabilities (train_pool only): "
             + ", ".join(f"{mode}={cfg['threshold']:.4f}" for mode, cfg in tuned.items()))
 
+        # 2. Refit on the full train pool and score the holdout once.
         threshold_map = {mode: cfg["threshold"] for mode, cfg in tuned.items()}
         scored = refit_and_score(strategy, X_pool, y_pool, X_test, y_test, threshold_map)
         rows: List[Dict[str, Any]] = []
         for mode, metrics in scored["at_threshold"].items():
             rows.append({"strategy": name, "threshold_mode": mode, "split": "test", **metrics})
-        _print_metrics_table(f"Holdout test (n={len(y_test)}) — {name}", 
+        _print_metrics_table(f"Holdout test (n={len(y_test)}) - {name}",
                              [{"label": f"{name} · {r['threshold_mode']}", **r} for r in rows], log)
         ci = bootstrap_ci(y_test, scored["proba"], thresholds_json[name]["best_f1"],
                           metric="pr_auc", n_boot=C.N_BOOTSTRAP, seed=seed)
-        log(f"    PR-AUC CI95 (bootstrap {ci['n_boot_used']} vòng) = "
+        log(f"    PR-AUC CI95 (bootstrap {ci['n_boot_used']} rounds) = "
             f"{ci['point']:.3f} [{ci['lo95']:.3f}, {ci['hi95']:.3f}]")
 
+        # 3. Collect the holdout rows, per-fold metrics and resampling distributions.
         oof_metrics = metrics_at_threshold(y_pool, cv["oof_proba"], 0.5)
         oof_rows.append({"strategy": name, "threshold_mode": "fixed_0.5", "split": "oof",
                          **oof_metrics})
@@ -222,7 +230,7 @@ def run(n_samples: Optional[int] = None, prefer_imblearn: bool = C.PREFER_IMBLEA
 
 
 def _markdown(result: Dict[str, Any]) -> str:
-    """Bảng Markdown: metric trên test theo chiến lược × ngưỡng, log resampling, kết luận."""
+    """Render the Markdown summary: holdout metrics, out-of-fold thresholds, resampling and conclusions."""
     rows = result["strategy_rows"]
     lines = ["# Lab mất cân bằng lớp — pipeline không rò rỉ dữ liệu", "",
              f"- Backend phân loại: **{result['backend']}** · resampling: **{result['resampling_backend']}**"
@@ -274,15 +282,15 @@ def _markdown(result: Dict[str, Any]) -> str:
                      f"⇒ metric bị thổi phồng, không dùng để kết luận.")
     lines += ["", "## Kết luận & khuyến nghị", "", *_conclusions(result), "",
               "## Tái lập", "", "```powershell",
-              "python -m pip install -r imbalance_lab/requirements.txt",
-              "python -m imbalance_lab.run        # log ở reports/imbalance/run.log",
+              "python -m pip install -r requirements-labs.txt",
+              "python -m labs.imbalance_lab.run        # log ở reports/imbalance/run.log",
               "python -m unittest discover -s tests -v   # gồm test chống rò rỉ của lab",
               "```"]
     return "\n".join(lines) + "\n"
 
 
 def _conclusions(result: Dict[str, Any]) -> List[str]:
-    """Viết kết luận tự động từ số liệu (không nhập tay)."""
+    """Derive the conclusion lines from the recorded numbers, so none of them is typed by hand."""
     rows = result["strategy_rows"]
     if not rows:
         return ["(không có kết quả)"]
@@ -357,7 +365,7 @@ def _conclusions(result: Dict[str, Any]) -> List[str]:
 
 
 def _write_artifacts(result: Dict[str, Any]) -> None:
-    """Ghi CSV/JSON/MD/log vào `reports/imbalance/`."""
+    """Write the CSV, JSON, Markdown and log artifacts into the lab output directory."""
     out = C.ARTIFACTS_DIR
     _write_csv(out / "summary.csv", result["strategy_rows"] + result["oof_rows"])
     _write_csv(out / "metrics_by_fold.csv", result["fold_rows"])
@@ -370,14 +378,15 @@ def _write_artifacts(result: Dict[str, Any]) -> None:
 
 
 def main(argv=None) -> int:
+    """Parse the command line arguments and run the lab."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-samples", type=int, default=C.N_SAMPLES,
-                        help=f"Số mẫu dữ liệu giả lập (mặc định {C.N_SAMPLES}).")
+                        help=f"Number of synthetic rows (default {C.N_SAMPLES}).")
     parser.add_argument("--no-imblearn", action="store_true",
-                        help="Bắt buộc dùng bản sampler nội bộ thay vì imbalanced-learn.")
+                        help="Force the built-in samplers instead of imbalanced-learn.")
     parser.add_argument("--skip-leaky", action="store_true",
-                        help="Bỏ mốc minh hoạ rò rỉ (chạy nhanh hơn).")
-    parser.add_argument("--no-write", action="store_true", help="Không ghi artifact.")
+                        help="Skip the leaky reference, which shortens the run.")
+    parser.add_argument("--no-write", action="store_true", help="Skip writing artifacts.")
     args = parser.parse_args(argv)
     run(n_samples=args.n_samples, prefer_imblearn=not args.no_imblearn,
         include_leaky=not args.skip_leaky, write=not args.no_write)
@@ -386,7 +395,3 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
-
-

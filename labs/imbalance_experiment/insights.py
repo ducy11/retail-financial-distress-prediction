@@ -1,12 +1,8 @@
-"""Phân tích chuyên sâu (yêu cầu #5): mọi kết luận đều TRÍCH SỐ LIỆU đo được, không nhập tay.
+"""Derive the required insights from measured numbers, with nothing typed in by hand.
 
-Ba câu hỏi bắt buộc:
-1. **SMOTE đơn lẻ vs SMOTETomek/SMOTEENN** — làm sạch biên có giúp gì không?
-2. **Resampling lớn vs Cost/Weight** — chênh lệch thời gian/chi phí tính toán thế nào?
-3. **Khi nào kết hợp (hybrid) vượt trội rõ rệt so với đơn lẻ?**
-
-Hàm `analyse()` trả dict findings (số liệu + kết luận); `render_markdown()` dựng phần báo cáo. Mọi so
-sánh dùng metric CHÍNH (PR-AUC, F1, Recall, FPR) — KHÔNG dùng accuracy.
+Three questions are answered: whether boundary cleaning helps over plain SMOTE, how the compute cost of
+heavy resampling compares to cost-sensitive weights, and when a hybrid pipeline clearly beats single
+methods. All comparisons use the primary metrics, never accuracy.
 """
 from __future__ import annotations
 
@@ -17,7 +13,7 @@ import numpy as np
 from .config import ExperimentConfig
 from .evaluation import TechniqueResult
 
-#: Kỹ thuật đơn lẻ dùng để so với bản hybrid tương ứng.
+#: Single techniques each hybrid is compared against.
 HYBRID_PAIRS: Dict[str, Sequence[str]] = {
     "smote_tomek": ("smote",),
     "smote_enn": ("smote",),
@@ -27,7 +23,7 @@ HYBRID_PAIRS: Dict[str, Sequence[str]] = {
 
 
 def _get(results: Sequence[TechniqueResult], key: str) -> Optional[TechniqueResult]:
-    """Lấy kết quả theo khoá (None nếu không chạy hoặc lỗi)."""
+    """Result by key, or None when it did not run or failed."""
     for result in results:
         if result.key == key and result.ok:
             return result
@@ -35,7 +31,7 @@ def _get(results: Sequence[TechniqueResult], key: str) -> Optional[TechniqueResu
 
 
 def _metric(result: Optional[TechniqueResult], metric: str, *, source: str = "holdout") -> float:
-    """Giá trị metric của một kết quả (`source="holdout"` hoặc `"cv"` = mean qua fold)."""
+    """Metric value of one result, from "holdout" by default or "cv" for the per-fold mean."""
     if result is None:
         return float("nan")
     table = result.holdout if source == "holdout" else result.mean
@@ -322,5 +318,5 @@ def render_markdown(results: Sequence[TechniqueResult], cfg: ExperimentConfig) -
               "`alpha=0,75`) chứ chưa grid-search ⇒ đây là so sánh 'cùng ngân sách', không phải 'tối ưu "
               "cho từng kỹ thuật'.",
               "- Ngưỡng báo cáo cố định 0,5 để so sánh trực tiếp; muốn tối ưu ngưỡng hãy dùng "
-              "`imbalance_lab.thresholds.tune_thresholds_from_pr_curve` (chọn trên xác suất OOF).", ""]
+              "`labs.imbalance_lab.thresholds.tune_thresholds_from_pr_curve` (chọn trên xác suất OOF).", ""]
     return "\n".join(lines) + "\n"

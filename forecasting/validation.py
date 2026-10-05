@@ -1,19 +1,8 @@
-"""Kiểm chứng tổng quát hoá và độ bất định — phần "chống tự lừa mình" của đồ án.
+"""Generalization and uncertainty checks that guard against overstated performance.
 
-Gồm 6 nhóm:
-1. `grouped_cv` — GroupKFold theo công ty: mỗi fold giữ TOÀN BỘ một số công ty ra khỏi train,
-   đo đúng câu hỏi "mô hình có dự báo được công ty chưa từng thấy không?".
-2. `leave_one_company_out` — LOCO: bỏ từng công ty, train trên 7 công ty còn lại, test trên
-   công ty bị bỏ (ghép cả validation + test của công ty đó).
-3. `bootstrap_ci` — khoảng tin cậy 95% cho AUROC/AP/F1 bằng bootstrap theo TỪNG MẪU.
-4. `cluster_bootstrap_ci` — CI theo CỤM CÔNG TY: mẫu lại ticker thay vì mẫu lại quý ⇒ mức bất định
-   ĐÚNG cho câu hỏi "công ty mới" (8 quý của cùng công ty không độc lập).
-5. `walk_forward_metrics` — đánh giá theo THỜI GIAN (expanding window + purge theo ngày công bố):
-   câu hỏi "công ty cũ, GIAI ĐOẠN mới", bổ sung (không thay thế) LOCO.
-6. `agreement` — tương quan hạng giữa xác suất các mô hình (vì sao metric có thể trùng khít).
-
-Lệnh: python -m forecasting.validation  → ghi reports/results/validation_checks.json
-      + reports/results/walk_forward.json + hình walk-forward.
+Provides GroupKFold and leave-one-company-out evaluation, sample and company-cluster bootstrap intervals,
+walk-forward evaluation over time with a publication-date purge, and agreement between model
+probabilities. Writes `results/validation_checks.json` and `results/walk_forward.json`.
 """
 from __future__ import annotations
 
@@ -36,7 +25,7 @@ from .models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model, predict_pro
 
 def grouped_cv(model_names: Sequence[str], samples: List[Dict[str, Any]],
                n_splits: int = 4, min_test: int = 4) -> Dict[str, Any]:
-    """GroupKFold theo công ty; trả metric out-of-fold (gộp toàn bộ fold) cho từng mô hình."""
+    """GroupKFold by company; return out-of-fold metrics (all folds pooled) for each model."""
     groups = np.asarray([s[GROUP_KEY] for s in samples])
     X = build_feature_matrix(samples)
     y = extract_labels(samples)
@@ -82,10 +71,11 @@ def grouped_cv(model_names: Sequence[str], samples: List[Dict[str, Any]],
 
 def leave_one_company_out(model_names: Sequence[str], splits: Dict[str, List[Dict[str, Any]]],
                           min_test: int = 4) -> List[Dict[str, Any]]:
-    """LOCO theo thời gian: train trên 7 công ty (train split), test trên công ty bị bỏ.
+    """Time-ordered LOCO: train on 7 companies (train split), test on the held-out company.
 
-    Dùng cả validation + test của công ty bị bỏ để có đủ mẫu; công ty có nhãn đơn lớp thì
-    AUROC không xác định (ghi rõ `single_class`) — đó cũng là một phát hiện cần báo cáo.
+    The held-out company's validation + test rows are both used so it has enough samples; a company
+    with single-class labels has an undefined AUROC (flagged as `single_class`) - which is itself a
+    finding worth reporting.
     """
     train_s = splits["train"]
     candidates = splits["validation"] + splits["test"]
@@ -117,7 +107,7 @@ def leave_one_company_out(model_names: Sequence[str], splits: Dict[str, List[Dic
 
 def bootstrap_ci(y_true: Sequence[int], y_prob: Sequence[float], threshold: float = 0.5,
                  n_boot: int = N_BOOTSTRAP, seed: int = RANDOM_SEED) -> Dict[str, Any]:
-    """Khoảng tin cậy 95% (percentile bootstrap) cho AUROC / AP / F1 / macro-F1."""
+    """95% confidence intervals (percentile bootstrap) for AUROC / AP / F1 / macro-F1."""
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
     rng = np.random.default_rng(seed)
@@ -150,7 +140,7 @@ def bootstrap_ci(y_true: Sequence[int], y_prob: Sequence[float], threshold: floa
 
 def agreement(model_names: Sequence[str], train_s: List[Dict[str, Any]],
               eval_s: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Tương quan hạng (Spearman) giữa xác suất các mô hình — giải thích metric trùng khít."""
+    """Spearman rank correlation between model probabilities, showing when metrics coincide."""
     from scipy.stats import spearmanr
 
     X_tr, y_tr = build_feature_matrix(train_s), extract_labels(train_s)
@@ -170,19 +160,19 @@ def _fit(name: str, X, y):
     return model
 
 
-#: Các mô hình đưa vào kiểm chứng = đúng 4 họ mô hình của đồ án (lấy từ registry).
+#: Models used for the checks = exactly the project's 4 families (from the registry).
 MODELS_FOR_CHECKS = list(DEFAULT_MODEL_ORDER)
 
 
 def cluster_bootstrap_ci(samples: List[Dict[str, Any]], y_true: Sequence[int],
                          y_prob: Sequence[float], threshold: float = 0.5,
                          n_boot: int = N_BOOTSTRAP, seed: int = RANDOM_SEED) -> Dict[str, Any]:
-    """CI 95% bằng bootstrap theo CỤM CÔNG TY (mẫu lại ticker, không mẫu lại từng quý).
+    """95% CI by company-cluster bootstrap, resampling tickers rather than individual quarters.
 
-    Vì sao cần (khác `bootstrap_ci`): 8 quý của cùng một công ty KHÔNG độc lập — nhãn gần như là
-    thuộc tính công ty (90,8% cặp quý liền nhau giữ nguyên nhãn, xem `eda_deep.md`). Bootstrap theo
-    từng mẫu vì vậy cho CI **hẹp giả tạo**; mẫu lại theo cụm trả lời đúng câu hỏi của đồ án:
-    "nếu rút ngẫu nhiên một bộ công ty khác thì kết luận còn giữ không?".
+    Eight quarters of one company are not independent; the label is close to a company attribute
+    (90.8% of consecutive-quarter pairs keep the label; see `eda_deep.md`). Bootstrapping individual
+    samples therefore yields artificially narrow intervals. Cluster resampling instead answers whether
+    the conclusion holds for a different random set of companies.
     """
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
@@ -198,11 +188,11 @@ def cluster_bootstrap_ci(samples: List[Dict[str, Any]], y_true: Sequence[int],
         picked = rng.integers(0, len(keys), size=len(keys))
         idx = np.concatenate([groups[keys[k]] for k in picked])
         y, p = y_true[idx], y_prob[idx]
-        if len(set(y.tolist())) < 2:      # cụm rút ra chỉ có 1 lớp ⇒ AUROC/AP không xác định
+        if len(set(y.tolist())) < 2:      # drawn cluster has only one class => AUROC/AP undefined
             continue
         aurocs.append(float(roc_auc_score(y, p)))
         aps.append(float(average_precision_score(y, p)))
-        # F1 tính trực tiếp (rẻ hơn gọi lại toàn bộ bộ metric 2.000 lần; kết quả như nhau).
+        # Compute F1 inline (cheaper than re-running the full metric block 2,000 times; same result).
         predicted = (p >= threshold).astype(int)
         tp = int(((predicted == 1) & (y == 1)).sum())
         fp = int(((predicted == 1) & (y == 0)).sum())
@@ -225,33 +215,33 @@ def cluster_bootstrap_ci(samples: List[Dict[str, Any]], y_true: Sequence[int],
 
 
 def _safe_auc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
-    """AUROC — trả NaN khi chỉ có một lớp (không xác định được, KHÔNG được raise)."""
+    """AUROC, returning NaN when there is only one class (must not raise)."""
     return float("nan") if len(set(y_true.tolist())) < 2 else float(roc_auc_score(y_true, y_prob))
 
 
 def _safe_ap(y_true: np.ndarray, y_prob: np.ndarray) -> float:
-    """Average precision — trả NaN khi chỉ có một lớp."""
+    """Average precision - returns NaN when there is only one class."""
     return (float("nan") if len(set(y_true.tolist())) < 2
             else float(average_precision_score(y_true, y_prob)))
 
 
 def _as_date(text: str) -> date:
-    """'YYYY-MM-DD' → `datetime.date` (mọi mốc trong prepared đều là ISO)."""
+    """'YYYY-MM-DD' -> `datetime.date` (every timestamp in prepared is ISO)."""
     year, month, day = (int(part) for part in str(text).split("-")[:3])
     return date(year, month, day)
 
 
 def walk_forward_folds(samples: List[Dict[str, Any]], n_folds: int = 4, purge_days: int = 90,
                        min_train: int = 60) -> List[Dict[str, Any]]:
-    """Chia theo THỜI GIAN (expanding window) + purge theo ngày công bố của nhãn.
+    """Split by TIME (expanding window) + purge by label publication date.
 
-    Mốc thời gian = `request.target_period_end` (kết thúc quý cần dự báo). Với fold k:
-    - train = mẫu có kỳ target TRƯỚC mốc cắt **và** nhãn đã công bố trước `mốc − purge_days`
-      (mô phỏng đúng lượng thông tin có được tại thời điểm ra quyết định),
-    - test  = mẫu trong khối thời gian kế tiếp.
+    Time marker is `request.target_period_end`, the end of the quarter to forecast. For fold k, train is
+    every sample whose target period is before the cut and whose label was published before
+    `cut - purge_days`, which reproduces the information available at decision time, and test is the next
+    time block.
 
-    Vì sao cần (bổ sung, không thay thế GroupKFold/LOCO): LOCO trả lời "công ty MỚI, giai đoạn cũ";
-    walk-forward trả lời "công ty cũ, GIAI ĐOẠN mới" — hai nguồn khó khác nhau.
+    This complements GroupKFold and LOCO rather than replacing them: LOCO answers the new-company
+    question on an old period, while walk-forward answers the old-company question on a new period.
     """
     order = sorted(range(len(samples)),
                    key=lambda i: _as_date(samples[i]["request"]["target_period_end"]))
@@ -283,7 +273,7 @@ def walk_forward_folds(samples: List[Dict[str, Any]], n_folds: int = 4, purge_da
 def walk_forward_metrics(model_names: Sequence[str], samples: List[Dict[str, Any]],
                          n_folds: int = 4, purge_days: int = 90, min_train: int = 60,
                          min_test: int = 4) -> Dict[str, Any]:
-    """Chạy walk-forward cho từng mô hình; trả bảng theo fold + trung bình theo mô hình."""
+    """Run walk-forward for each model; return the per-fold table plus per-model averages."""
     X, y = build_feature_matrix(samples), extract_labels(samples)
     folds = walk_forward_folds(samples, n_folds=n_folds, purge_days=purge_days, min_train=min_train)
     rows: List[Dict[str, Any]] = []
@@ -292,11 +282,11 @@ def walk_forward_metrics(model_names: Sequence[str], samples: List[Dict[str, Any
                 "n_train": fold["n_train"], "n_test": fold["n_test"]}
         if fold["skipped"] or len(fold["test_idx"]) < min_test:
             rows.append({**base, "model": None, "skipped": True,
-                         "reason": "train quá nhỏ" if fold["skipped"] else "test quá nhỏ"})
+                         "reason": "train too small" if fold["skipped"] else "test too small"})
             continue
         train_idx, test_idx = fold["train_idx"], fold["test_idx"]
         if len(set(y[test_idx].tolist())) < 2:
-            rows.append({**base, "model": None, "skipped": True, "reason": "nhãn test đơn lớp"})
+            rows.append({**base, "model": None, "skipped": True, "reason": "single-class test labels"})
             continue
         for name in model_names:
             model = make_model(name)
@@ -318,14 +308,14 @@ def walk_forward_metrics(model_names: Sequence[str], samples: List[Dict[str, Any
             "min_auroc": min((r["auroc"] for r in valid), default=None),
             "per_fold_auroc": [r["auroc"] for r in valid],
         }
-    return {"protocol": ("expanding window theo `target_period_end` + purge theo ngày công bố nhãn; "
-                         "CHỈ dùng train+validation+purged — TEST không tham gia"),
+    return {"protocol": ("expanding window on `target_period_end` + purge by label publication date; "
+                         "uses ONLY train+validation+purged - TEST never participates"),
             "n_folds": n_folds, "purge_days": purge_days, "min_train": min_train,
             "rows": rows, "summary": summary}
 
 
 def _walk_forward_figure(result: Dict[str, Any], path: Any) -> None:
-    """Hình: AUROC/AP theo từng fold thời gian cho từng mô hình (bỏ qua nếu thiếu matplotlib)."""
+    """Figure: AUROC/AP per time fold for each model (skipped if matplotlib is missing)."""
     valid = [r for r in result["rows"] if not r.get("skipped")]
     if not valid:
         return
@@ -344,21 +334,21 @@ def _walk_forward_figure(result: Dict[str, Any], path: Any) -> None:
                 ys = [r[metric] for r in valid if r["model"] == name]
                 ax.plot(xs, ys, marker="o", label=name, linewidth=1.2)
             ax.set_xticks(folds)
-            ax.set_xlabel("fold thời gian (mốc cắt tăng dần)")
+            ax.set_xlabel("time fold (cut point increases)")
             ax.set_ylabel(label)
             ax.grid(alpha=0.3)
             ax.legend(fontsize=7)
-        fig.suptitle("Walk-forward theo thời gian (expanding window + purge 90 ngày)", fontsize=11)
+        fig.suptitle("Walk-forward over time (expanding window + 90-day purge)", fontsize=11)
         fig.tight_layout()
         path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(path, dpi=120)
         plt.close(fig)
-    except Exception as e:  # pragma: no cover - chỉ là hình minh hoạ
-        print("  (bỏ qua hình walk-forward)", e)
+    except Exception as e:  # pragma: no cover - just an illustrative figure
+        print("  (skipped walk-forward figure)", e)
 
 
 def run(model_names: Sequence[str] | None = None) -> Dict[str, Any]:
-    """Chạy toàn bộ kiểm chứng: GroupKFold, LOCO, bootstrap (mẫu & cụm), walk-forward, agreement."""
+    """Run all checks: GroupKFold, LOCO, bootstrap (sample & cluster), walk-forward, agreement."""
     ensure_dirs()
     names = [m for m in (model_names or MODELS_FOR_CHECKS) if m in MODEL_REGISTRY]
     splits = {n: load_prepared(n) for n in ("train", "validation", "test", "purged")}
@@ -376,7 +366,7 @@ def run(model_names: Sequence[str] | None = None) -> Dict[str, Any]:
             "test_auroc": float(roc_auc_score(y_te, proba)),
             "test_average_precision": float(average_precision_score(y_te, proba)),
             "bootstrap_test": bootstrap_ci(y_te, proba),
-            # CI theo CỤM CÔNG TY — mức bất định ĐÚNG cho câu hỏi "công ty mới" (xem docstring).
+            # Confidence interval by company cluster, the right uncertainty for the new-company question.
             "bootstrap_cluster_test": cluster_bootstrap_ci(splits["test"], y_te, proba),
         }
 
@@ -388,7 +378,7 @@ def run(model_names: Sequence[str] | None = None) -> Dict[str, Any]:
         "agreement": agreement(names, splits["train"], splits["test"]),
         "headline": {},
     }
-    print(f"  {'mô hình':24s} {'in-domain test AUROC':>21s} {'cross-company OOF AUROC':>24s}")
+    print(f"  {'model':24s} {'in-domain test AUROC':>21s} {'cross-company OOF AUROC':>24s}")
     for name in names:
         oof = cv[name]["oof_auroc"]
         out["headline"].setdefault("in_domain_test_auroc", {})[name] = in_domain[name]["test_auroc"]
@@ -400,11 +390,11 @@ def run(model_names: Sequence[str] | None = None) -> Dict[str, Any]:
     out["headline"]["loco_n_evaluable"] = len(loco_scores)
     skipped = sorted({r["held_out"] for r in loco if r.get("skipped")})
     out["headline"]["loco_skipped_companies"] = skipped
-    print(f"  LOCO: mean AUROC={out['headline']['loco_mean_auroc']} trên "
-          f"{len(loco_scores)} phép so; bỏ qua (nhãn đơn lớp): {skipped}")
+    print(f"  LOCO: mean AUROC={out['headline']['loco_mean_auroc']} over "
+          f"{len(loco_scores)} comparisons; skipped (single-class labels): {skipped}")
 
-    # Walk-forward theo THỜI GIAN trên train+validation+purged (TEST không tham gia) — trả lời câu
-    # hỏi "công ty cũ, GIAI ĐOẠN mới", bổ sung (không thay thế) LOCO ở trên.
+    # Time-ordered walk-forward over train, validation and purged data (test not involved); this
+    # answers the old-company, new-period case and complements LOCO above.
     wf_pool = [s for n in ("train", "validation", "purged") for s in splits[n]]
     walk_forward = walk_forward_metrics(names, wf_pool)
     out["walk_forward"] = walk_forward
@@ -414,10 +404,10 @@ def run(model_names: Sequence[str] | None = None) -> Dict[str, Any]:
 
     out["headline"]["walk_forward_mean_auroc"] = {
         name: block["mean_auroc"] for name, block in walk_forward["summary"].items()}
-    print("  Walk-forward theo thời gian (train+validation+purged, purge nhãn 90 ngày):")
+    print("  Time-ordered walk-forward (train+validation+purged, 90-day label purge):")
     for name, block in walk_forward["summary"].items():
-        print(f"    {name:24s} {block['n_folds_evaluated']} fold | AUROC tb "
-              f"{_fmt3(block['mean_auroc'])} | AP tb {_fmt3(block['mean_average_precision'])}")
+        print(f"    {name:24s} {block['n_folds_evaluated']} fold | mean AUROC "
+              f"{_fmt3(block['mean_auroc'])} | mean AP {_fmt3(block['mean_average_precision'])}")
 
     (RESULTS_DIR / "walk_forward.json").write_text(
         json.dumps(walk_forward, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
@@ -431,7 +421,7 @@ def run(model_names: Sequence[str] | None = None) -> Dict[str, Any]:
 def main(argv=None) -> int:
     ensure_utf8_stdio()
     _ = argv
-    print("=== Kiểm chứng tổng quát hoá & độ bất định ===")
+    print("=== Generalization & uncertainty checks ===")
     run()
     return 0
 

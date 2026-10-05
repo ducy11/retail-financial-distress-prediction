@@ -1,9 +1,7 @@
-"""Báo cáo kết quả: bảng điểm từng công ty + figure chính.
+"""Write the per-company distress ranking and the test probability histogram.
 
-Lệnh: python -m forecasting.report
-
-- Nạp test_evaluation.json (do forecasting.evaluate tạo).
-- Xuất bảng xếp hạng distress theo công ty/quý (CSV) + biểu đồ histogram xác suất.
+Reads `results/test_evaluation.json`, produces `results/test_predictions.csv` and the score-distribution
+figure. Run with `python -m forecasting.report`.
 """
 from __future__ import annotations
 
@@ -25,7 +23,7 @@ from .models import predict_proba
 
 
 def load_threshold() -> float:
-    """Threshold chọn trên validation (summaries/best_threshold)."""
+    """Threshold chosen on validation (summaries/best_threshold)."""
     summary_path = RESULTS_DIR / "summary.json"
     if summary_path.exists():
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -62,25 +60,25 @@ def run() -> Dict[str, Any]:
         writer.writeheader()
         writer.writerows(rows)
 
-    # Histogram xác suất theo thực tế
+    # Probability histogram colored by actual label
     fig, ax = plt.subplots(figsize=(6, 4))
     actuals = [r["actual"] for r in rows]
     probs = [r["probability"] for r in rows]
     ax.hist([p for p, a in zip(probs, actuals) if a == 1],
-            bins=20, alpha=0.6, label="Distress (thực)", color="crimson")
+            bins=20, alpha=0.6, label="Distress (actual)", color="crimson")
     ax.hist([p for p, a in zip(probs, actuals) if a == 0],
-            bins=20, alpha=0.5, label="Không distress", color="steelblue")
+            bins=20, alpha=0.5, label="No distress", color="steelblue")
     ax.axvline(threshold, color="k", linestyle="--", label=f"threshold={threshold:.2f}")
-    ax.set_xlabel("Xác suất suy giảm (model)")
-    ax.set_ylabel("Số mẫu test")
-    ax.set_title("Phân phối xác suất theo nhãn thực — test")
+    ax.set_xlabel("Model distress probability")
+    ax.set_ylabel("Test sample count")
+    ax.set_title("Probability distribution by actual label - test")
     ax.legend()
     ax.grid(alpha=0.3)
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "test_score_distribution.png", dpi=120)
     plt.close(fig)
 
-    print(f"Đã xuất {csv_path} ({len(rows)} mẫu) và "
+    print(f"Wrote {csv_path} ({len(rows)} samples) and "
           f"{FIGURES_DIR / 'test_score_distribution.png'}")
     return {"rows": rows, "csv": str(csv_path), "model": name, "threshold": threshold}
 

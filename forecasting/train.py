@@ -1,15 +1,8 @@
-"""Huấn luyện các model ứng viên trên train split, chọn mô hình theo AP CROSS-COMPANY.
+"""Train candidate models and select one by cross-company average precision.
 
-Lệnh: python -m forecasting.train [--model logistic|random_forest|hist_gradient_boosting]
-
-- Nạp prepared/train.json, validation.json.
-- Xây features (bậc 2) từ lịch sử; impute median trong pipeline.
-- Fit từng model; đánh giá trên validation (AUROC, AP, F1, threshold best-F1) **và** tính AP
-  out-of-fold khi chia theo CÔNG TY (`cross_company_metrics`, GroupKFold trên train+validation).
-- Chọn mô hình theo quy tắc: **AP cross-company → best-F1(val) → AP(val) → AUROC(val) → gap nhỏ nhất**
-  (vì metric in-domain bị "nhớ mặt công ty" chi phối — xem `forecasting/validation.py`).
-- Lưu: reports/results/summary.json (mọi model) + reports/models/best.joblib (mô hình chọn)
-  + reports/figures/validation_pr_curves.png
+Fits each registered family on train, scores validation metrics plus out-of-fold average precision with
+GroupKFold, and picks the winner by cross-company AP, then best-F1, AP, AUROC and overfit gap. Writes
+`results/summary.json` and `models/best.joblib`. Run with `python -m forecasting.train`.
 """
 from __future__ import annotations
 
@@ -31,21 +24,21 @@ from .features import build_feature_matrix, extract_labels, feature_names
 from .models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model, predict_proba
 from .validation import bootstrap_ci
 
-#: Mô hình mặc định = 4 họ mô hình của đồ án (logistic · random forest · hist gradient boosting · MLP).
+#: Default models = the project's 4 families (logistic, random forest, hist gradient boosting, MLP).
 DEFAULT_MODELS = [m for m in DEFAULT_MODEL_ORDER if m in MODEL_REGISTRY]
 
 
 def _safe_metric(x) -> float:
-    """Chuyển metric (có thể None/NaN) về float; None/NaN → -1 để xếp hạng an toàn."""
+    """Coerce a metric (possibly None/NaN) to float; None/NaN -> -1 so ranking stays safe."""
     try:
         v = float(x)
     except (TypeError, ValueError):
         return -1.0
-    return -1.0 if v != v else v  # v != v khi NaN
+    return -1.0 if v != v else v  # v != v means NaN
 
 
 def _fmt(value: Any, digits: int = 3) -> str:
-    """Định dạng số cho log (None/NaN → '—')."""
+    """Format a number for logs (None/NaN -> '—')."""
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -54,12 +47,12 @@ def _fmt(value: Any, digits: int = 3) -> str:
 
 
 def _rank(row: Dict[str, Any]):
-    """Khoá xếp hạng mô hình: AP cross-company (GroupKFold) → best-F1(val) → AP(val) → AUROC(val)
-    → gap overfit nhỏ nhất.
+    """Model ranking key: cross-company AP (GroupKFold) -> best-F1(val) -> AP(val) -> AUROC(val)
+    -> smallest overfit gap.
 
-    Vì sao AP cross-company đứng đầu: metric in-domain bị chi phối bởi "nhớ mặt công ty"
-    (baseline ticker-prior = 0.986), nên chọn mô hình theo in-domain là chọn sai câu hỏi.
-    Xem `docs/ke-hoach-tiep-theo.md` (P0-#2) và mục 6.4 của báo cáo.
+    Cross-company AP leads because in-domain metrics are dominated by recognizing the company
+    (ticker-prior baseline = 0.986), so ranking by in-domain score answers the wrong question.
+    See `docs/ke-hoach-tiep-theo.md` (P0-#2) and report section 6.4.
     """
     return (_safe_metric(row.get("cross_company_ap")), _safe_metric(row["best_f1_val"]),
             _safe_metric(row["average_precision"]), _safe_metric(row["auroc"]),
@@ -67,10 +60,11 @@ def _rank(row: Dict[str, Any]):
 
 
 def train_split(model_name: str, X_train, y_train, X_val, y_val, **params):
-    """Fit một mô hình; trả (row metric, pipeline).
+    """Fit one model; return (metric row, pipeline).
 
-    Row gồm metric TRAIN và VALIDATION ở cùng threshold 0.5 (để so overfitting), điểm best-F1
-    trên validation và ngưỡng tối ưu chi phí trên validation. `params` ghi đè hyperparameter.
+    The row holds TRAIN and VALIDATION metrics at the same 0.5 threshold (to compare overfitting),
+    the best-F1 point on validation and the cost-optimal threshold on validation. `params` overrides
+    hyperparameters.
     """
     model = make_model(model_name, **params)
     model.fit(X_train, y_train)
@@ -109,14 +103,15 @@ def train_split(model_name: str, X_train, y_train, X_val, y_val, **params):
 
 def cross_company_metrics(model_name: str, samples: List[Dict[str, Any]],
                           n_splits: int = 4) -> Dict[str, Any]:
-    """AP/AUROC **out-of-fold khi chia theo CÔNG TY** (GroupKFold) — tiêu chí chọn mô hình chính.
+    """Out-of-fold AP and AUROC when splitting by company (GroupKFold), the main selection criterion.
 
-    Vì sao cần: bộ test in-domain chứa đúng các công ty trong train nên mọi metric in-domain đều bị
-    "nhớ mặt công ty" chi phối (baseline `ticker_prior` = 0.986, xem `forecasting/validation.py`).
-    Chọn mô hình theo AP cross-company mới đo đúng câu hỏi "công ty chưa từng thấy thì sao".
+    The in-domain test set contains exactly the companies seen in train, so every in-domain metric is
+    dominated by recognizing the company (`ticker_prior` baseline = 0.986; see
+    `forecasting/validation.py`). Cross-company AP measures the relevant question: how the model does
+    on a company it never saw.
 
-    Dữ liệu dùng để chọn = train + validation (không chạm test); mỗi fold GroupKFold giữ TRỌN một
-    công ty ra ngoài nên không có nhãn của công ty đó trong phần fit.
+    Selection data is train plus validation (test is never touched). Each GroupKFold fold holds out a
+    whole company, so its labels never appear in the fit portion.
     """
     from .validation import grouped_cv
 
@@ -131,7 +126,7 @@ def cross_company_metrics(model_name: str, samples: List[Dict[str, Any]],
 
 
 def run(model_names: List[str] | None = None) -> Dict[str, Any]:
-    """Huấn luyện các mô hình ứng viên trên train, chọn mô hình trên validation."""
+    """Train candidate models on train and pick the winner on validation."""
     ensure_dirs()
     model_names = list(model_names or DEFAULT_MODELS)
     train_samples = load_prepared("train")
@@ -149,16 +144,16 @@ def run(model_names: List[str] | None = None) -> Dict[str, Any]:
     best_name, best_row, best_model = None, None, None
     for name in model_names:
         if name not in MODEL_REGISTRY:
-            print(f"  (bỏ qua) model không có trong registry: {name}")
+            print(f"  (skipped) model not in registry: {name}")
             continue
         print(f"  Fit {name} ...")
         try:
             row, model = train_split(name, X_train, y_train, X_val, y_val)
-        except Exception as e:  # noqa: BLE001 - lỗi fit của sklearn (dữ liệu/quá ít mẫu)
-            print(f"    LỖI fit {name}: {e}. Bỏ qua model này.")
+        except Exception as e:  # noqa: BLE001 - sklearn fit failure (bad data / too few rows)
+            print(f"    Fit ERROR {name}: {e}. Skipping this model.")
             continue
         row["n_features"] = len(feats)
-        # Tiêu chí chọn mô hình chính: AP out-of-fold theo CÔNG TY (train+validation, không chạm test)
+        # Primary selection signal: out-of-fold AP by company (train and validation; test untouched).
         row.update(cross_company_metrics(name, train_samples + val_samples, n_splits=4))
         summaries.append(row)
         print(f"    train: AUROC={row['train_auroc']:.3f} F1@0.5={row['train_at_0.5']['f1']:.3f}"
@@ -182,11 +177,11 @@ def run(model_names: List[str] | None = None) -> Dict[str, Any]:
                 "f1": best_row["best_f1_val"],
             }}),
         "best_threshold_cost_optimal": best_row["cost_optimal_val"]["threshold"],
-        "selection_rule": ("max AP cross-company (GroupKFold, train+validation) → best-F1(val) → "
-                           "AP(val) → AUROC(val) → gap overfit nhỏ nhất"),
+        "selection_rule": ("max cross-company AP (GroupKFold, train+validation) -> best-F1(val) -> "
+                           "AP(val) -> AUROC(val) -> smallest overfit gap"),
         "bootstrap_val_best": (bootstrap_ci(y_val, predict_proba(best_model, X_val))
                                if best_model is not None else None),
-        "trained_at": None,  # không in timestamp để output ổn định/diff được
+        "trained_at": None,  # no timestamp so output stays stable/diffable
     }
     (RESULTS_DIR / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
@@ -196,7 +191,7 @@ def run(model_names: List[str] | None = None) -> Dict[str, Any]:
                      "threshold": float(summary["best_threshold"])},
                     MODELS_DIR / "best.joblib")
 
-    # Biểu đồ PR validation cho từng model (fit lại từ cùng tham số cố định)
+    # Validation PR curve for each model (refit from the same fixed params)
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -213,7 +208,7 @@ def run(model_names: List[str] | None = None) -> Dict[str, Any]:
                     pipe.fit(X_train, y_train)
                 proba_val = predict_proba(pipe, X_val)
             except Exception as e:  # noqa: BLE001
-                print(f"  (bỏ qua) vẽ {row['model']}: {e}")
+                print(f"  (skipped) plotting {row['model']}: {e}")
                 continue
             prec, rec, _ = precision_recall_curve(y_val, proba_val)
             plt.plot(rec, prec, label=row["model"])
@@ -222,14 +217,14 @@ def run(model_names: List[str] | None = None) -> Dict[str, Any]:
         if plotted:
             plt.xlabel("Recall")
             plt.ylabel("Precision")
-            plt.title("Precision-Recall trên validation")
+            plt.title("Precision-Recall on validation")
             plt.legend()
             plt.grid(alpha=0.3)
             from .config import FIGURES_DIR
             plt.savefig(FIGURES_DIR / "validation_pr_curves.png", dpi=120)
         plt.close()
     except Exception as e:  # pragma: no cover
-        print("Bỏ qua biểu đồ PR:", e)
+        print("Skipping PR figure:", e)
 
     return summary
 
@@ -238,12 +233,12 @@ def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", action="append", default=[],
-                        help="Chỉ huấn luyện các model này (mặc định: tất cả).")
+                        help="Train only these models (default: all).")
     args = parser.parse_args(argv)
     models = args.model or DEFAULT_MODELS
     summary = run(models)
-    print(f"\nXong. Best model: {summary['best_model']} — "
-          f"dùng threshold {summary['best_threshold']:.2f}.")
+    print(f"\nDone. Best model: {summary['best_model']} - "
+          f"using threshold {summary['best_threshold']:.2f}.")
     return 0
 
 

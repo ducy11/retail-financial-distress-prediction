@@ -1,29 +1,8 @@
-"""Trích 16 chỉ tiêu XBRL từ snapshot SEC → bảng chỉ tiêu VND (PORT của pipeline gốc).
+"""Rebuild the 16 XBRL indicators from the raw SEC snapshot as a port of the original ETL.
 
-Lệnh:
-    python -m scripts.prepare_sec                 # tái tạo + so với dữ liệu đã công bố
-    python -m scripts.prepare_sec --verify        # chỉ so, không ghi bảng tái tạo
-    python -m scripts.prepare_sec --ticker WMT --out data/retail-expanded-rebuilt
-
-Vì sao module này tồn tại: bảng chỉ tiêu trong `data/retail-expanded` do pipeline gốc sinh ở NGOÀI
-repo nên trước đây bước ETL không tái lập được. Bản port tái tạo TỪNG Ô từ
-`data/sec/raw/*-companyfacts.json` bằng đúng những gì pipeline gốc dùng (đọc từ dữ liệu, không đoán):
-
-1. **Thứ tự ưu tiên tag** mỗi chỉ tiêu (`TAG_PRIORITY`) — suy ra từ `sources` của dữ liệu đã công bố,
-   sau đó kiểm chứng lại bằng `--verify`;
-2. **Phương pháp kỳ** (4 cách; `absent` = ô trống):
-   - `instant` — số dư cuối kỳ (`end == period_end`, không có `start`): tài sản/nợ/vốn/tồn kho…;
-   - `reported_quarter` — số phát sinh ĐÚNG quý được công bố (`start == period_start`);
-   - `reported_first_quarter` — Q1 lấy luỹ kế quý 1 (luỹ kế Q1 chính là số của quý 1);
-   - `current_ytd_minus_previous_ytd` — không có fact quý riêng ⇒ luỹ kế kỳ này trừ luỹ kế kỳ trước
-     (đúng cách doanh nghiệp Mỹ công bố dòng tiền/lợi nhuận theo luỹ kế);
-   - `absent` — không có fact ⇒ `null` (thà `null` còn hơn "điền số cho đủ"; xem `scripts.audit_data`);
-3. **Bản công bố SỚM NHẤT** của mỗi kỳ (`min(filed)`) ⇒ mô phỏng đúng thông tin có tại `available_on`
-   (nhất quán với ràng buộc chống rò rỉ của `forecasting.features`). Quy đổi minh hoạ USD → VND
-   × 25.000 (khớp `fx_policy` của dữ liệu gốc).
-
-`--verify` so từng ô với giá trị đã công bố và ghi `reports/results/etl_verify.{json,md}`. Mặc định
-KHÔNG ghi đè dữ liệu đang dùng cho báo cáo: kết quả tái tạo ghi sang `data/retail-expanded-rebuilt/`.
+Reproduces every cell of the published VND tables using the same tag priority and period methods as the
+original pipeline, takes the earliest filing before `available_on`, and compares cell by cell. Writes
+`reports/results/etl_verify.{json,md}`; rebuilt tables go to `data/retail-expanded-rebuilt/`.
 """
 from __future__ import annotations
 
@@ -39,11 +18,11 @@ RAW_DIR = DATA_DIR / "sec" / "raw"
 RESULTS_DIR = DATA_DIR.parent / "reports" / "results"
 DEFAULT_OUT = DATA_DIR / "retail-expanded-rebuilt"
 
-#: Quy đổi minh hoạ (khớp `fx_policy.vnd_per_usd` của dữ liệu gốc).
+#: Illustrative conversion matching `fx_policy.vnd_per_usd` in the published data.
 FX_VND_PER_USD = 25000
 
-#: Thứ tự ưu tiên tag XBRL cho 16 chỉ tiêu — ĐÚNG danh sách pipeline gốc đã dùng (suy ra từ `sources`
-#: của dữ liệu đã công bố, xếp theo số lần được chọn): tái tạo đúng bảng gốc, kể cả các ô `absent`.
+#: XBRL tag priority per indicator, matching the original pipeline as inferred from the `sources` of the
+#: published data: this reproduces the original table, including its absent cells.
 TAG_PRIORITY: Dict[str, List[str]] = {
     "revenue": ["RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueNet"],
     "cost_of_sales": ["CostOfGoodsAndServicesSold", "CostOfRevenue", "CostOfGoodsSold"],
@@ -63,10 +42,9 @@ TAG_PRIORITY: Dict[str, List[str]] = {
     "retained_earnings": ["RetainedEarningsAccumulatedDeficit"],
 }
 
-#: Tag DỰ PHÒNG (tùy chọn, bật bằng `--extended`): dùng khi MỞ RỘNG sang công ty mới mà tag gốc không
-#: có — ví dụ doanh nghiệp chỉ công bố `NetIncomeLossAvailableToCommonStockholdersBasic`, hoặc báo cáo
-#: dòng tiền bằng tag "continuing operations". Bật sẽ tăng độ phủ nhưng khác bảng gốc ở những ô mà
-#: pipeline cũ để trống ⇒ dùng cho dữ liệu MỚI, không dùng để đối chiếu bảng đang có.
+#: Fallback tags, enabled by `--extended`, for new companies whose filings lack the primary tags, such as
+#: filers reporting only `NetIncomeLossAvailableToCommonStockholdersBasic` or cash flow under continuing
+#: operations. They raise coverage but differ from the original table, so use them for new data only.
 TAG_PRIORITY_EXTENDED: Dict[str, List[str]] = {
     "revenue": ["Revenues", "SalesRevenueGoodsNet"],
     "cost_of_sales": ["CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization"],
@@ -80,22 +58,22 @@ TAG_PRIORITY_EXTENDED: Dict[str, List[str]] = {
     "receivables": ["AccountsNotesAndLoansReceivableNetCurrent"],
 }
 
-#: Bật/tắt tag dự phòng (đặt qua CLI `--extended`; mặc định TẮT để khớp bảng gốc).
+#: Fallback tags toggle, set by `--extended` and off by default to match the original table.
 USE_EXTENDED_TAGS = False
 
 
 def tags_for(indicator: str, extended: Optional[bool] = None) -> List[str]:
-    """Tag theo ưu tiên cho một chỉ tiêu (kèm tag mở rộng nếu đang bật)."""
+    """Tags for one indicator in priority order, plus the fallback tags when they are enabled."""
     use = USE_EXTENDED_TAGS if extended is None else extended
     return TAG_PRIORITY[indicator] + (TAG_PRIORITY_EXTENDED.get(indicator, []) if use else [])
 
 
 def all_tags(extended: Optional[bool] = None) -> List[str]:
-    """Mọi tag cần đánh chỉ mục trong snapshot (phục vụ tra fact theo kỳ)."""
+    """Every tag that must be indexed in the snapshot, so facts can be looked up per period."""
     return list(dict.fromkeys(tag for indicator in INDICATORS
                               for tag in tags_for(indicator, extended)))
 
-#: 10 chỉ tiêu là SỐ DƯ cuối kỳ; 6 chỉ tiêu còn lại là SỐ PHÁT SINH trong kỳ.
+#: Ten indicators are period-end balances, the remaining six are activity within the period.
 INSTANT_INDICATORS = {"total_assets", "current_assets", "current_liabilities", "inventory",
                       "cash_and_equivalents", "stockholders_equity", "liabilities", "receivables",
                       "short_term_investments", "retained_earnings"}
@@ -103,15 +81,13 @@ DURATION_INDICATORS = {"revenue", "cost_of_sales", "selling_general_admin", "ope
                        "operating_income", "net_income"}
 INDICATORS: List[str] = list(TAG_PRIORITY)
 
-#: Chế độ dự phòng khi một ô chưa có bản công bố nào trước `available_on`:
-#: `False` (mặc định) = để trống `absent` — đúng bản gốc và đúng thời điểm ra quyết định;
-#: `True` (CLI `--fill-late`) = dùng bản công bố muộn để lấp ô (tăng độ phủ, khác bảng gốc).
+#: Fallback mode when a cell has no filing published before `available_on`: False keeps it absent, which
+#: matches the original and the decision time, while True fills it from a later filing for more coverage.
 ALLOW_LATE_FALLBACK = False
 
 
-
 def _load_raw(ticker: str, raw_dir: Path = RAW_DIR) -> Dict[str, Any]:
-    """Snapshot companyfacts của một ticker ({} nếu chưa crawl)."""
+    """Companyfacts snapshot for one ticker, empty when it has not been crawled yet."""
     path = raw_dir / f"{ticker}-companyfacts.json"
     if not path.exists():
         return {}
@@ -119,7 +95,7 @@ def _load_raw(ticker: str, raw_dir: Path = RAW_DIR) -> Dict[str, Any]:
 
 
 def usd_facts(doc: Dict[str, Any], tag: str) -> List[Dict[str, Any]]:
-    """Mọi fact USD của `tag` trong snapshot, sắp theo (end, filed) tăng dần."""
+    """Every USD fact for one tag in the snapshot, sorted by end and filed date ascending."""
     out: List[Dict[str, Any]] = []
     for _taxonomy, tags in (doc.get("facts") or {}).items():
         body = tags.get(tag)
@@ -134,11 +110,10 @@ def usd_facts(doc: Dict[str, Any], tag: str) -> List[Dict[str, Any]]:
 
 def _published(candidates: List[Dict[str, Any]], available_on: Optional[str],
                allow_late_fallback: Optional[bool] = None) -> Optional[Dict[str, Any]]:
-    """Bản công bố SỚM NHẤT của một kỳ, ưu tiên bản đã có trước `available_on` (mặc định: module).
+    """Earliest filing for a period, preferring one published before `available_on`.
 
-    `ALLOW_LATE_FALLBACK=True`: nếu chưa có bản nào trước `available_on` thì dùng bản muộn (lấp ô mà
-    pipeline gốc để trống); `False`: giữ `absent` cho trung thực với thời điểm ra quyết định.
-    Hai chế độ được so bằng `--strict` (xem `reports/results/etl_verify.md`).
+    With late fallback enabled a later filing fills cells the original pipeline left empty; otherwise the
+    cell stays absent, staying truthful to the decision time. `--fill-late` switches between the two.
     """
     allow = ALLOW_LATE_FALLBACK if allow_late_fallback is None else allow_late_fallback
     usable = [c for c in candidates if available_on is None or str(c.get("filed")) <= available_on]
@@ -152,10 +127,10 @@ def _published(candidates: List[Dict[str, Any]], available_on: Optional[str],
 def derive_cell(facts: Dict[str, List[Dict[str, Any]]], indicator: str, period_start: str,
                 period_end: str, available_on: Optional[str] = None,
                 fiscal_quarter: Optional[int] = None) -> Tuple[Optional[int], Dict[str, Any]]:
-    """Tái tạo MỘT ô từ snapshot: (giá trị USD, block `sources`) theo 4 phương pháp của gốc.
+    """Rebuild one cell from the snapshot as a USD value plus its `sources` block.
 
-    Thứ tự thử: tag ưu tiên → (số dư cuối kỳ | fact đúng quý | luỹ kế trừ luỹ kế) → `absent`.
-    Không bao giờ "đoán" giá trị: thiếu fact thì trả `None` + method `absent`.
+    Tags are tried in priority order, then the period-end balance, the exact-quarter fact and the
+    year-to-date difference, falling back to an absent cell. A missing fact never yields a guessed value.
     """
     for tag in tags_for(indicator):
         candidates = facts.get(tag) or []
@@ -166,7 +141,7 @@ def derive_cell(facts: Dict[str, List[Dict[str, Any]]], indicator: str, period_s
                 chosen["tag"] = tag
                 return int(chosen["val"]), {"method": "instant", "facts": [chosen]}
             continue
-        # SỐ PHÁT SINH: ưu tiên fact ĐÚNG quý (start == period_start, end == period_end)
+        # Activity indicators: prefer the fact whose period matches the quarter exactly.
         quarter = _published([f for f in candidates
                               if f.get("start") == period_start and f.get("end") == period_end],
                              available_on)
@@ -174,7 +149,7 @@ def derive_cell(facts: Dict[str, List[Dict[str, Any]]], indicator: str, period_s
             quarter["tag"] = tag
             method = "reported_first_quarter" if fiscal_quarter == 1 else "reported_quarter"
             return int(quarter["val"]), {"method": method, "facts": [quarter]}
-        # Không có fact quý riêng ⇒ luỹ kế kỳ này TRỪ luỹ kế kỳ trước (Q4 = FY − 9M)
+        # With no standalone quarter fact, subtract the previous year-to-date from the current one.
         ytd = _published([f for f in candidates
                           if f.get("start") and f.get("end") == period_end
                           and str(f.get("start")) < str(period_start)], available_on)
@@ -194,13 +169,13 @@ def derive_cell(facts: Dict[str, List[Dict[str, Any]]], indicator: str, period_s
 
 
 def _source_url(cik: Optional[int], accn: str) -> str:
-    """URL lưu trữ EDGAR của một filing (giống dạng `source_url` trong dữ liệu gốc)."""
+    """EDGAR archive URL for a filing, matching the `source_url` shape of the published data."""
     return (f"https://www.sec.gov/Archives/edgar/data/{cik}/{accn.replace('-', '')}/"
             f"{accn}-index.html")
 
 
 def _fact_public(fact: Dict[str, Any], cik: Optional[int]) -> Dict[str, Any]:
-    """Fact rút gọn đúng dạng provenance của dữ liệu gốc (kèm `tag` + `source_url`)."""
+    """Trim a fact to the provenance shape of the published data, keeping tag and source_url."""
     accn = str(fact.get("accn"))
     return {"tag": fact.get("tag"), "start": fact.get("start"), "end": fact.get("end"),
             "val": fact.get("val"), "accn": accn, "fy": fact.get("fy"), "fp": fact.get("fp"),
@@ -210,7 +185,7 @@ def _fact_public(fact: Dict[str, Any], cik: Optional[int]) -> Dict[str, Any]:
 
 def rebuild_row(facts: Dict[str, List[Dict[str, Any]]], row: Dict[str, Any],
                 cik: Optional[int] = None) -> Dict[str, Any]:
-    """Tái tạo 16 giá trị VND + `sources` của MỘT quý (dùng mốc kỳ của dữ liệu đã công bố)."""
+    """Rebuild the 16 VND values and `sources` for one quarter using the published period bounds."""
     values: Dict[str, Any] = {}
     sources: Dict[str, Any] = {}
     for indicator in INDICATORS:
@@ -223,7 +198,7 @@ def rebuild_row(facts: Dict[str, List[Dict[str, Any]]], row: Dict[str, Any],
 
 
 def _d(text: str):
-    """'YYYY-MM-DD' → date (chỉ dùng nội bộ để đo độ dài kỳ)."""
+    """Parse 'YYYY-MM-DD' into a date, used internally to measure period length."""
     from datetime import date
 
     year, month, day = (int(part) for part in str(text).split("-")[:3])
@@ -231,15 +206,13 @@ def _d(text: str):
 
 
 def discover_periods(facts: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-    """Suy ra danh sách QUÝ từ snapshot mà KHÔNG dùng dữ liệu gốc làm khung.
+    """Derive the list of quarters from the snapshot without using the published data as a frame.
 
-    Điều kiện một kỳ được coi là "quý đã công bố": tồn tại fact thời lượng ~3 tháng (80–100 ngày)
-    có `end` trùng một số dư cuối kỳ của `AssetsCurrent`/`Assets`, và fact đó có nhãn `fy`/`fp`.
-    Q4 (10-K công bố luỹ kế năm) được thêm khi có fact thời lượng ~1 năm ⇒ giá trị Q4 lấy bằng
-    `current_ytd_minus_previous_ytd` (xem `derive_cell`).
+    A quarter counts when a roughly three-month duration fact ends on a period-end balance of
+    `AssetsCurrent` or `Assets` and carries `fy` and `fp` labels. Q4, published only as an annual
+    cumulative, is added from a roughly one-year fact and derived as a year-to-date difference.
 
-    Đây là đường sinh dữ liệu cho CÔNG TY MỚI; với 8 công ty đã công bố, `--verify` kiểm chứng độ
-    khớp của cả đường sinh lẫn đường tái tạo.
+    This is the discovery path for a new company; `--verify` checks it against the published tables.
     """
     instant_ends = {str(f.get("end")) for tag in ("AssetsCurrent", "Assets")
                     for f in facts.get(tag, []) if not f.get("start")}
@@ -263,7 +236,7 @@ def discover_periods(facts: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, A
                 found[key] = {"fiscal_year": int(fy), "fiscal_quarter": quarter,
                               "period_start": str(start), "period_end": str(end),
                               "available_on": str(fact.get("filed"))}
-    # Q4 từ luỹ kế năm (10-K): period_end = kết thúc năm tài chính, start = hôm sau Q3.
+    # Q4 from the annual cumulative in the 10-K, with the period ending on the fiscal year end.
     for fact in (facts.get("NetIncomeLoss", []) + facts.get("Assets", [])):
         start, end, fy, fp = (fact.get("start"), fact.get("end"), fact.get("fy"),
                               fact.get("fp"))
@@ -283,7 +256,7 @@ def discover_periods(facts: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, A
 
 def build_document(ticker: str, doc: Dict[str, Any],
                    periods: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    """Sinh `{TICKER}-16-indicators-vnd.json` (cùng lược đồ dữ liệu đã công bố) từ snapshot."""
+    """Build `{TICKER}-16-indicators-vnd.json` from the snapshot using the published schema."""
     facts = {tag: usd_facts(doc, tag) for tag in all_tags()}
     cik = doc.get("cik")
     entity = doc.get("entityName")
@@ -308,7 +281,7 @@ def build_document(ticker: str, doc: Dict[str, Any],
 def verify_document(ticker: str, facts: Dict[str, List[Dict[str, Any]]],
                     shipped_rows: Sequence[Dict[str, Any]],
                     cik: Optional[int] = None) -> Dict[str, Any]:
-    """So TỪNG Ô giữa bảng TÁI TẠO từ snapshot và bảng ĐÃ CÔNG BỐ (cùng công ty, cùng mốc kỳ)."""
+    """Compare the rebuilt table with the published one cell by cell for the same company and periods."""
     stats: Dict[str, Any] = {"n_rows": len(shipped_rows), "n_cells": 0, "n_match": 0,
                              "n_mismatch": 0, "n_absent_both": 0, "by_method": {},
                              "by_indicator": {}, "by_tag": {}, "examples": []}
@@ -344,31 +317,31 @@ def verify_document(ticker: str, facts: Dict[str, List[Dict[str, Any]]],
 
 
 def shipped_tickers(retail_dir: Path = RETAIL_DIR) -> List[str]:
-    """Các công ty đã có bảng chỉ tiêu công bố trong `data/retail-expanded`."""
+    """Companies that already have published indicator tables under `data/retail-expanded`."""
     return sorted({p.name.split("-")[0] for p in retail_dir.glob("*-16-indicators-vnd.json")})
 
 
 def run(tickers: Sequence[str] | None = None, out_dir: Path | None = None,
         verify_only: bool = False, write: bool = True, allow_late_fallback: bool = False,
         extended_tags: bool = False) -> Dict[str, Any]:
-    """Tái tạo 16 chỉ tiêu cho từng công ty, đối chiếu dữ liệu đã công bố, ghi báo cáo ETL.
+    """Rebuild the 16 indicators per company, compare with the published data and write the ETL report.
 
-    Mặc định `allow_late_fallback=False` (chế độ khớp bảng gốc: chỉ dùng bản công bố có trước
-    `available_on` của mẫu; ô thiếu giữ `absent`) ⇒ tái tạo **99,92%** số ô của 8 công ty đã công bố.
+    Late fallback stays off by default so only filings published before each sample's `available_on` are
+    used and missing cells stay absent, which reproduces the published tables almost cell for cell.
     """
-    global ALLOW_LATE_FALLBACK, USE_EXTENDED_TAGS  # noqa: PLW0603 - chọn qua CLI (--strict/--extended)
+    global ALLOW_LATE_FALLBACK, USE_EXTENDED_TAGS  # noqa: PLW0603 - selected through the CLI
     ALLOW_LATE_FALLBACK = allow_late_fallback
     USE_EXTENDED_TAGS = extended_tags
     ensure_utf8_stdio()
     names = list(tickers) if tickers else shipped_tickers()
     out_dir = out_dir or DEFAULT_OUT
     results: Dict[str, Any] = {}
-    print(f"=== prepare_sec (bản port): tái tạo 16 chỉ tiêu từ snapshot SEC cho {len(names)} công ty ===")
+    print(f"=== prepare_sec (port): rebuild the 16 indicators from the SEC snapshot for {len(names)} companies ===")
     for ticker in names:
         doc = _load_raw(ticker)
         if not doc:
             results[ticker] = {"status": "missing_raw"}
-            print(f"  {ticker}: [CHƯA CÓ] thiếu snapshot — chạy `python -m scripts.crawl_sec`")
+            print(f"  {ticker}: [MISSING] no snapshot — run `python -m scripts.crawl_sec`")
             continue
         facts = {tag: usd_facts(doc, tag) for tag in all_tags()}
         shipped_path = RETAIL_DIR / f"{ticker}-16-indicators-vnd.json"
@@ -387,15 +360,15 @@ def run(tickers: Sequence[str] | None = None, out_dir: Path | None = None,
             payload["generated_periods"] = [f"{p['fiscal_year']}Q{p['fiscal_quarter']}"
                                             for p in periods]
         results[ticker] = payload
-        print(f"  {ticker}: khớp {stats['n_match']}/{stats['n_cells']} ô "
-              f"({(stats['match_rate'] or 0):.1%}); sinh được "
-              f"{payload.get('generated_rows', '—')} quý từ snapshot")
+        print(f"  {ticker}: matched {stats['n_match']}/{stats['n_cells']} cells "
+              f"({(stats['match_rate'] or 0):.1%}); discovered "
+              f"{payload.get('generated_rows', '—')} quarters from the snapshot")
     return _write_report(names, results, out_dir, write and not verify_only)
 
 
 def _write_report(names: Sequence[str], results: Dict[str, Any], out_dir: Path,
                   wrote_tables: bool) -> Dict[str, Any]:
-    """Ghi `reports/results/etl_verify.{json,md}` — bằng chứng ETL tái lập được."""
+    """Write `reports/results/etl_verify.{json,md}` as evidence that the ETL reproduces the tables."""
     ok = [t for t, v in results.items() if v.get("status") == "ok"]
     total_cells = sum(v["verify"]["n_cells"] for t, v in results.items() if v.get("status") == "ok")
     total_match = sum(v["verify"]["n_match"] for t, v in results.items() if v.get("status") == "ok")
@@ -445,8 +418,8 @@ def _write_report(names: Sequence[str], results: Dict[str, Any], out_dir: Path,
                              f"{item['rebuilt']} | {item['method']} | {item['tag']} |")
             lines.append("")
     (RESULTS_DIR / "etl_verify.md").write_text("\n".join(lines), encoding="utf-8")
-    print(f"  → {RESULTS_DIR / 'etl_verify.json'} | khớp {(summary['match_rate'] or 0):.2%} "
-          f"trên {total_cells} ô")
+    print(f"  → {RESULTS_DIR / 'etl_verify.json'} | match {(summary['match_rate'] or 0):.2%} "
+          f"across {total_cells} cells")
     return summary
 
 
@@ -454,15 +427,15 @@ def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", action="append", default=None,
-                        help="Chỉ xử lý các mã này (dùng nhiều lần cho nhiều mã).")
-    parser.add_argument("--out", default=str(DEFAULT_OUT), help="Thư mục ghi bảng tái tạo.")
+                        help="Process only these tickers; repeat the flag for several.")
+    parser.add_argument("--out", default=str(DEFAULT_OUT), help="Directory for the rebuilt tables.")
     parser.add_argument("--verify", action="store_true",
-                        help="Chỉ đối chiếu với dữ liệu đã công bố, không ghi bảng tái tạo.")
-    parser.add_argument("--no-write", action="store_true", help="Không ghi bảng tái tạo.")
+                        help="Only compare with the published data, do not write rebuilt tables.")
+    parser.add_argument("--no-write", action="store_true", help="Do not write the rebuilt tables.")
     parser.add_argument("--fill-late", action="store_true",
-                        help="Dùng cả fact công bố MUỘN để lấp ô (mặc định: giữ `absent` như bản gốc).")
+                        help="Also use late filings to fill cells (default keeps them absent).")
     parser.add_argument("--extended", action="store_true",
-                        help="Bật tag dự phòng (dùng khi mở rộng sang công ty mới).")
+                        help="Enable fallback tags when extending to new companies.")
     args = parser.parse_args(argv)
     run(tickers=list(args.ticker or []), out_dir=Path(args.out), verify_only=args.verify,
         write=not args.no_write, allow_late_fallback=args.fill_late,

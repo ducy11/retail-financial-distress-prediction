@@ -1,10 +1,7 @@
-"""Đánh giá chốt mô hình best trên test split (chạy đúng 1 lần, giữ hyperparameter).
+"""Score the frozen best model on the test split, once.
 
-Lệnh: python -m forecasting.evaluate
-
-- Nạp models/best.joblib (đã huấn luyện bởi forecasting.train).
-- Tính P(distress) trên test, áp threshold chọn từ validation.
-- Lưu results/test_evaluation.json + reports/figures/test_confusion.png
+Loads `models/best.joblib`, applies the threshold chosen on validation, and writes
+`results/test_evaluation.json` plus the confusion figures. Run with `python -m forecasting.evaluate`.
 """
 from __future__ import annotations
 
@@ -29,7 +26,7 @@ from .report import load_threshold
 
 
 def load_cost_threshold() -> float | None:
-    """Ngưỡng tối ưu chi phí (tính trên validation trong `forecasting.train`), nếu có."""
+    """Cost-optimal threshold (computed on validation in `forecasting.train`), if present."""
     path = RESULTS_DIR / "summary.json"
     if not path.exists():
         return None
@@ -38,8 +35,8 @@ def load_cost_threshold() -> float | None:
 
 
 def _confusion_figure(cm, threshold: float, path, cost_hint: str = "") -> None:
-    """Vẽ và lưu một confusion matrix (nhãn tiếng Việt)."""
-    disp = ConfusionMatrixDisplay(cm, display_labels=["Không suy giảm", "Suy giảm"])
+    """Draw and save a confusion matrix."""
+    disp = ConfusionMatrixDisplay(cm, display_labels=["No distress", "Distress"])
     fig, ax = plt.subplots(figsize=(5, 4))
     disp.plot(ax=ax, cmap="Blues", colorbar=False)
     ax.set_title(f"Confusion matrix — test (threshold {threshold:.3f}){cost_hint}")
@@ -49,7 +46,7 @@ def _confusion_figure(cm, threshold: float, path, cost_hint: str = "") -> None:
 
 
 def _curve_figure(y_test: np.ndarray, proba: np.ndarray, threshold: float, path) -> Dict[str, float]:
-    """ROC + PR trên test (kèm AUROC/AP) để đọc toàn bộ trade-off, không chỉ 1 điểm."""
+    """ROC + PR on test (with AUROC/AP) to read the whole trade-off, not just one point."""
     fpr, tpr, _ = roc_curve(y_test, proba)
     prec, rec, _ = precision_recall_curve(y_test, proba)
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
@@ -84,7 +81,7 @@ def run() -> Dict[str, Any]:
     y_test = extract_labels(test_samples)
     proba = predict_proba(model, X_test)
 
-    # Metric tại ĐÚNG ngưỡng vận hành (khớp hình confusion matrix) + mốc 0.5 để đối chiếu
+    # Metrics at the operating threshold (matches the confusion figure), plus the 0.5 reference cut.
     metrics = evaluate_proba(y_test, proba, operating_threshold=threshold)
     metrics["threshold"] = threshold
     curve_stats = _curve_figure(y_test, proba, threshold, FIGURES_DIR / "test_roc_pr_curves.png")
@@ -104,8 +101,8 @@ def run() -> Dict[str, Any]:
         "test_metrics": metrics,
         "n_misclassified": len(misclassified),
         "misclassified": misclassified,
-        "notes": "Metric trong 'operating' là tại ngưỡng vận hành; 'confusion_at_0.5' giữ "
-                 "truyền thống để so sánh với các ngưỡng khác.",
+        "notes": "Metrics under 'operating' are at the operating threshold; 'confusion_at_0.5' keeps "
+                 "the traditional 0.5 cut for comparison against other thresholds.",
     }
     (RESULTS_DIR / "test_evaluation.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2, default=float), encoding="utf-8")

@@ -1,9 +1,7 @@
-"""Đánh giá mô hình: metric đầy đủ, confusion matrix, ngưỡng theo F1 & theo chi phí.
+"""Metrics for imbalanced distress prediction plus F1-based and cost-based threshold search.
 
-Chuẩn doanh nghiệp tín dụng/bán lẻ dùng cả Precision/Recall:
-- Với distress, bỏ sót (FN) là sai lý thuyết đắt nhất → chọn threshold bằng cách tối đa F1
-  hoặc tối thiểu chi phí kỳ vọng `COST_FN * FN + COST_FP * FP`.
-- Metric báo cáo luôn kèm macro/weighted F1 để không bị đánh lừa khi dữ liệu lệch lớp.
+A miss is the expensive error, so thresholds are chosen by maximizing F1 or minimizing expected cost
+`COST_FN * FN + COST_FP * FP`. Reported metrics always include macro and weighted F1.
 """
 from __future__ import annotations
 
@@ -28,9 +26,9 @@ from .config import COST_FN, COST_FP, EVAL_THRESHOLDS
 
 def metrics_at_threshold(y_true: Sequence[int], y_prob: Sequence[float],
                          threshold: float) -> Dict[str, Any]:
-    """Metric đầy đủ tại ĐÚNG ngưỡng vận hành.
+    """Full metrics at the operating threshold.
 
-    Trả: accuracy, precision, recall, f1, macro_f1, weighted_f1, specificity, npv, mcc,
+    Returns: accuracy, precision, recall, f1, macro_f1, weighted_f1, specificity, npv, mcc,
     tn/fp/fn/tp, n_predicted, expected_cost.
     """
     y_true = np.asarray(y_true)
@@ -57,21 +55,22 @@ def metrics_at_threshold(y_true: Sequence[int], y_prob: Sequence[float],
 
 
 def _pr_curve(y_true: np.ndarray, y_prob: np.ndarray):
-    """Đường PR + F1 đã căn thẳng chỉ số.
+    """PR curve with index-aligned F1.
 
-    `sklearn.precision_recall_curve` trả precision/recall dài n+1 nhưng thresholds dài n;
-    cắt bớt điểm cuối để mọi mảng cùng chỉ số (tránh lệch một bậc khi tra threshold).
+    `sklearn.precision_recall_curve` returns precision/recall of length n+1 but thresholds of
+    length n; drop the trailing point so every array shares one index (avoids an off-by-one
+    lookup when reading back a threshold).
     """
     prec, rec, thr = precision_recall_curve(y_true, y_prob)
     prec, rec = prec[:-1], rec[:-1]
     if len(thr) != len(prec):
-        raise AssertionError("precision_recall_curve trả độ dài không khớp")
+        raise AssertionError("precision_recall_curve returned mismatched lengths")
     f1 = np.where(prec + rec > 0, 2 * prec * rec / (prec + rec), 0.0)
     return prec, rec, thr, f1
 
 
 def best_f1_point(y_true: Sequence[int], y_prob: Sequence[float]) -> Dict[str, float] | None:
-    """Điểm tối đa F1 trên đường PR (threshold tương ứng, chỉ số đã căn thẳng)."""
+    """Max-F1 point on the PR curve (plus its threshold, index-aligned)."""
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
     if len(y_true) == 0:
@@ -86,7 +85,7 @@ def best_f1_point(y_true: Sequence[int], y_prob: Sequence[float]) -> Dict[str, f
 
 def cost_optimal_threshold(y_true: Sequence[int], y_prob: Sequence[float],
                            cost_fn: float = COST_FN, cost_fp: float = COST_FP) -> Dict[str, float]:
-    """Ngưỡng tối thiểu hoá chi phí kỳ vọng `cost_fn * FN + cost_fp * FP` (lý thuyết quyết định)."""
+    """Threshold minimizing expected cost `cost_fn * FN + cost_fp * FP` (decision theory)."""
     prec, rec, thr, _ = _pr_curve(np.asarray(y_true), np.asarray(y_prob))
     cands = np.unique(np.concatenate([[0.0, 1.0], thr])) if len(thr) else np.array([0.0, 0.5, 1.0])
     rows = [metrics_at_threshold(y_true, y_prob, float(t)) for t in cands]
@@ -101,10 +100,10 @@ def cost_optimal_threshold(y_true: Sequence[int], y_prob: Sequence[float],
 def evaluate_proba(y_true: np.ndarray, y_prob: np.ndarray,
                    thresholds: Sequence[float] = EVAL_THRESHOLDS,
                    operating_threshold: float | None = None) -> Dict[str, Any]:
-    """Đánh giá trên xác suất: metric tổng + metric theo ngưỡng + điểm vận hành.
+    """Score probabilities: overall metrics plus per-threshold metrics plus the operating point.
 
-    `y_prob`: xác suất lớp 1 (distress). `operating_threshold`: ngưỡng thực sự dùng để
-    ra quyết định (ghi vào `operating` + `confusion_at_operating` để hình và JSON khớp nhau).
+    `y_prob`: probability of class 1 (distress). `operating_threshold`: the threshold actually
+    used to decide (stored under `operating` + `confusion_at_operating` so figures and JSON agree).
     """
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
@@ -134,12 +133,12 @@ def evaluate_proba(y_true: np.ndarray, y_prob: np.ndarray,
 
 
 def confusion_matrix(y_true, y_pred, labels=(0, 1)) -> np.ndarray:
-    """Ma trận nhầm lẫn (rows: thực, cols: dự đoán) — dùng cho báo cáo."""
+    """Confusion matrix (rows: actual, cols: predicted) - for reports."""
     return cm_fn(y_true, y_pred, labels=labels)
 
 
 def threshold_from_validation(val_metrics: Dict[str, Any]) -> float:
-    """Chọn threshold từ best_f1 trên validation (chỉ dùng khi có cả hai lớp)."""
+    """Pick the threshold from best-F1 on validation (only when both classes exist)."""
     best = val_metrics.get("best_f1")
     if best and best.get("threshold") is not None:
         return float(best["threshold"])

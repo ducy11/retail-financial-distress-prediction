@@ -1,15 +1,8 @@
-"""Đo ĐỘ KHẢ THI DỮ LIỆU của các đặc trưng đề xuất: tag XBRL nào có thật trong snapshot SEC?
+"""Measure data feasibility for candidate features: which XBRL tags exist in the SEC snapshot?
 
-Lệnh: python -m scripts.probe_tags
-
-Vì sao cần: đề xuất thêm đặc trưng chỉ có nghĩa nếu chỉ tiêu đó tồn tại THẬT trong
-`data/sec/raw/*-companyfacts.json` cho phần lớn số quý. Với từng tag ứng viên, script đếm:
-- % quý có fact kết thúc đúng `period_end` (độ phủ),
-- % quý có fact khớp CHÍNH XÁC kỳ quý (`period_start`..`period_end`) — phân biệt số quý riêng
-  với số luỹ kế (luỹ kế vẫn dùng được nhưng phải trừ nhau, xem `current_ytd_minus_previous_ytd`).
-
-In bảng tổng hợp min/mean theo công ty để chọn chỉ tiêu bổ sung. Không ghi artifact, không
-thuộc `scripts.run_all` (đây là công cụ khảo sát, không phải bước pipeline).
+For every candidate tag the script counts the share of quarters covered by `period_end` and the share
+with an exact quarter match, then prints a min/mean table per company to guide indicator selection. It
+writes no artifact and is a survey tool rather than a pipeline step.
 """
 from __future__ import annotations
 
@@ -23,20 +16,20 @@ from forecasting.config import DATA_DIR, RETAIL_DIR, ensure_utf8_stdio
 
 RAW_DIR = DATA_DIR / "sec" / "raw"
 
-#: (tag, dạng) — instant = số dư cuối kỳ; duration = số phát sinh trong kỳ.
+#: (tag, kind) - instant for a period-end balance, duration for activity within the period.
 CANDIDATES: List[Tuple[str, str]] = [
-    # tài sản/nợ/vốn (chủ yếu đã có trong 16 chỉ tiêu — dùng làm đối chứng)
+    # assets, liabilities and equity: mostly covered by the 16 indicators, kept as controls
     ("Assets", "instant"), ("AssetsCurrent", "instant"), ("InventoryNet", "instant"),
     ("Liabilities", "instant"), ("LiabilitiesCurrent", "instant"),
     ("StockholdersEquity", "instant"), ("RetainedEarningsAccumulatedDeficit", "instant"),
     ("CashAndCashEquivalentsAtCarryingValue", "instant"),
-    # ứng viên MỚI cho đặc trưng đề xuất
+    # new candidates for the proposed features
     ("AccountsPayableCurrent", "instant"),
     ("OperatingLeaseLiabilityCurrent", "instant"), ("OperatingLeaseLiabilityNoncurrent", "instant"),
     ("LongTermDebtNoncurrent", "instant"), ("LongTermDebtCurrent", "instant"),
     ("ShortTermBorrowings", "instant"), ("LongTermDebt", "instant"),
     ("Goodwill", "instant"), ("CommonStockSharesOutstanding", "instant"),
-    # kết quả kinh doanh
+    # income statement
     ("Revenues", "duration"), ("RevenueFromContractWithCustomerExcludingAssessedTax", "duration"),
     ("SalesRevenueNet", "duration"), ("CostOfRevenue", "duration"),
     ("CostOfGoodsAndServicesSold", "duration"), ("GrossProfit", "duration"),
@@ -48,7 +41,7 @@ CANDIDATES: List[Tuple[str, str]] = [
     ("InterestExpense", "duration"), ("InterestExpenseDebt", "duration"),
     ("OperatingLeaseCost", "duration"),
     ("WeightedAverageNumberOfDilutedSharesOutstanding", "duration"),
-    # dòng tiền / vốn chủ
+    # cash flow and equity movements
     ("NetCashProvidedByUsedInOperatingActivities", "duration"),
     ("NetCashProvidedByUsedInInvestingActivities", "duration"),
     ("NetCashProvidedByUsedInFinancingActivities", "duration"),
@@ -58,7 +51,7 @@ CANDIDATES: List[Tuple[str, str]] = [
 
 
 def _index(ticker: str) -> Tuple[Dict[str, set], Dict[Tuple[str, str], set]]:
-    """(ends_by_tag, exact_by_tag) từ companyfacts của một công ty."""
+    """Return (ends_by_tag, exact_by_tag) parsed from one company's companyfacts."""
     path = RAW_DIR / f"{ticker}-companyfacts.json"
     if not path.exists():
         return {}, {}
@@ -75,7 +68,7 @@ def _index(ticker: str) -> Tuple[Dict[str, set], Dict[Tuple[str, str], set]]:
 
 
 def measure() -> Dict[str, Dict[str, Any]]:
-    """{tag: {kind, cov: {ticker: %}, exact: {ticker: %}}} trên 8 công ty trong corpus."""
+    """Return {tag: {kind, cov: {ticker: percent}, exact: {ticker: percent}}} over the corpus."""
     out: Dict[str, Dict[str, Any]] = {tag: {"kind": kind, "cov": {}, "exact": {}}
                                       for tag, kind in CANDIDATES}
     for path in sorted(RETAIL_DIR.glob("*-16-indicators-vnd.json")):
@@ -97,12 +90,12 @@ def measure() -> Dict[str, Dict[str, Any]]:
 
 
 def run() -> Dict[str, Dict[str, Any]]:
-    """In bảng độ phủ tag (min/mean theo công ty) và trả số liệu thô."""
+    """Print the tag coverage table (min and mean per company) and return the raw numbers."""
     ensure_utf8_stdio()
     data = measure()
     n_company = len(next(iter(data.values()))["cov"]) if data else 0
-    print(f"=== Độ phủ tag XBRL trên {n_company} công ty / {len(CANDIDATES)} tag ứng viên ===")
-    print(f"{'tag':52s} {'dạng':8s} {'min phủ':>7s} {'tb phủ':>7s} {'min khớp kỳ':>11s} {'#ct thiếu':>9s}")
+    print(f"=== XBRL tag coverage over {n_company} companies / {len(CANDIDATES)} candidate tags ===")
+    print(f"{'tag':52s} {'kind':8s} {'min_cov':>7s} {'mean_cov':>8s} {'min_exact':>9s} {'missing':>7s}")
     rows = []
     for tag, d in data.items():
         covs, exs = list(d["cov"].values()), list(d["exact"].values())

@@ -1,12 +1,8 @@
-"""Kiểm thử bộ kiểm chứng nguồn gốc dữ liệu (`scripts/verify_provenance.py`).
+"""Verify the provenance checker in `scripts/verify_provenance.py`.
 
-Chạy: python -m unittest tests.test_verify_provenance -v
-
-Vì sao cần: đây là bằng chứng "dữ liệu THẬT, không bịa". Nếu quy tắc đối chiếu hoặc quy tắc quy đổi
-VND bị viết sai thì bộ kiểm chứng sẽ báo ĐẠT một cách vô nghĩa — nên phải kiểm cả hai chiều:
-1. Quy tắc tính (một fact / hiệu hai fact luỹ kế / method lạ) đúng như dữ liệu khai.
-2. Đối chiếu fact phải KHỚP chính xác và phải TỪ CHỐI when sai val/accn.
-3. Trên dữ liệu thật (nếu có snapshot SEC): hash WMT khớp registry và WMT không có ô nào sai.
+This suite guards the claim that the data is real rather than fabricated: a wrong comparison rule or a
+wrong VND conversion would make the checker pass for no reason. The conversion rules are exercised
+directly, and the fact matcher must agree exactly while rejecting a wrong value or accession.
 """
 from __future__ import annotations
 
@@ -23,15 +19,15 @@ from scripts.verify_provenance import (RAW_DIR, RETAIL_DIR, check_hashes, derive
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 HAS_RAW = (RAW_DIR / "WMT-companyfacts.json").exists()
-SKIP_REASON = "chưa có snapshot SEC thô (data/sec/raw) — chạy `python -m scripts.crawl_sec`"
+SKIP_REASON = "no raw SEC snapshot in data/sec/raw; run `python -m scripts.crawl_sec`"
 
 
-def setUpModule() -> None:  # noqa: D103 - hook của unittest
+def setUpModule() -> None:  # noqa: D103 - unittest hook
     quiet_library_warnings()
 
 
 class TestDerivedVnd(unittest.TestCase):
-    """Quy tắc quy đổi: đúng cho cả fact đơn và hiệu hai kỳ luỹ kế."""
+    """Conversion rules: correct for a single fact and for the difference of two cumulative periods."""
 
     def test_single_fact_methods(self):
         facts = [{"val": 114_167_000_000}]
@@ -50,7 +46,7 @@ class TestDerivedVnd(unittest.TestCase):
 
 
 class TestFactMatching(unittest.TestCase):
-    """Đối chiếu fact phải khớp tag/end/val/accn; sai một trường là phải từ chối."""
+    """The fact matcher must agree on tag, end, value and accession, and reject any single mismatch."""
 
     RAW = {"facts": {"us-gaap": {"SalesRevenueNet": {"units": {"USD": [
         {"start": "2014-02-01", "end": "2014-04-30", "val": 114_167_000_000,
@@ -64,11 +60,11 @@ class TestFactMatching(unittest.TestCase):
     def test_wrong_value_or_accn_is_rejected(self):
         self.assertFalse(fact_present(self.RAW, {**self.FACT, "val": 1}))
         self.assertFalse(fact_present(self.RAW, {**self.FACT, "accn": "0000000000-00-000000"}))
-        self.assertFalse(fact_present(self.RAW, {**self.FACT, "tag": "KhôngTồnTại"}))
+        self.assertFalse(fact_present(self.RAW, {**self.FACT, "tag": "NotAPresentTag"}))
 
 
 class TestProvenanceOnRealData(unittest.TestCase):
-    """Chạy trên snapshot SEC thật (chỉ 1 công ty để test nhanh)."""
+    """Run against the real SEC snapshot, limited to one company to keep the test fast."""
 
     @unittest.skipUnless(HAS_RAW, SKIP_REASON)
     def test_hash_and_facts_of_wmt(self):

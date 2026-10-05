@@ -1,22 +1,8 @@
-"""Tái tạo split dữ liệu prepared từ retail-expanded.
+"""Rebuild the prepared splits from the retail-expanded JSON.
 
-Lệnh: python -m forecasting.data [--force]
-
-Chính sách (đồng bộ manifest hiện có), theo thứ tự thời gian mẫu từng công ty:
-- 8 quý cuối → test.
-- 4 quý liền trước → validation.
-- 1 quý ngay trước validation và 1 quý ngay sau validation → purged
-  (dải biên chống rò rỉ nhãn giữa train và validation/test).
-- Phần còn lại → train.
-
-Sample đặt tên theo quý target (`TICKER-<fy>Q<q>`); lịch sử là toàn bộ quý đã
-công bố trước quý target (nén bỏ provenance `sources`, giữ `source_url`).
-
-Nhãn `is_distressed` do pipeline prepare_sec gốc sinh ra (không suy ra lại được
-từ 16 chỉ tiêu): khi tái tạo, giữ nguyên nhãn theo sample_id từ prepared có sẵn;
-heuristic `net_income_vnd < 0` chỉ dùng cho mẫu hoàn toàn mới.
-
-Mặc định *không* chạy (prepared đã sẵn trong repo); dùng --force để tái tạo.
+Per company, the last 8 quarters go to test, the 4 before that to validation, one quarter on each side
+of validation is purged to block label leakage, and the rest to train. Labels are read back from the
+existing prepared files rather than recomputed. Run with `python -m forecasting.data --force`.
 """
 from __future__ import annotations
 
@@ -41,7 +27,7 @@ QUARTERS_TEST = 8
 QUARTERS_VALIDATION = 4
 VND_PER_USD = 25_000  # demo
 
-#: Thứ tự khoá chỉ tiêu *_vnd trong history row của prepared (chuẩn hoá gốc).
+#: Order of the *_vnd indicator keys in a prepared history row (original normalization).
 CANONICAL_VND_FIELDS = [
     "revenue", "cost_of_sales", "inventory", "selling_general_admin",
     "operating_cash_flow", "total_assets", "cash_and_equivalents",
@@ -60,7 +46,7 @@ def sha256(path: Path) -> str:
 
 
 def list_indicator_files() -> List[Path]:
-    """File 16-indicators theo thứ tự công ty trong corpus.json (WMT, HD, ...)."""
+    """16-indicators files in the company order from corpus.json (WMT, HD, ...)."""
     corpus_path = RETAIL_DIR / "corpus.json"
     if corpus_path.exists():
         order = list(_read_json(corpus_path).get("companies", {}).keys())
@@ -80,11 +66,11 @@ def _read_json(path: Path) -> Any:
 
 
 def _compact_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Nén một row retail-expanded về dạng history row của prepared.
+    """Compress one retail-expanded row into a prepared history row.
 
-    Thứ tự khoá như file gốc: fiscal_year, fiscal_quarter, period_start,
-    period_end, available_on, currency, 16 chỉ tiêu *_vnd (thứ tự chuẩn),
-    source_url. Ticker nằm ở sample, không nằm trong row.
+    Key order matches the source file: fiscal_year, fiscal_quarter, period_start,
+    period_end, available_on, currency, 16 *_vnd indicators (canonical order),
+    source_url. The ticker lives on the sample, not in the row.
     """
     out: Dict[str, Any] = {}
     for key in ("fiscal_year", "fiscal_quarter", "period_start", "period_end",
@@ -99,7 +85,7 @@ def _compact_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _load_existing_labels() -> Dict[str, Dict[str, Any]]:
-    """Nhãn gốc theo sample_id từ các file prepared hiện có (nếu có)."""
+    """Original labels by sample_id from the existing prepared files (if any)."""
     labels: Dict[str, Dict[str, Any]] = {}
     for name in ("train", "validation", "test", "purged"):
         path = PREPARED_DIR / f"{name}.json"
@@ -116,10 +102,10 @@ def _load_existing_labels() -> Dict[str, Dict[str, Any]]:
 
 def _build_samples(file: Path,
                    existing: Dict[str, Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
-    """Tạo sample: lịch sử đủ trước quý target; nhãn/URL giữ từ prepared cũ nếu có."""
+    """Build samples: history before the target quarter; label/URL kept from the old prepared if present."""
     doc = _read_json(file)
     ticker = doc["ticker"]
-    rows = doc["rows"]  # quý theo thứ tự thời gian
+    rows = doc["rows"]  # quarters in time order
     samples: List[Dict[str, Any]] = []
     for idx in range(len(rows) - 1):
         last_hist, target = rows[idx], rows[idx + 1]
@@ -130,7 +116,7 @@ def _build_samples(file: Path,
             label_date = prev["label_available_on"] or target["available_on"]
             target_url = prev["target_source_url"] or target.get("source_url")
         else:
-            # Heuristic chỉ cho dữ liệu hoàn toàn mới (không có nhãn gốc).
+            # Heuristic only for brand-new data (no original label).
             label = 1 if to_float(target.get("net_income_vnd")) < 0 else 0
             label_date = target["available_on"]
             target_url = target.get("source_url")
@@ -153,18 +139,18 @@ def _build_samples(file: Path,
 
 
 def split_policy(all_samples: Dict[str, List[Dict[str, Any]]]):
-    """Chia theo công ty: [train][purged 1][validation 4][purged 1][test 8]."""
+    """Split by company: [train][purged 1][validation 4][purged 1][test 8]."""
     train, validation, test, purged = [], [], [], []
     for ticker, samples in all_samples.items():
         n = len(samples)
         need = QUARTERS_TEST + QUARTERS_VALIDATION + 2
         if n <= need:
-            train.extend(samples)  # quá ít dữ liệu: không tạo test/val/purged
+            train.extend(samples)  # too little data: no test/val/purged
             continue
         train.extend(samples[: n - need])
-        purged.append(samples[n - need])                       # trước validation
+        purged.append(samples[n - need])                       # before validation
         validation.extend(samples[n - need + 1: n - QUARTERS_TEST - 1])
-        purged.append(samples[n - QUARTERS_TEST - 1])          # sau validation
+        purged.append(samples[n - QUARTERS_TEST - 1])          # after validation
         test.extend(samples[n - QUARTERS_TEST:])
     return train, validation, test, purged
 
@@ -174,7 +160,7 @@ def build_manifest(all_out: Dict[str, List[Dict[str, Any]]],
                    old: Dict[str, Any],
                    test_ranges_: Dict[str, Any],
                    split_sha: Dict[str, str]) -> Dict[str, Any]:
-    """Manifest theo đúng thứ tự khoá của file gốc (để byte-identical)."""
+    """Manifest with exactly the original key order (so it stays byte-identical)."""
     counts = {name: len(arr) for name, arr in all_out.items()}
     labels = {name: [s["is_distressed"] for s in arr] for name, arr in all_out.items()}
     m: Dict[str, Any] = {
@@ -199,7 +185,7 @@ def build_manifest(all_out: Dict[str, List[Dict[str, Any]]],
 
 
 def test_ranges(test: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Khoảng target period của test theo công ty: from = start đầu, to = end cuối."""
+    """Test target-period ranges per company: from = earliest start, to = latest end."""
     by_ticker: Dict[str, List[Tuple[str, str]]] = {}
     for s in test:
         by_ticker.setdefault(s["ticker"], []).append(
@@ -213,19 +199,23 @@ def test_ranges(test: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _write_json(path: Path, obj: Any) -> None:
-    # newline="\n": ghi LF (giống file gốc); thêm "\n" cuối file để sha256 khớp.
+    # Write LF to match the source file, then append a trailing newline so the sha256 matches.
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
         f.write("\n")
 
 
 def run(force: bool = False) -> Dict[str, Any]:
+    """Rebuild the prepared splits and manifest; return the per-split sample counts."""
     ensure_dirs()
     if not force:
         return {"skipped": True,
-                "message": "Đã có prepared; dùng --force để tái tạo từ retail-expanded."}
+                "message": "prepared already exists; use --force to rebuild from retail-expanded."}
 
+    # 1. Reuse labels from any prepared files already on disk.
     existing = _load_existing_labels()
+
+    # 2. Build per-company samples from the retail-expanded indicator files.
     all_samples: Dict[str, List[Dict[str, Any]]] = {}
     sources: Dict[str, str] = {}
     corpus_path = RETAIL_DIR / "corpus.json"
@@ -236,13 +226,16 @@ def run(force: bool = False) -> Dict[str, Any]:
         all_samples[ticker] = samples
         sources[file.name] = sha256(file)
 
+    # 3. Apply the time-based split policy per company.
     train, validation, test, purged = split_policy(all_samples)
     splits = {"train": train, "validation": validation, "test": test}
     all_out = {**splits, "purged": purged}
 
+    # 4. Persist the four splits.
     for name, arr in all_out.items():
         _write_json(PREPARED_DIR / f"{name}.json", arr)
 
+    # 5. Rebuild the manifest from the written splits.
     old = _read_json(MANIFEST_FILE) if MANIFEST_FILE.exists() else {}
     manifest = build_manifest(
         all_out, sources, old,
@@ -257,13 +250,13 @@ def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--force", action="store_true",
-                        help="Tái tạo split từ retail-expanded (mặc định bỏ qua nếu có sẵn).")
+                        help="Rebuild splits from retail-expanded (defaults to skipping if present).")
     args = parser.parse_args(argv)
     result = run(force=args.force)
     if result.get("skipped"):
         print(result["message"])
     else:
-        print("Đã tái tạo:", {k: v for k, v in result.items() if k != "skipped"})
+        print("Rebuilt:", {k: v for k, v in result.items() if k != "skipped"})
     return 0
 
 

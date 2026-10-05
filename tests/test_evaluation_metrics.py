@@ -1,18 +1,8 @@
-"""Kiểm thử phần ĐÁNH GIÁ MÔ HÌNH (yêu cầu #3): bộ metric đầy đủ, chính sách KHÔNG dùng Accuracy làm
-thước đo chính, tích hợp resampling qua `imblearn.pipeline.Pipeline`, và bảng so sánh
-BASELINE (chưa xử lý) vs các kỹ thuật xử lý.
+"""Verify the model evaluation section (requirement 3): metric set, accuracy policy and resampling.
 
-Chạy: python -m unittest discover -s tests -v
-
-Nhóm test:
-1. `TestMetricSet`        — Precision/Recall/F1 (binary, macro, weighted, F-beta), PR-AUC, ROC-AUC,
-                            MCC, Confusion Matrix khớp `sklearn`; bootstrap CI cho macro-F1/F-beta.
-2. `TestAccuracyPolicy`   — accuracy KHÔNG nằm trong bộ metric chính; chỉ xuất hiện như chỉ số chẩn
-                            đoán kèm mốc "đoán lớp đa số".
-3. `TestImblearnPipeline` — resampling chạy TRONG `imblearn.pipeline.Pipeline` (không dùng pipeline
-                            chuẩn của sklearn cho bước lấy mẫu) ⇒ an toàn khi vào Cross-Validation.
-4. `TestBaselineComparison` — hàm/bảng so sánh Baseline vs kỹ thuật: đúng chênh lệch, đúng thứ tự,
-                            không có accuracy, chạy được cả trên kết quả thật (end-to-end nhỏ).
+The suite checks that the metrics match `sklearn`, that accuracy is never treated as a primary measure, that
+resampling runs inside `imblearn.pipeline.Pipeline` rather than a plain scikit-learn pipeline, and that the
+baseline-versus-technique comparison reports the right deltas and ordering.
 """
 from __future__ import annotations
 
@@ -30,42 +20,41 @@ from sklearn.metrics import (average_precision_score, confusion_matrix as sk_con
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from imbalance_lab import config as C  # noqa: E402
-from imbalance_lab.metrics import (COMPARISON_COLUMNS, DIAGNOSTIC_METRICS, PRIMARY_METRICS,  # noqa: E402
+from labs.imbalance_lab import config as C  # noqa: E402
+from labs.imbalance_lab.metrics import (COMPARISON_COLUMNS, DIAGNOSTIC_METRICS, PRIMARY_METRICS,  # noqa: E402
                                    accuracy_diagnostic, bootstrap_ci, confusion_matrix_table,
                                    fbeta, majority_baseline_accuracy, metric_scalar,
                                    metrics_at_threshold)
-from imbalance_lab.samplers import (build_sampler_pipeline, make_samplers,  # noqa: E402
+from labs.imbalance_lab.samplers import (build_sampler_pipeline, make_samplers,  # noqa: E402
                                     make_single_sampler, resampling_backend)
-from imbalance_lab.techniques import (BASELINE_TECHNIQUE, build_technique,  # noqa: E402
+from labs.imbalance_lab.techniques import (BASELINE_TECHNIQUE, build_technique,  # noqa: E402
                                       compare_with_baseline, comparison_markdown, run)
 
 try:
     import imblearn  # noqa: F401
 
     HAS_IMBLEARN = True
-except Exception:  # pragma: no cover - môi trường thiếu imbalanced-learn
+except Exception:  # pragma: no cover - imbalanced-learn is absent
     HAS_IMBLEARN = False
 
 try:
     import lightgbm  # noqa: F401
 
     HAS_LIGHTGBM = True
-except Exception:  # pragma: no cover - môi trường thiếu lightgbm
+except Exception:  # pragma: no cover - lightgbm is absent
     HAS_LIGHTGBM = False
 
 
 def make_proba(n_samples: int = 800, positive_rate: float = 0.1, seed: int = 0):
-    """(y_true, proba) tổng hợp có tín hiệu — dùng cho mọi test metric."""
+    """Synthetic `(y_true, proba)` pair carrying signal, shared by the metric tests."""
     rng = np.random.default_rng(seed)
     y = (rng.random(n_samples) < positive_rate).astype(int)
     proba = np.clip(0.4 * y + rng.random(n_samples) * 0.7, 0.0, 1.0)
     return y, proba
 
 
-
 class TestMetricSet(unittest.TestCase):
-    """Bộ metric phải khớp `sklearn` (không tự chế công thức) và đủ mọi chỉ số yêu cầu."""
+    """Metrics must match `sklearn` rather than re-derive formulas, and cover the required indicators."""
 
     @classmethod
     def setUpClass(cls):
@@ -108,15 +97,15 @@ class TestMetricSet(unittest.TestCase):
                           self.metrics["tp"]), (int(tn), int(fp), int(fn), int(tp)))
         self.assertEqual(int(matrix.sum()), len(self.y))
         table = confusion_matrix_table(self.y, self.y_pred)
-        self.assertEqual(table["labels"], ["không dương", "dương"])
+        self.assertEqual(table["labels"], ["negative", "positive"])
         self.assertEqual(table["counts"]["tp"], int(tp))
 
     def test_fbeta_behaviour(self):
-        """beta = 1 phải bằng ĐÚNG F1, và `fbeta_beta` phải phản ánh hệ số đang dùng."""
+        """At beta 1 the score must equal F1, and `fbeta_beta` must report the coefficient in use."""
         self.assertAlmostEqual(fbeta(self.y, self.y_pred, beta=1.0),
                                float(f1_score(self.y, self.y_pred, zero_division=0)), places=12)
         self.assertAlmostEqual(self.metrics["fbeta_beta"], float(C.FBETA_BETA), places=12)
-        self.assertGreater(int(self.y_pred.sum()), 0, "test cần ít nhất một dự đoán dương")
+        self.assertGreater(int(self.y_pred.sum()), 0, "the test needs at least one positive prediction")
         tuned = metrics_at_threshold(self.y, self.proba, self.threshold, beta=3.0)
         self.assertAlmostEqual(tuned["fbeta"], fbeta(self.y, self.y_pred, beta=3.0), places=12)
 
@@ -136,7 +125,7 @@ class TestMetricSet(unittest.TestCase):
 
 
 class TestAccuracyPolicy(unittest.TestCase):
-    """Yêu cầu #3: TUYỆT ĐỐI không dùng Accuracy làm thước đo chính."""
+    """Requirement 3: accuracy must never serve as a primary measure."""
 
     def test_accuracy_is_not_a_primary_metric(self):
         self.assertNotIn("accuracy", PRIMARY_METRICS)
@@ -145,16 +134,16 @@ class TestAccuracyPolicy(unittest.TestCase):
 
     def test_majority_predictor_has_useless_accuracy(self):
         y = np.array([0] * 98 + [1] * 2)
-        y_pred = np.zeros(len(y), dtype=int)          # luôn đoán lớp đa số
+        y_pred = np.zeros(len(y), dtype=int)          # always predict the majority class
         diagnostic = accuracy_diagnostic(y, y_pred)
         self.assertAlmostEqual(diagnostic["accuracy"], 0.98, places=12)
         self.assertAlmostEqual(diagnostic["majority_baseline_accuracy_pct"], 98.0, places=12)
         self.assertFalse(diagnostic["accuracy_better_than_majority"])
-        self.assertIn("KHÔNG dùng làm thước đo chính", diagnostic["note"])
-        metrics = metrics_at_threshold(y, (y * 0 + 0.1), 0.5)   # dự đoán toàn lớp âm
-        self.assertIn("accuracy", metrics)                      # vẫn in để chẩn đoán...
-        self.assertFalse(metrics["accuracy_better_than_majority"])  # ...nhưng có cờ cảnh báo
-        self.assertEqual(metrics["recall"], 0.0)                # chỉ số chính nói đúng sự thật
+        self.assertIn("Accuracy is not the primary measure", diagnostic["note"])
+        metrics = metrics_at_threshold(y, (y * 0 + 0.1), 0.5)   # every prediction is negative
+        self.assertIn("accuracy", metrics)                      # still reported for diagnosis
+        self.assertFalse(metrics["accuracy_better_than_majority"])  # but flagged as no better
+        self.assertEqual(metrics["recall"], 0.0)                # the primary metric tells the truth
 
     def test_majority_baseline_helper(self):
         self.assertAlmostEqual(majority_baseline_accuracy(np.array([1, 1, 0, 0])), 50.0)
@@ -163,7 +152,7 @@ class TestAccuracyPolicy(unittest.TestCase):
 
 
 class RecordingClassifier:
-    """Classifier giả: ghi lại số mẫu/nhãn nó NHẬN khi `fit` (để chứng minh resampling xảy ra ở đâu)."""
+    """A stub classifier that records how many samples and labels it receives in `fit`."""
 
     def __init__(self) -> None:
         self.n_seen = -1
@@ -181,8 +170,7 @@ class RecordingClassifier:
 
 
 class TestImblearnPipeline(unittest.TestCase):
-    """Yêu cầu #3: tích hợp resampling QUA `imblearn.pipeline.Pipeline` (không phải sklearn) ⇒ khi vào
-    Cross-Validation, `fit_resample` chỉ chạy trên train của fold."""
+    """Requirement 3: resampling must go through `imblearn.pipeline.Pipeline`, not the plain sklearn one."""
 
     def test_catalogue_uses_imblearn_pipeline_for_resampling(self):
         spec = build_technique("smote", prefer_imblearn=True, random_state=0, quick=True)
@@ -190,7 +178,7 @@ class TestImblearnPipeline(unittest.TestCase):
         with self.subTest(backend=resampling_backend(True)):
             if HAS_IMBLEARN:
                 self.assertEqual(type(pipe).__module__, "imblearn.pipeline",
-                                 "phải dùng imblearn.pipeline.Pipeline, không dùng sklearn.pipeline")
+                                 "must use imblearn.pipeline.Pipeline, not sklearn.pipeline")
             self.assertEqual([name for name, _step in pipe.steps][-1], "classifier")
             self.assertIn("smote", [name for name, _step in pipe.steps])
 
@@ -213,21 +201,21 @@ class TestImblearnPipeline(unittest.TestCase):
         pipe.fit(X[train], y[train])
         pipe.predict_proba(X[val])
         self.assertNotEqual(recorder.n_seen, int(len(y[train])),
-                            "classifier phải nhận tập train ĐÃ resample")
+                            "the classifier must receive the resampled train set")
         self.assertGreater(recorder.n_seen, int(len(y[train])))
         self.assertTrue(bool(np.array_equal(X[val], X_val_before)))
         self.assertTrue(bool(np.array_equal(y[val], y_val_before)))
 
     def test_sklearn_pipeline_does_not_resample(self):
-        """Vì sao phải dùng imblearn: pipeline CHUẨN của sklearn không chạy `fit_resample`.
+        """Shows why imblearn is required: the plain scikit-learn pipeline never calls `fit_resample`.
 
-        Hai khả năng đều chứng minh điều đó: (a) sklearn báo lỗi vì sampler không có `transform`;
-        (b) nếu chạy được thì classifier vẫn thấy ĐÚNG kích thước dữ liệu gốc (không hề lấy mẫu lại).
+        Both outcomes prove it, since scikit-learn either raises because the sampler has no `transform`
+        or, when it runs, the classifier still sees the original data size.
         """
         from sklearn.pipeline import Pipeline as SkPipeline
 
-        if not HAS_IMBLEARN:  # pragma: no cover - môi trường thiếu imblearn
-            self.skipTest("Cần imbalanced-learn để dựng sampler cho phép so sánh")
+        if not HAS_IMBLEARN:  # pragma: no cover - imblearn is absent
+            self.skipTest("imbalanced-learn is required to build the comparison sampler")
         from imblearn.over_sampling import SMOTE as ImbSMOTE
 
         X, y = make_classification(n_samples=600, n_features=8, n_informative=5, n_classes=2,
@@ -237,15 +225,14 @@ class TestImblearnPipeline(unittest.TestCase):
                                ("clf", recorder)])
         try:
             pipeline.fit(X, y)
-        except Exception:                     # sampler không có `transform` ⇒ sklearn không chạy được
+        except Exception:                     # the sampler has no transform, so sklearn cannot run it
             return
         self.assertEqual(recorder.n_seen, len(y),
-                         "pipeline sklearn KHÔNG được resample; muốn resample phải dùng imblearn")
-
+                         "the sklearn pipeline must not resample; use imblearn to resample")
 
 
 def _row(mode: str, **overrides) -> dict:
-    """Dòng metric giả cho một chế độ ngưỡng (đủ khoá để `compare_with_baseline` đọc)."""
+    """A fake metric row for one threshold mode, carrying the keys `compare_with_baseline` reads."""
     row = {"technique": "x", "group": "x", "kind": "x", "threshold_mode": mode, "split": "test",
            "n_test": 200, "threshold": 0.4, "precision": 0.6, "recall": 0.7, "f1": 0.6,
            "macro_f1": 0.55, "weighted_f1": 0.58, "fbeta": 0.65, "fbeta_beta": 2.0,
@@ -259,18 +246,18 @@ def _row(mode: str, **overrides) -> dict:
 
 def _item(technique: str, group: str, kind: str, *, is_resampling: bool,
           f1: float, pr_auc: float) -> dict:
-    """Bản ghi kết quả giả của một kỹ thuật (chỉ cần đủ khoá mà báo cáo dùng)."""
+    """A fake technique result carrying only the keys the report needs."""
     row = _row("best_f1", technique=technique, group=group, kind=kind, f1=f1, pr_auc=pr_auc,
                macro_f1=f1 - 0.05, weighted_f1=f1 - 0.02, fbeta=f1 - 0.01)
     return {"technique": technique, "group": group, "kind": kind, "doc": technique,
             "implementation": technique, "is_resampling": is_resampling, "status": "ok", "reason": "",
             "rows": [row], "fold_rows": [], "resample_rows": [], "thresholds": {"best_f1": 0.4},
-            "oof_pr_auc": pr_auc, "checks": {"test_nguyên_vẹn": True}, "oof_proba": None,
+            "oof_pr_auc": pr_auc, "checks": {"test_untouched": True}, "oof_proba": None,
             "oof_y": None, "oof_at_0.5": {}}
 
 
 def _result(items: list) -> dict:
-    """`result` giả đủ khoá để chạy so sánh/báo cáo mà không cần huấn luyện."""
+    """A fake `result` complete enough to run the comparison and the report without training."""
     return {"results": items, "techniques": [item["technique"] for item in items], "n_samples": 100,
             "n_splits": 2, "seed": 42, "quick": True, "backend": "lightgbm",
             "resampling_backend": "imblearn", "missing_libraries": {}, "leakage_all_pass": True,
@@ -282,7 +269,7 @@ def _result(items: list) -> dict:
 
 
 class TestBaselineComparison(unittest.TestCase):
-    """Yêu cầu #3: hàm/bảng so sánh BASELINE (chưa xử lý) vs từng kỹ thuật xử lý."""
+    """Requirement 3: the comparison of the untreated baseline against each treatment technique."""
 
     @classmethod
     def setUpClass(cls):
@@ -324,7 +311,7 @@ class TestBaselineComparison(unittest.TestCase):
         self.assertEqual(self.table["best_by_metric"]["pr_auc"]["technique"], "smote")
         self.assertEqual(self.table["best_by_metric"]["f1"]["technique"], "smote")
         text = comparison_markdown(self.result)
-        for expected in (BASELINE_TECHNIQUE, "ΔPR-AUC", "`smote`", "Accuracy"):
+        for expected in (BASELINE_TECHNIQUE, "dPR-AUC", "`smote`", "accuracy"):
             self.assertIn(expected, text)
 
     def test_missing_baseline_is_reported_not_crashed(self):
@@ -333,9 +320,9 @@ class TestBaselineComparison(unittest.TestCase):
         table = compare_with_baseline(partial)
         self.assertIsNone(table["baseline"])
         self.assertEqual(table["n_techniques_compared"], 0)
-        self.assertIn("thiếu baseline", comparison_markdown(partial))
+        self.assertIn("baseline missing", comparison_markdown(partial))
 
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm để chạy thật")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required for the real run")
     def test_end_to_end_comparison_and_artifacts(self):
         with tempfile.TemporaryDirectory() as td:
             original = C.ARTIFACTS_DIR
@@ -346,12 +333,13 @@ class TestBaselineComparison(unittest.TestCase):
             finally:
                 C.ARTIFACTS_DIR = original
             table = compare_with_baseline(result)
-            self.assertIsNotNone(table["baseline"], "kết quả thật phải có dòng baseline")
+            self.assertIsNotNone(table["baseline"], "the real results must contain a baseline row")
             rows = {row["technique"]: row for row in table["rows"]}
             self.assertIn("smote", rows)
             self.assertEqual(rows[BASELINE_TECHNIQUE]["delta_pr_auc"], 0.0)
             self.assertIsNotNone(rows["smote"]["delta_pr_auc"])
             self.assertTrue((pathlib.Path(td) / "techniques_comparison.csv").exists())
             markdown = (pathlib.Path(td) / "techniques.md").read_text(encoding="utf-8")
-            for expected in ("Bảng so sánh BASELINE", "Chỉ số CHẨN ĐOÁN", "F1-macro"):
+            for expected in ("Baseline (untreated) versus handling techniques",
+                             "Diagnostic metric, not used to draw conclusions", "F1-macro"):
                 self.assertIn(expected, markdown)

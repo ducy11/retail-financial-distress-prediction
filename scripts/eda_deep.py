@@ -1,17 +1,8 @@
-"""EDA chuyên sâu: thống kê feature, nhãn, tương quan, dịch chuyển — sinh báo cáo tự động.
+"""Deep exploratory analysis of features, labels, correlations and drift.
 
-Lệnh: python -m scripts.eda_deep [--no-write] [--no-figures]
-
-Khác `scripts/eda.py` (mô tả corpus: độ phủ chỉ tiêu, cân bằng lớp, boxplot, chuỗi thời gian),
-script này trả lời bốn câu hỏi kỹ thuật phải xong trước khi tin vào metric:
-
-1. Ma trận 47 feature có cột hằng / thiếu nhiều / đuôi nặng / nhiều outlier không?
-2. Nhãn lệch tới mức nào theo split – công ty – quý, và có "dính" theo thời gian không?
-3. Feature nào thật sự liên hệ với nhãn (AUC 1-feature, MI, BH-FDR) và nhóm nào trùng thông tin?
-4. Test có khác train (KS/SMD/PSI) và còn rò rỉ nào (lịch sử chồng lấn, dòng trùng, thiếu-mang-nhãn)?
-
-Kết quả: `reports/results/eda_deep.{json,md}` + 7 hình ở `reports/figures/eda_deep/`.
-Toàn bộ logic nằm ở `forecasting/eda.py` (hàm nhận mảng/dict thuần ⇒ test độc lập được).
+Delegates every computation to `forecasting/eda.py`, whose routines take plain arrays or dicts and are
+independently testable, and fits no model. Writes `reports/results/eda_deep.{json,md}` plus seven
+figures under `reports/figures/eda_deep/`; run with `python -m scripts.eda_deep`.
 """
 from __future__ import annotations
 
@@ -23,15 +14,15 @@ from forecasting.eda import run
 
 
 def main(argv=None) -> int:
-    """Chạy EDA chuyên sâu và (mặc định) ghi artifact vào `reports/`."""
+    """Run the deep analysis and, by default, write the artifacts under `reports/`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-write", action="store_true",
-                        help="Chỉ in, không ghi reports/results/eda_deep.*")
+                        help="Print only; do not write reports/results/eda_deep.*")
     parser.add_argument("--no-figures", action="store_true",
-                        help="Bỏ vẽ hình (nhanh hơn, dùng khi chỉ cần số liệu)")
+                        help="Skip figure rendering (faster when only the numbers matter)")
     args = parser.parse_args(argv)
-    print("=== EDA chuyên sâu: feature / nhãn / tương quan / dịch chuyển ===")
+    print("=== Deep EDA: features / labels / correlations / drift ===")
     run(write=not args.no_write, figures=not args.no_figures)
     return 0
 

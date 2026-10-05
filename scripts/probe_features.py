@@ -1,20 +1,8 @@
-"""ĐO THỰC NGHIỆM tác động của các đặc trưng ĐỀ XUẤT lên cross-company AUROC.
+"""Measure the effect of the proposed features on cross-company AUROC.
 
-Lệnh: python -m scripts.probe_features
-
-Vì sao cần: ở đồ án này AUROC in-domain (~0.988) bị chi phối bởi baseline "nhớ mặt công ty"
-(`ticker_prior` = 0.986), nên đặc trưng mới chỉ có giá trị nếu cải thiện **cross-company**
-(GroupKFold theo công ty). Script so sánh trên CÙNG bộ fold → phép so ghép cặp theo fold:
-- `A_baseline(41)`        : bộ feature hiện tại (`forecasting.features`),
-- `B_baseline+ALL`        : thêm toàn bộ ~17 đặc trưng đề xuất,
-- `C_proposed_ONLY`       : chỉ 17 đặc trưng đề xuất (kiểm tra feature gốc có dư thừa không),
-- `P1..P5`                : từng nhóm đề xuất (coverage / accruals / days / path / scores).
-
-Nguyên tắc chống rò rỉ: mọi đặc trưng mới chỉ dùng lịch sử của chính sample (`available_on ≤
-as_of`); không dùng tag nào chưa có trong prepared. Không ghi artifact, không thuộc `run_all`.
-
-Lưu ý khi đọc kết quả: n = 324 mẫu / 8 công ty, chỉ 5 fold có đủ 2 lớp để tính AUROC → chênh
-lệch ±0.03 có thể là nhiễu; cần xác nhận bằng nested CV trước khi đổi `forecasting/features.py`.
+Compares the current feature set, the set plus every proposed feature, the proposed features alone and
+each proposed group on the same company-grouped folds, so paired-by-fold deltas stay meaningful. Writes
+no artifact and stays out of `scripts.run_all`.
 """
 from __future__ import annotations
 
@@ -28,7 +16,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import GridSearchCV, GroupKFold, StratifiedGroupKFold
 
-ROOT = Path(__file__).resolve().parents[1]  # repo root (script nằm trong scripts/)
+ROOT = Path(__file__).resolve().parents[1]  # repo root, since this script lives in scripts/
 sys.path.insert(0, str(ROOT))
 
 import forecasting.features as features  # noqa: E402
@@ -37,12 +25,12 @@ from forecasting.features import build_feature_matrix, extract_labels, feature_n
 from forecasting.models import DEFAULT_MODEL_ORDER, make_model, predict_proba  # noqa: E402
 
 SPLITS = ("train", "validation", "test", "purged")
-#: Công cụ khảo sát (không thuộc run_all): dùng đúng danh sách mô hình của registry.
+#: Survey tool outside `run_all`; reuses the model list from the registry.
 MODELS = tuple(DEFAULT_MODEL_ORDER)
 LOOKBACK = 8
 SUF = "_vnd"
 
-#: Lưới nhỏ cho nested CV (giữ thời gian chạy hợp lý; lưới đầy đủ ở `forecasting/tuning.py`).
+#: Small grid for nested CV to keep runtime sane; the full grid lives in `forecasting/tuning.py`.
 NESTED_GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "logistic": {"model__C": [0.03, 0.1, 0.3, 1.0]},
     "random_forest": {"model__max_depth": [3, 6], "model__min_samples_leaf": [2, 4]},
@@ -90,7 +78,7 @@ def _streak(values, pred):
 
 
 def proposed_features(sample: Dict[str, Any]) -> Dict[str, float]:
-    """~20 đặc trưng đề xuất, 5 nhóm: coverage / accruals / days / path / scores."""
+    """Around 20 proposed features across five groups: coverage, accruals, days, path and scores."""
     window = sample["request"]["history"][-LOOKBACK:]
     f: Dict[str, float] = {}
     if not window:
@@ -102,20 +90,20 @@ def proposed_features(sample: Dict[str, Any]) -> Dict[str, float]:
     ni, ocf = _last(_s(window, "net_income")), _last(_s(window, "operating_cash_flow"))
     oi, re = _last(_s(window, "operating_income")), _last(_s(window, "retained_earnings"))
     sga = _last(_s(window, "selling_general_admin"))
-    tl = ta - eq  # nợ phải trả SUY RA (tag `liabilities` chỉ phủ 39% số quý)
+    tl = ta - eq  # Liabilities derived from A = L + E, since the tag covers only 39 percent of quarters.
 
-    # P1 — sửa độ phủ / cơ cấu vốn
+    # P1: coverage and capital structure.
     f["liab_derived_to_assets"] = _ratio(tl, ta)
     f["liab_derived_to_equity"] = _ratio(tl, eq)
     f["equity_to_assets"] = _ratio(eq, ta)
 
-    # P2 — chất lượng lợi nhuận (accruals kiểu Sloan)
+    # P2: earnings quality using Sloan-style accruals.
     f["accruals_to_assets"] = _ratio(ni - ocf, ta)
     ni4, ocf4 = _s(window, "net_income")[-4:], _s(window, "operating_cash_flow")[-4:]
     ok4 = len(ni4) == 4 and all(math.isfinite(x) for x in ni4 + ocf4)
     f["accruals4_to_assets"] = _ratio(sum(ni4) - sum(ocf4), ta) if ok4 else float("nan")
 
-    # P3 — vòng quay theo ngày + lệch tăng trưởng so với doanh thu
+    # P3: turnover in days and growth that deviates from revenue growth.
     f["days_inventory"] = 91.25 * _ratio(inv, cogs)
     f["days_receivables"] = 91.25 * _ratio(ar, rev)
     for name, value in (("inventory", inv), ("selling_general_admin", sga)):
@@ -123,7 +111,7 @@ def proposed_features(sample: Dict[str, Any]) -> Dict[str, float]:
         f[key] = (_yoy(value, _s(window, name)[-5]) - _yoy(rev, _s(window, "revenue")[-5])
                   if len(window) >= 5 else float("nan"))
 
-    # P4 — đường đi/cực trị trong cửa sổ (không chỉ quý mới nhất)
+    # P4: path extremes across the window, not just the latest quarter.
     f["current_ratio_min_8q"] = _min_finite(
         [_ratio(a, b) for a, b in zip(_s(window, "current_assets"),
                                       _s(window, "current_liabilities"))])
@@ -137,7 +125,7 @@ def proposed_features(sample: Dict[str, Any]) -> Dict[str, float]:
     f["neg_ni_streak"] = _streak(_s(window, "net_income"), lambda x: x < 0)
     f["neg_ocf_streak"] = _streak(_s(window, "operating_cash_flow"), lambda x: x < 0)
 
-    # P5 — điểm số học thuật: Altman Z (book value) và Ohlson O (bản rút gọn)
+    # P5: academic scores, the book-value Altman Z and a reduced Ohlson O.
     wc = ca - cl
     z = (1.2 * _ratio(wc, ta) + 1.4 * _ratio(re, ta) + 3.3 * _ratio(oi, ta)
          + 0.6 * _ratio(eq, tl) + 1.0 * _ratio(rev, ta))
@@ -176,7 +164,7 @@ def _proposed_matrix(samples: Sequence[Dict[str, Any]]):
 
 
 def design(samples, prop_cols=None):
-    """Ma trận thiết kế: 41 feature gốc (+ các cột đề xuất được chọn)."""
+    """Design matrix holding the base features plus any selected proposed columns."""
     X_base = build_feature_matrix(samples)
     if prop_cols is None:
         return X_base
@@ -189,7 +177,7 @@ def _fold_splits(X, y, groups, n_splits):
 
 
 def _pooled_and_fold(model_name, X, y, splits):
-    """(OOF AUROC gộp, [AUROC từng fold]) trên cùng bộ fold."""
+    """Return pooled out-of-fold AUROC and the per-fold AUROC values on the same fold set."""
     proba = np.full(len(y), np.nan)
     folds = []
     for tr, te in splits:
@@ -207,10 +195,10 @@ def _pooled_and_fold(model_name, X, y, splits):
 
 
 def _legacy_matrix(samples: Sequence[Dict[str, Any]]):
-    """Ma trận 41 feature của phiên bản TRƯỚC khi tích hợp P1+P4 (để so trước/sau).
+    """Feature matrix of the version before P1 and P4 were integrated, kept as a before/after baseline.
 
-    Tái lập bằng cách: (1) đưa `debt_to_assets` / `debt_to_equity` về dùng tag `liabilities`
-    (không suy ra từ A = L + E), (2) bỏ 6 cột nhóm `path`.
+    Reconstructed by pointing `debt_to_assets` and `debt_to_equity` back at the `liabilities` tag and
+    dropping the six path features.
     """
     original = dict(features.RATIO_PARTS)
     features.RATIO_PARTS["debt_to_assets"] = ("liabilities", "total_assets")
@@ -227,11 +215,11 @@ def _legacy_matrix(samples: Sequence[Dict[str, Any]]):
 
 def _nested_oof(model_name: str, X, y, groups, outer_splits: List[Any],
                 n_inner: int = 4) -> Dict[str, Any]:
-    """Nested CV: chọn hyperparameter ở vòng TRONG (theo nhóm công ty), chấm điểm ở vòng NGOÀI.
+    """Nested CV: tune hyperparameters on the inner loop and score on the outer fold.
 
-    Vì sao cần: nếu chọn cấu hình rồi chấm ngay trên cùng fold thì điểm bị lạc quan hoá. Ở đây
-    lưới nhỏ (`NESTED_GRIDS`) được tune bằng `StratifiedGroupKFold` chỉ trên phần train của fold
-    ngoài; fold ngoài chỉ dùng để CHẤM ĐIỂM (không tham gia chọn cấu hình).
+    Selecting a configuration and then scoring it on the same fold inflates the result, so the small
+    `NESTED_GRIDS` grid is tuned with StratifiedGroupKFold on the outer train part only, and the outer
+    fold is used purely for scoring.
     """
     proba = np.full(len(y), np.nan)
     folds: List[float] = []
@@ -284,35 +272,35 @@ def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--nested", action="store_true",
-                        help="Thêm nested CV (tune ở vòng trong) cho các biến thể chính.")
-    parser.add_argument("--models", default="", help="Mô hình cho nested CV, phân tách bằng dấu phẩy.")
+                        help="Also run nested CV with inner-loop tuning for the main variants.")
+    parser.add_argument("--models", default="", help="Models for nested CV, comma-separated.")
     args = parser.parse_args(argv)
     splits = {n: load_prepared(n) for n in SPLITS}
     pool = [s for n in SPLITS for s in splits[n]]
     y = extract_labels(pool)
     groups = np.asarray([s["ticker"] for s in pool])
 
-    # kiểm chứng harness: số cột phải khớp `feature_names()` của pipeline hiện tại
+    # Harness check: the column count must match the current pipeline's `feature_names()`.
     X_base = design(pool)
-    print(f"Harness: {X_base.shape[1]} feature gốc = {len(feature_names())} (khớp mong đợi: "
+    print(f"Harness: {X_base.shape[1]} base features = {len(feature_names())} (expected match: "
           f"{X_base.shape[1] == len(feature_names())})")
 
     _, prop_names = _proposed_matrix(pool)
     X_prop = _proposed_matrix(pool)[0]
-    print("\n=== Độ phủ đặc trưng đề xuất (% mẫu có giá trị) ===")
+    print("\n=== Proposed feature coverage (share of samples with a value) ===")
     for j, n in enumerate(prop_names):
         print(f"  {n:46s} {float(np.mean(np.isfinite(X_prop[:, j]))):6.1%}")
 
     key_pipeline = f"A_pipeline({len(feature_names())})"
     configs: Dict[str, Any] = {key_pipeline: None,
-                               "B_pipeline+ALL(đề xuất)": [c for c in prop_names],
+                               "B_pipeline+ALL(proposed)": [c for c in prop_names],
                                "C_proposed_ONLY": "PROPOSED"}
     for gname, cols in PROPOSED_GROUPS.items():
         configs[f"{gname} (+{len(cols)})"] = cols
 
     n_splits = len(set(groups.tolist()))
     splits_ref = _fold_splits(X_base, y, groups, n_splits)
-    print(f"\n=== GroupKFold theo công ty: {n_splits} fold, {len(y)} mẫu ===")
+    print(f"\n=== GroupKFold by company: {n_splits} folds, {len(y)} samples ===")
     reference: Dict[str, tuple] = {}
     for m in MODELS:
         reference[m] = _pooled_and_fold(m, X_base, y, splits_ref)
@@ -335,11 +323,11 @@ def main(argv=None) -> int:
                       if math.isfinite(f) and math.isfinite(b)]
             mean_d = float(np.mean(deltas)) if deltas else float("nan")
             better = sum(1 for d in deltas if d > 0)
-            print(f"   {m:22s} OOF={pooled:.3f}  Δfold_tb={mean_d:+.3f}  "
-                  f"({better}/{len(deltas)} fold tốt hơn)")
+            print(f"   {m:22s} OOF={pooled:.3f}  dFold_mean={mean_d:+.3f}  "
+                  f"({better}/{len(deltas)} folds better)")
 
-    print("\n=== LOCO (bỏ từng công ty; chỉ công ty có 2 lớp mới tính được) ===")
-    for cname in (key_pipeline, "B_pipeline+ALL(đề xuất)", "C_proposed_ONLY"):
+    print("\n=== LOCO (drop each company; only two-class companies are scorable) ===")
+    for cname in (key_pipeline, "B_pipeline+ALL(proposed)", "C_proposed_ONLY"):
         X = X_prop if configs[cname] == "PROPOSED" else (
             X_base if configs[cname] is None else design(pool, configs[cname]))
         parts = []
@@ -348,19 +336,19 @@ def main(argv=None) -> int:
             parts.append(f"{m[:12]}={np.mean(s):.3f}(n={len(s)})")
         print(f"  {cname:26s} " + "  ".join(parts))
 
-    print("\n=== In-domain train→test (logistic) ===")
+    print("\n=== In-domain train to test (logistic) ===")
     print(f"  pipeline            {_in_domain('logistic', splits['train'], splits['test'], None):.3f}")
-    print(f"  pipeline+ALL(đề xuất) "
+    print(f"  pipeline+ALL(proposed) "
           f"{_in_domain('logistic', splits['train'], splits['test'], list(prop_names)):.3f}")
 
     if args.nested:
         models = [m for m in (args.models.split(",") if args.models else MODELS) if m]
-        print(f"\n=== NESTED CV: GroupKFold ngoài ({n_splits} fold) × "
-              f"StratifiedGroupKFold trong (4) — chọn cấu hình ở vòng trong ===")
+        print(f"\n=== NESTED CV: outer GroupKFold ({n_splits} folds) x "
+              f"inner StratifiedGroupKFold (4); configuration chosen in the inner loop ===")
         variants: Dict[str, Any] = {
-            "LEGACY_41 (trước tích hợp)": _legacy_matrix,
-            key_pipeline + " (sau tích hợp)": design,
-            "LEGACY_41+P1+P4 (đề xuất đo riêng)": lambda s: design(
+            "LEGACY_41 (before integration)": _legacy_matrix,
+            key_pipeline + " (after integration)": design,
+            "LEGACY_41+P1+P4 (measured separately)": lambda s: design(
                 s, PROPOSED_GROUPS["P1_coverage"] + PROPOSED_GROUPS["P4_path"]),
         }
         ref: Dict[str, Dict[str, Any]] = {}
@@ -369,18 +357,18 @@ def main(argv=None) -> int:
             print(f"\n{label}  [n_feature={X.shape[1]}]")
             for m in models:
                 res = _nested_oof(m, X, y, groups, splits_ref)
-                if label.startswith("LEGACY_41 (t"):
+                if label.startswith("LEGACY_41 (b"):
                     ref[m] = res
                 folds = res["folds"]
                 finite = [f for f in folds if math.isfinite(f)]
                 base_folds = ref.get(m, {}).get("folds", [])
                 deltas = [f - b for f, b in zip(folds, base_folds)
                           if math.isfinite(f) and math.isfinite(b)] if base_folds else []
-                extra = (f"  Δfold_vs_LEGACY={float(np.mean(deltas)):+.3f} "
-                         f"({sum(1 for d in deltas if d > 0)}/{len(deltas)} fold tốt hơn)"
+                extra = (f"  dFold_vs_LEGACY={float(np.mean(deltas)):+.3f} "
+                         f"({sum(1 for d in deltas if d > 0)}/{len(deltas)} folds better)"
                          if deltas else "")
                 oof = res["oof_auroc"]
-                print(f"   {m:22s} OOF={oof:.3f}  fold_tb={np.mean(finite):.3f}{extra}")
+                print(f"   {m:22s} OOF={oof:.3f}  fold_mean={np.mean(finite):.3f}{extra}")
     return 0
 
 

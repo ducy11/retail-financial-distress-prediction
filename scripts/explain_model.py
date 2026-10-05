@@ -1,16 +1,8 @@
-"""Giải thích mô hình đã chốt bằng SHAP (KernelSHAP tự cài đặt) — mục "explainability" của đồ án.
+"""Explain the frozen model with KernelSHAP, complementing global permutation importance.
 
-Lệnh: python -m scripts.explain_model [--n-coalitions 200] [--n-background 40]
-                                      [--max-explain 64] [--no-write]
-
-Ghi ra:
-- `reports/results/shap.{json,md}` — độ quan trọng toàn cục (mean |φ|), đối chiếu permutation
-  importance, **chỉ số tự kiểm chứng** (efficiency gap), và giải thích CỤC BỘ cho các mẫu dự đoán sai.
-- `reports/figures/shap/*.png` — summary bar, beeswarm (giá trị feature vs φ), waterfall mẫu sai.
-
-Vì sao cần: `analysis.md` đã có permutation importance nhưng đó là mức giảm metric khi HOÁN VỊ
-(một phép đo toàn cục, không giải thích được từng hồ sơ). SHAP cho biết **từng mẫu** được quyết
-định bởi feature nào — đúng thứ cần khi phải giải trình "vì sao doanh nghiệp này bị gắn cờ".
+Computes per-sample Shapley values with the self-implemented KernelSHAP, records the efficiency
+self-check and the rank agreement with permutation importance, and explains misclassified samples.
+Writes `reports/results/shap.{json,md}` plus three figures under `reports/figures/shap/`.
 """
 from __future__ import annotations
 
@@ -33,9 +25,9 @@ from forecasting.explain import (DEFAULT_N_BACKGROUND, DEFAULT_N_COALITIONS, ker
                                  rank_agreement)
 from forecasting.features import build_feature_matrix, extract_labels, feature_names
 
-#: Thư mục hình SHAP.
+#: Directory holding the SHAP figures.
 SHAP_DIR = FIGURES_DIR / "shap"
-#: Số feature hiển thị trong bảng/hình toàn cục.
+#: Number of features shown in the global table and figure.
 TOP_FEATURES = 15
 
 
@@ -45,7 +37,7 @@ def _short(name: str) -> str:
 
 def fig_shap_summary(importance: np.ndarray, permutation: np.ndarray | None, names: List[str],
                      path: Path) -> None:
-    """Hình 1 — thanh mean |φ| (SHAP) kèm dấu ΔAUROC (permutation) để đối chiếu hai phương pháp."""
+    """First figure: mean |phi| bars with permutation deltas overlaid to compare both methods."""
     order = np.argsort(-np.asarray(importance))[:TOP_FEATURES][::-1]
     fig, ax = plt.subplots(figsize=(9.5, 6.2))
     ax.barh([_short(names[i]) for i in order], [importance[i] for i in order],
@@ -67,7 +59,7 @@ def fig_shap_summary(importance: np.ndarray, permutation: np.ndarray | None, nam
 
 def fig_shap_beeswarm(phi: np.ndarray, X: np.ndarray, y: np.ndarray, names: List[str],
                       path: Path, top: int = 6) -> None:
-    """Hình 2 — mỗi ô: trục x là giá trị feature (chuẩn hoá theo hạng), trục y là φ, màu = nhãn thực."""
+    """Second figure: for each feature, the normalised value on x, the SHAP value on y, coloured by label."""
     order = np.argsort(-mean_abs_shap(phi))[:top]
     cols = 3
     rows = int(np.ceil(len(order) / cols))
@@ -102,7 +94,7 @@ def fig_shap_beeswarm(phi: np.ndarray, X: np.ndarray, y: np.ndarray, names: List
 def fig_shap_local(phi: np.ndarray, base_value: float, predictions: np.ndarray,
                    sample_ids: List[str], indices: List[int], names: List[str], path: Path,
                    top: int = 8) -> None:
-    """Hình 3 — giải thích cục bộ cho các mẫu dự đoán SAI (top đóng góp dương/âm)."""
+    """Third figure: local explanations for misclassified samples, showing the largest signed terms."""
     if not indices:
         return
     n = len(indices)
@@ -128,7 +120,7 @@ def run(write: bool = True, n_coalitions: int = DEFAULT_N_COALITIONS,
         n_background: int = DEFAULT_N_BACKGROUND, max_explain: int = 64,
         out_dir: Path | None = None, fig_dir: Path | None = None,
         figures: bool = True) -> Dict[str, Any]:
-    """Tính SHAP cho mô hình trong `reports/models/best.joblib` và ghi artifact."""
+    """Compute SHAP values for the model in `reports/models/best.joblib` and write the artifacts."""
     import joblib
 
     from forecasting.config import MODELS_DIR
@@ -151,7 +143,7 @@ def run(write: bool = True, n_coalitions: int = DEFAULT_N_COALITIONS,
                                         replace=False))
     background = X_train[background_idx]
 
-    # Giải thích: toàn bộ validation + một phần test (giữ thứ tự để truy vết mẫu sai).
+    # Explain the whole validation split plus part of test, keeping order to trace misclassified samples.
     n_test = max(0, min(len(X_test), max_explain - len(X_val)))
     explain_samples = splits["validation"] + splits["test"][:n_test]
     X_explain = np.vstack([X_val, X_test[:n_test]]) if n_test else X_val
@@ -220,14 +212,14 @@ def run(write: bool = True, n_coalitions: int = DEFAULT_N_COALITIONS,
             json.dumps(summary, ensure_ascii=False, indent=2, default=float) + "\n", encoding="utf-8")
         (out / "shap.md").write_text(markdown_shap(summary), encoding="utf-8")
 
-    print(f"SHAP ({model_name}): {result['n_explained']} mẫu, {n_coalitions} liên minh/điểm; "
-          f"sai số efficiency = {result['max_abs_efficiency_gap']:.2e}; top-3 = "
+    print(f"SHAP ({model_name}): {result['n_explained']} samples, {n_coalitions} coalitions per point; "
+          f"efficiency gap = {result['max_abs_efficiency_gap']:.2e}; top-3 = "
           f"{', '.join(i['feature'] for i in summary['importance_top'][:3])}")
     return summary
 
 
 def markdown_shap(summary: Dict[str, Any]) -> str:
-    """Sinh `reports/results/shap.md` từ summary (mọi số đọc từ JSON, không nhập tay)."""
+    """Render `reports/results/shap.md` from the summary payload."""
     agreement = summary["rank_agreement_with_permutation"]
     lines = ["# Giải thích mô hình bằng SHAP (KernelSHAP tự cài đặt)", "",
              f"- Mô hình được giải thích: **{summary['model']}**; ngưỡng vận hành "
@@ -283,7 +275,7 @@ def markdown_shap(summary: Dict[str, Any]) -> str:
 
 
 def main(argv=None) -> int:
-    """CLI: `python -m scripts.explain_model [--n-coalitions N] [--no-write] [--no-figures]`."""
+    """Command-line entry point for `scripts.explain_model`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-coalitions", type=int, default=DEFAULT_N_COALITIONS)
@@ -292,7 +284,7 @@ def main(argv=None) -> int:
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--no-figures", action="store_true")
     args = parser.parse_args(argv)
-    print("=== Giải thích mô hình bằng SHAP (KernelSHAP tự cài đặt) ===")
+    print("=== Model explanation with SHAP (self-implemented KernelSHAP) ===")
     run(write=not args.no_write, n_coalitions=args.n_coalitions, n_background=args.n_background,
         max_explain=args.max_explain, figures=not args.no_figures)
     return 0

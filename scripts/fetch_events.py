@@ -1,21 +1,8 @@
-"""Nhãn SỰ KIỆN phá sản/kiệt quệ lấy từ SEC (8-K item 1.03 + tín hiệu kiệt quệ) — không cần thư viện ngoài.
+"""SEC-derived bankruptcy and distress event labels taken from 8-K filings.
 
-Lệnh: python -m scripts.fetch_events [--refresh] [--ticker WMT]
-
-Vì sao cần: nhãn `is_distressed` trong `data/prepared` là TRẠNG THÁI kế toán của quý target (không tái
-tạo được từ dữ liệu công bố — xem `docs/dinh-nghia-nhan.md`; mức khớp tối đa với quy tắc đơn giản là
-74,7%) và KHÔNG gắn với sự kiện phá sản nào. Script này bổ sung loại nhãn thứ hai, có mốc thời gian
-công khai và kiểm chứng được:
-
-- 8-K có `items` chứa `1.03` (Bankruptcy or Receivership) ⇒ **sự kiện phá sản thật**;
-- 8-K có `items` chứa `2.06` (impairment) / `4.02` (non-reliance) / `4.01` (thay kiểm toán)
-  ⇒ **tín hiệu kiệt quệ**.
-
-Kết quả: `data/events/{TICKER}.json` + `reports/results/events.{json,md}` (bảng đếm theo công ty và
-KẾT LUẬN về tính hợp lệ của đề tài).
-
-Lưu ý phạm vi: KHÔNG thuộc `scripts.run_all` (cần Internet; đây là công cụ khảo sát để trả lời câu
-hỏi "8 công ty bán lẻ này có phá sản thật hay không?").
+Maps 8-K item 1.03 to a real bankruptcy event and items 2.06, 4.02 and 4.01 to distress signals, giving
+a publicly timestamped label alongside the accounting `is_distressed` state. Requires Internet and stays
+out of `scripts.run_all`; run with `python -m scripts.fetch_events`.
 """
 from __future__ import annotations
 
@@ -33,7 +20,7 @@ from forecasting.config import DATA_DIR, ensure_utf8_stdio
 EVENTS_DIR = DATA_DIR / "events"
 RESULTS_DIR = DATA_DIR.parent / "reports" / "results"
 
-#: SEC yêu cầu User-Agent thật; chờ 0,15 s mỗi request để tôn trọng giới hạn ~10 req/s.
+#: SEC requires a real User-Agent; wait 0.15 s per request to respect the ~10 req/s limit.
 USER_AGENT = "CS114-do-an research <student@example.edu>"
 BANKRUPTCY_ITEM = "1.03"
 DISTRESS_ITEMS = ("2.06", "4.02", "4.01")
@@ -41,24 +28,24 @@ TICKER_URL = "https://www.sec.gov/files/company_tickers.json"
 
 
 def _get_json(url: str, pause: float = 0.15, timeout: int = 30) -> Dict[str, Any]:
-    """GET JSON từ SEC (User-Agent + delay). Ném `RuntimeError` rõ ràng nếu không có mạng."""
+    """GET JSON from SEC with a real User-Agent and a delay; raise RuntimeError when offline."""
     time.sleep(pause)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:  # pragma: no cover
-        raise RuntimeError(f"Không truy cập được SEC ({url}): {exc}. Bước này cần Internet.") from exc
+        raise RuntimeError(f"Cannot reach SEC ({url}): {exc}. This step requires Internet.") from exc
 
 
 def ticker_to_cik() -> Dict[str, int]:
-    """Bảng ticker → CIK công khai của SEC."""
+    """Public SEC ticker to CIK mapping."""
     data = _get_json(TICKER_URL)
     return {row["ticker"]: int(row["cik_str"]) for row in data.values()}
 
 
 def filings_of(cik: int) -> List[Dict[str, Any]]:
-    """Toàn bộ filing gần đây của một CIK (gộp cả file phân trang trong `filings.files`)."""
+    """All recent filings for one CIK, including the paginated files under `filings.files`."""
     doc = _get_json(f"https://data.sec.gov/submissions/CIK{cik:010d}.json")
     keys = ("form", "filingDate", "accessionNumber", "items")
     recent = doc["filings"]["recent"]
@@ -70,13 +57,13 @@ def filings_of(cik: int) -> List[Dict[str, Any]]:
 
 
 def corpus_tickers() -> List[str]:
-    """8 công ty trong corpus (bảng 16 chỉ tiêu) — đọc từ dữ liệu, không hard-code."""
+    """The eight corpus companies, read from the indicator files instead of hard-coded."""
     retail = DATA_DIR / "retail-expanded"
     return sorted({path.name.split("-")[0] for path in retail.glob("*-16-indicators-vnd.json")})
 
 
 def events_of(ticker: str, cik: int) -> List[Dict[str, Any]]:
-    """Sự kiện phá sản/kiệt quệ của một công ty (lọc theo `items` của 8-K)."""
+    """Bankruptcy and distress events for one company, selected from the 8-K `items` field."""
     out: List[Dict[str, Any]] = []
     for filing in filings_of(cik):
         items = {code.strip() for code in str(filing.get("items") or "").split(",") if code.strip()}
@@ -91,8 +78,9 @@ def events_of(ticker: str, cik: int) -> List[Dict[str, Any]]:
                                        f"{accn.replace('-', '')}/{accn}-index.html")})
     return sorted(out, key=lambda e: e["filing_date"])
 
+
 def run(tickers: Sequence[str] | None = None, refresh: bool = False) -> Dict[str, Any]:
-    """Lấy sự kiện cho từng công ty, ghi cache + báo cáo; trả bảng tổng hợp."""
+    """Fetch events per company, write the cache and report, and return the summary."""
     ensure_utf8_stdio()
     names = list(tickers) if tickers else corpus_tickers()
     EVENTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -115,14 +103,14 @@ def run(tickers: Sequence[str] | None = None, refresh: bool = False) -> Dict[str
                               "first": events[0]["filing_date"] if events else None,
                               "last": events[-1]["filing_date"] if events else None}
         all_events += events
-        print(f"  {ticker}: {len(events)} sự kiện "
-              f"({per_ticker[ticker]['n_bankruptcy']} phá sản)")
+        print(f"  {ticker}: {len(events)} events "
+              f"({per_ticker[ticker]['n_bankruptcy']} bankruptcy)")
     return _write_report(names, per_ticker, all_events)
 
 
 def _write_report(names: Sequence[str], per_ticker: Dict[str, Any],
                   all_events: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Ghi `reports/results/events.{json,md}` + kết luận về định vị đề tài."""
+    """Write `reports/results/events.{json,md}` and the conclusion on problem positioning."""
     n_bankruptcy = sum(e["kind"] == "bankruptcy" for e in all_events)
     n_done = sum(1 for v in per_ticker.values() if v.get("status") == "ok")
     conclusion = (
@@ -154,7 +142,7 @@ def _write_report(names: Sequence[str], per_ticker: Dict[str, Any],
               "> Nguồn: `https://data.sec.gov/submissions/CIK##########.json` (trường `items` của 8-K).",
               ""]
     (RESULTS_DIR / "events.md").write_text("\n".join(lines), encoding="utf-8")
-    print(f"  → {RESULTS_DIR / 'events.md'} | phá sản: {n_bankruptcy}/{len(all_events)} sự kiện")
+    print(f"  → {RESULTS_DIR / 'events.md'} | bankruptcy: {n_bankruptcy}/{len(all_events)} events")
     return summary
 
 
@@ -162,13 +150,13 @@ def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", action="append", default=None)
-    parser.add_argument("--refresh", action="store_true", help="Bỏ cache, tải lại từ SEC.")
+    parser.add_argument("--refresh", action="store_true", help="Ignore the cache and refetch from SEC.")
     args = parser.parse_args(argv)
     try:
         run(tickers=list(args.ticker or []), refresh=args.refresh)
     except RuntimeError as exc:
         print(f"[fetch_events] {exc}")
-        return 2  # cần Internet: mã lỗi rõ ràng, không im lặng thất bại
+        return 2  # Internet required: distinct exit code instead of a silent failure
     return 0
 
 

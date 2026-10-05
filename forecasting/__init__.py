@@ -1,3 +1,3 @@
-"""Forecasting: pipeline dự báo suy giảm tài chính cho chuỗi bán lẻ."""
+"""Forecasting: financial distress prediction pipeline for retail chains."""
 
 __version__ = "0.1.0"

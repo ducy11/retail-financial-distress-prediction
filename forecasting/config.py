@@ -1,14 +1,12 @@
-"""Cấu hình chung: đường dẫn, chỉ tiêu (features), hyperparameter.
+"""Shared config: paths, indicators (features), hyperparameters.
 
-Mọi module nên import cấu hình từ đây thay vì hardcode đường dẫn.
+Every module should import config from here instead of hardcoding paths.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Đường dẫn cây thư mục (tính tương đối từ nơi đặt file này)
-# ---------------------------------------------------------------------------
+# Directory tree paths, resolved relative to this file.
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 RETAIL_DIR = DATA_DIR / "retail-expanded"
@@ -18,7 +16,6 @@ RESULTS_DIR = REPORTS_DIR / "results"
 FIGURES_DIR = REPORTS_DIR / "figures"
 MODELS_DIR = REPORTS_DIR / "models"
 DOCS_DIR = ROOT / "docs"
-NOTEBOOKS_DIR = ROOT / "notebooks"
 
 PREPARED_FILES = {
     "train": PREPARED_DIR / "train.json",
@@ -28,10 +25,7 @@ PREPARED_FILES = {
 }
 MANIFEST_FILE = PREPARED_DIR / "manifest.json"
 
-# ---------------------------------------------------------------------------
-# Chỉ tiêu và tính năng
-# ---------------------------------------------------------------------------
-#: Tên đầy đủ các chỉ tiêu (bậc 1) trích từ SEC XBRL.
+#: Full names of the level-1 indicators pulled from SEC XBRL.
 BASE_FIELDS = [
     "revenue",
     "cost_of_sales",
@@ -51,19 +45,19 @@ BASE_FIELDS = [
     "retained_earnings",
 ]
 
-#: Hậu tố giá trị trong JSON prepared (chuỗi số nguyên VND).
+#: Value suffix used in the prepared JSON (integer strings in VND).
 SUFFIX = "_vnd"
 
-#: Nhãn mục tiêu (cột target).
+#: Target label (the target column).
 TARGET = "is_distressed"
 
-#: Cửa sổ lịch sử tính năng — dùng 8 quý gần nhất (2 năm tài chính).
+#: Feature history window - use the most recent 8 quarters (2 fiscal years).
 LOOKBACK_QUARTERS = 8
 
-#: Các tỷ số tài chính (bậc 2) được tính trong features — key: công thức tiếng Anh để log/diễn giải.
-#: Các tỷ số tài chính (bậc 2) được tính trong features — key: công thức tiếng Anh để log/diễn giải.
-#: `total_liabilities` = tag `liabilities` nếu quý đó có, ngược lại suy ra từ `total_assets -
-#: stockholders_equity` (tag `liabilities` chỉ phủ 39% số quý; xem `forecasting/features.py`).
+#: Level-2 financial ratios computed in features - key: English formula for logging/explaining.
+#: `total_liabilities` = the `liabilities` tag when that quarter has it, otherwise derived from
+#: `total_assets - stockholders_equity` (the `liabilities` tag covers only 39% of quarters;
+#: see `forecasting/features.py`).
 RATIOS = {
     "gross_margin": "(revenue - cost_of_sales) / revenue",
     "operating_margin": "operating_income / revenue",
@@ -81,67 +75,64 @@ RATIOS = {
     "revenue_per_asset": "revenue / total_assets",
 }
 
-#: Tên cột chuẩn tạo ra bởi features — dùng làm cột X sau khi mã hoá dạng cột.
-#: LƯU Ý: cột feature THẬT là `forecasting.features.feature_names()` (36 tỷ số/growth + cấu trúc
-#: vốn + cực trị theo cửa sổ + chỉ báo căng thẳng). Hằng số này chỉ liệt kê 14 tỷ số gốc để tham
-#: chiếu — đừng hardcode số cột ở bất kỳ đâu, hãy dùng `len(feature_names())`.
+#: Reference column names produced by features, used as X columns after column encoding.
+#: The real feature columns come from `forecasting.features.feature_names()` (ratio, growth,
+#: capital structure, window extremes, stress flags). This constant lists only the 14 base ratios
+#: for reference; never hardcode a column count, use `len(feature_names())`.
 FEATURE_COLS = RATIOS.keys()
 
-# ---------------------------------------------------------------------------
-# Huấn luyện / đánh giá
-# ---------------------------------------------------------------------------
-#: Bỏ ngẫu nhiên rollback độc lập với môi trường (SPLIT_TRAIN/EVAL là deterministic vì dựa trên thời gian).
+#: Fixed seed so runs are reproducible (splits themselves are time-based, hence deterministic).
 RANDOM_SEED = 42
 
-#: Cần ≥ 2 nhãn ở hai lớp khi train — threshold tối thiểu của tỷ lệ distress.
+#: Training needs both classes present; operating thresholds swept for the distress rate.
 EVAL_THRESHOLDS = [0.30, 0.35, 0.40, 0.50, 0.60, 0.656]
 
-#: Khoá nhóm cho cross-validation theo thực thể (không để lộ công ty giữa train và test).
+#: Group key for entity-wise cross-validation (never leak a company across train/test).
 GROUP_KEY = "ticker"
 
-#: Số quý lịch sử tối thiểu để feature YoY có nghĩa (YoY cần 5 quý: hiện tại + 4 quý trước).
+#: Minimum history quarters for YoY features to make sense (YoY needs 5: current + 4 ago).
 MIN_HISTORY_QUARTERS = 5
 
-#: Số vòng bootstrap cho khoảng tin cậy metric (mục "độ bất định" của báo cáo).
+#: Bootstrap rounds for metric confidence intervals (the "uncertainty" section of the report).
 N_BOOTSTRAP = 2000
 
-#: Chi phí tương đối cho phân tích ngưỡng theo lợi ích kỳ vọng: bỏ sót (FN) đắt hơn báo động giả.
+#: Relative costs for expected-utility threshold analysis: a miss (FN) costs more than a false alarm.
 COST_FN = 5.0
 COST_FP = 1.0
 
-#: Cấu hình quy tắc nhãn thay thế tái lập được (xem forecasting/labels.py).
+#: Reproducible replacement-label rule config (see forecasting/labels.py).
 STRESS_MIN_SIGNALS = 1
 STRESS_RULE_NAME = "stress_signals"
 
-#: Biến môi trường cho phép chạy toàn bộ pipeline trên split khác (vd: data/prepared-rule).
+#: Env var to run the whole pipeline on a different split (e.g. data/prepared-rule).
 ENV_PREPARED_DIR = "FORECASTING_PREPARED_DIR"
 
 
 def ensure_dirs() -> None:
-    """Tạo thư mục output nếu chưa có."""
+    """Create output folders if missing."""
     for d in (RESULTS_DIR, FIGURES_DIR, MODELS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
 def ensure_utf8_stdio() -> None:
-    """Ép stdout/stderr dùng UTF-8 (chống UnicodeEncodeError khi pipe/redirect ở console cp1252).
+    """Force stdout/stderr to UTF-8 (avoids UnicodeEncodeError when piping on cp1252 consoles).
 
-    Python 3.7+: sys.stdout.reconfigure sẵn; trên nền tảng không hỗ trợ thì bỏ qua.
+    Python 3.7+: sys.stdout.reconfigure exists; skip silently on platforms without it.
     """
     import sys
 
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")
-        except Exception:  # pragma: no cover - thiết bị/stream không reconfigure được
+        except Exception:  # pragma: no cover - device/stream cannot be reconfigured
             pass
 
 
 def prepared_dir() -> Path:
-    """Thư mục split đang dùng.
+    """Split folder currently in use.
 
-    Mặc định `PREPARED_DIR` (nhãn gốc). Đặt biến môi trường `FORECASTING_PREPARED_DIR`
-    để chạy pipeline trên split khác — ví dụ `data/prepared-rule` do `scripts.relabel` sinh ra.
+    Defaults to `PREPARED_DIR` (original labels). Set env var `FORECASTING_PREPARED_DIR`
+    to run the pipeline on another split - e.g. `data/prepared-rule` built by `scripts.relabel`.
     """
     import os
 
@@ -150,13 +141,13 @@ def prepared_dir() -> Path:
 
 
 def prepared_files(base: Path | None = None) -> dict[str, Path]:
-    """Đường dẫn 4 split theo `base` (mặc định `prepared_dir()`)."""
+    """Paths of the 4 splits under `base` (defaults to `prepared_dir()`)."""
     root = base or prepared_dir()
     return {name: root / f"{name}.json" for name in ("train", "validation", "test", "purged")}
 
 
 def manifest_file(base: Path | None = None) -> Path:
-    """Đường dẫn manifest theo `base` (mặc định `prepared_dir()`)."""
+    """Manifest path under `base` (defaults to `prepared_dir()`)."""
     root = base or prepared_dir()
     return root / "manifest.json"
 

@@ -1,13 +1,8 @@
-"""Kiểm thử `benchmark_imbalanced.py`: dữ liệu 95/5, bảng Markdown và CHỐNG RÒ RỈ dữ liệu.
+"""Verify `labs/benchmark.py`: the 95/5 dataset, the markdown tables and the leakage guards.
 
-Chạy: python -m unittest discover -s tests -v
-
-Nhóm test:
-1. `TestDataset`            — tỉ lệ mất cân bằng ~95/5 và chia stratified giữ nguyên tỉ lệ.
-2. `TestNoLeakage`          — resampling chỉ trên train; test nguyên vẹn; test âm tính (estimator
-                             cố tình sửa test) PHẢI bị đánh dấu FAIL.
-3. `TestRusBoostFallback`   — bản RUSBoost nội bộ cho xác suất hợp lệ và dùng được qua wrapper.
-4. `TestReporting`          — bảng Markdown đủ cột/dòng và thống kê nhóm đúng.
+The suite covers the dataset ratio and stratified split, the checks that resampling only touches the train
+partition and that a deliberately leaky estimator is flagged, the internal RUSBoost fallback, and the
+reporting helpers.
 """
 from __future__ import annotations
 
@@ -23,16 +18,16 @@ from sklearn.model_selection import train_test_split
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import benchmark_imbalanced as B  # noqa: E402
+import labs.benchmark as B  # noqa: E402
 from imblearn.over_sampling import SMOTE  # noqa: E402
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 
-def setUpModule() -> None:  # noqa: D103 - `unittest` hook
-    """Lọc lại cảnh báo thư viện vô hại sau khi `unittest` đặt `simplefilter("default")`.
+def setUpModule() -> None:  # noqa: D103 - unittest hook
+    """Reapply the harmless-warning filters after `unittest` installs `simplefilter("default")`.
 
-    Test fit `LogisticRegression` nhiều lần ⇒ không lọc sẽ in `OptimizeWarning: Unknown solver
-    options: iprint` (scikit-learn 1.6 + scipy 1.18) lẫn vào output test. Xem `runtime_warnings.py`.
+    Fitting `LogisticRegression` repeatedly would otherwise print `OptimizeWarning: Unknown solver
+    options: iprint` into the test output. See `runtime_warnings.py`.
     """
     quiet_library_warnings()
 
@@ -43,7 +38,7 @@ def _small_split(n_samples: int = 1500, seed: int = B.SEED):
 
 
 def _method(name: str, estimator, samplers=None, group: str = "Non-E Mode"):
-    """Tạo đối tượng `method` đúng định dạng mà `benchmark_imbalanced` yêu cầu."""
+    """Build a `method` record in the shape the benchmark expects."""
     if samplers:
         factory = (lambda: B.ImbPipeline([*samplers,
                                           ("classifier", B.RecordingClassifier(estimator))]))
@@ -75,7 +70,7 @@ class TestDataset(unittest.TestCase):
 
 class TestNoLeakage(unittest.TestCase):
     def test_resampling_only_changes_train(self):
-        """SMOTE trong pipeline: classifier thấy tập train ĐÃ resample, test không bị đụng."""
+        """With SMOTE inside the pipeline the classifier sees a resampled train set and test is untouched."""
         X_train, X_test, y_train, y_test = _small_split()
         X_test_before, y_test_before = X_test.copy(), y_test.copy()
         method = _method("SMOTE + Logistic Regression",
@@ -99,13 +94,13 @@ class TestNoLeakage(unittest.TestCase):
         self.assertEqual(row["n_train_before"], len(y_train))
 
     def test_leaky_estimator_is_flagged(self):
-        """Test ÂM TÍNH: estimator cố tình sửa tập test trong `fit` phải bị đánh dấu FAIL."""
+        """A negative control: an estimator that mutates the test set during fit must be flagged."""
         X_train, X_test, y_train, y_test = _small_split()
         target = X_test
 
         class LeakyEstimator:
             def fit(self, X, y):
-                target[:] = 0.0           # hành vi rò rỉ giả lập
+                target[:] = 0.0           # simulated leak
                 self.positive_rate_ = float(np.mean(y == 1))
                 return self
 
@@ -113,7 +108,7 @@ class TestNoLeakage(unittest.TestCase):
                 positive = np.full(len(X), self.positive_rate_)
                 return np.column_stack([1.0 - positive, positive])
 
-        method = _method("Leaky (giả lập)", LeakyEstimator())
+        method = _method("Leaky (simulated)", LeakyEstimator())
         row = B.evaluate_method(method, X_train, y_train, X_test, y_test)
         self.assertFalse(row["leakage_ok"])
         self.assertFalse(row["leakage_detail"]["test_nguyên_vẹn"])
@@ -165,7 +160,7 @@ class TestReporting(unittest.TestCase):
 
 
 class TestStratifiedCV(unittest.TestCase):
-    """Yêu cầu: chia fold giữ tỉ lệ lớp; cân bằng CHỈ trên fold-train, không bao giờ trên fold-val."""
+    """Folds keep the class ratio, and balancing happens on fold-train only, never on fold-validation."""
 
     def test_folds_keep_class_ratio_and_cover_all_samples(self):
         X, y = B.make_dataset(n_samples=1500, seed=B.SEED)
@@ -175,10 +170,10 @@ class TestStratifiedCV(unittest.TestCase):
         seen: List[int] = []
         for train_index, val_index in folds:
             self.assertEqual(len(train_index) + len(val_index), len(y))
-            self.assertFalse(set(train_index) & set(val_index))       # train ∩ val = ∅
+            self.assertFalse(set(train_index) & set(val_index))       # train and validation are disjoint
             self.assertLess(abs(B._distribution(y[val_index])["positive_pct"] - global_pct), 1.5)
             seen.extend(val_index.tolist())
-        self.assertEqual(sorted(seen), list(range(len(y))))           # phủ đúng 1 lần toàn bộ mẫu
+        self.assertEqual(sorted(seen), list(range(len(y))))           # every sample is covered once
 
     def test_cv_resamples_only_fold_train(self):
         X, y = B.make_dataset(n_samples=1200, seed=B.SEED)
@@ -190,7 +185,7 @@ class TestStratifiedCV(unittest.TestCase):
         self.assertTrue(summary["leakage_ok"])
         self.assertEqual(summary["n_folds_pass"], 3)
         for fold in summary["folds"]:
-            self.assertGreater(fold["n_train_after"], fold["n_train"])   # SMOTE chỉ trên fold-train
+            self.assertGreater(fold["n_train_after"], fold["n_train"])   # SMOTE on fold-train only
             self.assertLess(fold["ir_after"], fold["ir_before"])
             self.assertTrue(all(fold["checks"].values()), fold["checks"])
         self.assertGreater(summary["pr_auc_mean"], 0.0)

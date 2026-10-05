@@ -1,16 +1,8 @@
-"""Kiểm thử thực nghiệm `imbalance_experiment`: dữ liệu, danh mục pipeline, CV, chống rò rỉ, insights.
+"""Verify `labs.imbalance_experiment`: dataset handling, pipeline catalogue, CV and insights.
 
-Chạy: python -m unittest discover -s tests -v
-
-Nhóm test:
-1. `TestDataLoader`      — dataset 1:50 / 1:100, chia tập stratified, fold giữ tỉ lệ lớp, đọc CSV.
-2. `TestPipelineBuilder` — đủ 17 pipeline theo đề bài; mọi kỹ thuật resampling dùng
-                            `imblearn.pipeline.Pipeline` và giữ sampler BÊN TRONG pipeline.
-3. `TestEvaluation`      — CV mean ± std, metric bắt buộc (PR-AUC, ROC-AUC, F1, Balanced Acc, Recall,
-                            FPR), cờ chống rò rỉ PASS, dữ liệu PR curve hợp lệ.
-4. `TestInsights`        — phân tích tự động: SMOTE vs dọn biên, chi phí resampling vs cost/weight,
-                            hybrid vs đơn lẻ (trên số liệu giả để kiểm tra công thức).
-5. `TestEndToEnd`        — chạy thực nghiệm cỡ nhỏ, ghi artifact vào thư mục tạm và kiểm tra nội dung.
+The suite checks the imbalanced datasets and their stratified splits, that every required technique is built
+with its sampler inside an imblearn pipeline, that cross-validation reports mean and standard deviation with
+all leak checks passing, that the insight formulas match hand-computed figures, and a small end-to-end run.
 """
 from __future__ import annotations
 
@@ -25,18 +17,18 @@ import numpy as np
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from imbalance_experiment import insights  # noqa: E402
-from imbalance_experiment.config import ExperimentConfig  # noqa: E402
-from imbalance_experiment.data_loader import (load_csv_dataset, load_dataset,  # noqa: E402
+from labs.imbalance_experiment import insights  # noqa: E402
+from labs.imbalance_experiment.config import ExperimentConfig  # noqa: E402
+from labs.imbalance_experiment.data_loader import (load_csv_dataset, load_dataset,  # noqa: E402
                                               make_synthetic_dataset, stratified_folds)
-from imbalance_experiment.evaluation import (METRIC_KEYS, FoldResult, TechniqueResult,  # noqa: E402
+from labs.imbalance_experiment.evaluation import (METRIC_KEYS, FoldResult, TechniqueResult,  # noqa: E402
                                              evaluate_technique, summary_rows)
-from imbalance_experiment.main import run  # noqa: E402
-from imbalance_experiment.pipeline_builder import (REQUIRED_TECHNIQUES, build_pipelines,  # noqa: E402
+from labs.imbalance_experiment.main import run  # noqa: E402
+from labs.imbalance_experiment.pipeline_builder import (REQUIRED_TECHNIQUES, build_pipelines,  # noqa: E402
                                                    inspect_pipeline, make_estimator,
                                                    missing_requirements)
 
-try:  # pragma: no cover - phụ thuộc môi trường
+try:  # pragma: no cover - environment dependent
     import imblearn  # noqa: F401
 
     HAS_IMBLEARN = True
@@ -46,22 +38,22 @@ except Exception:
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 
-def setUpModule() -> None:  # noqa: D103 - `unittest` hook
-    """Lọc lại cảnh báo thư viện vô hại sau khi `unittest` đặt `simplefilter("default")`.
+def setUpModule() -> None:  # noqa: D103 - unittest hook
+    """Reapply the harmless-warning filters after `unittest` installs `simplefilter("default")`.
 
-    Thực nghiệm vẽ PR curve (matplotlib/pyparsing deprecate) và fit mô hình tuyến tính
-    (`iprint` scikit-learn 1.6 + scipy 1.18). Xem `runtime_warnings.py`.
+    The experiment draws precision-recall curves, which triggers matplotlib deprecations, and fits linear
+    models, which triggers the scipy `iprint` warning. See `runtime_warnings.py`.
     """
     quiet_library_warnings()
 
-try:  # pragma: no cover - phụ thuộc môi trường
+try:  # pragma: no cover - environment dependent
     import lightgbm  # noqa: F401
 
     HAS_LIGHTGBM = True
 except Exception:
     HAS_LIGHTGBM = False
 
-#: Kỳ vọng ĐÚNG theo đề bài (không đọc từ code ⇒ test bắt được việc bỏ sót kỹ thuật).
+#: Expected technique set, listed independently of the code so a missing technique fails the test.
 EXPECTED_TECHNIQUES = {
     "baseline",
     "ros", "smote", "borderline_smote", "adasyn", "rus", "tomek", "enn",
@@ -69,22 +61,21 @@ EXPECTED_TECHNIQUES = {
     "balanced_rf", "easy_ensemble", "balanced_bagging",
     "smote_tomek", "smote_enn", "smote_class_weight", "rusboost",
 }
-#: Kỹ thuật có bước lấy mẫu phải nằm TRONG pipeline.
+#: Techniques whose sampling step must live inside the pipeline.
 RESAMPLING_TECHNIQUES = {"ros", "smote", "borderline_smote", "adasyn", "rus", "tomek", "enn",
                          "smote_tomek", "smote_enn", "smote_class_weight"}
 
 
 def tiny_config(**overrides) -> ExperimentConfig:
-    """Cấu hình nhỏ, tất định, dùng cho mọi test (không ghi artifact)."""
+    """A small deterministic config shared by the tests, never writing artifacts."""
     base = dict(n_samples=1500, imbalance_ratio=50, n_splits=2, quick=True, write=False,
                 techniques=())
     base.update(overrides)
     return ExperimentConfig(**base)
 
 
-
 class TestDataLoader(unittest.TestCase):
-    """Dataset mất cân bằng + chia tập/fold phải GIỮ NGUYÊN tỉ lệ lớp."""
+    """Imbalanced datasets and their splits must preserve the class ratio."""
 
     def test_synthetic_imbalance_ratio_and_stratified_split(self):
         cfg = tiny_config(n_samples=5000, imbalance_ratio=50)
@@ -137,7 +128,7 @@ class TestDataLoader(unittest.TestCase):
 
 
 class TestPipelineBuilder(unittest.TestCase):
-    """Danh mục pipeline: đủ kỹ thuật theo đề bài, resampling nằm TRONG imblearn pipeline."""
+    """The catalogue must cover every required technique, with sampling inside the imblearn pipeline."""
 
     def test_catalogue_covers_every_required_technique(self):
         self.assertEqual(set(REQUIRED_TECHNIQUES), EXPECTED_TECHNIQUES)
@@ -163,7 +154,7 @@ class TestPipelineBuilder(unittest.TestCase):
                 if HAS_IMBLEARN:
                     self.assertEqual(type(pipeline).__module__, "imblearn.pipeline")
                 self.assertGreaterEqual(checks["n_sampler_steps"], 1)
-                self.assertTrue(checks["sampler_nằm_trong_pipeline"])
+                self.assertTrue(checks["samplers_inside_pipeline"])
                 self.assertEqual([name for name, _step in pipeline.steps][-1], "classifier")
 
     def test_non_resampling_techniques_have_no_sampler_step(self):
@@ -174,24 +165,22 @@ class TestPipelineBuilder(unittest.TestCase):
                 pipeline = make_estimator(cfg, key)
                 checks = inspect_pipeline(pipeline, expect_samplers=False)
                 self.assertEqual(checks["n_sampler_steps"], 0)
-                self.assertTrue(checks["sampler_nằm_trong_pipeline"])
+                self.assertTrue(checks["samplers_inside_pipeline"])
 
     def test_focal_loss_requires_lightgbm_base_model(self):
         cfg = tiny_config(base_model="random_forest")
         gaps = missing_requirements(cfg, "focal_loss")
-        self.assertTrue(gaps, "Focal Loss phải bị bỏ qua khi base_model không phải lightgbm")
+        self.assertTrue(gaps, "focal loss must be skipped when base_model is not lightgbm")
         self.assertTrue(any("lightgbm" in gap for gap in gaps))
         self.assertEqual(missing_requirements(cfg, "baseline"), [])
 
     def test_unknown_technique_raises(self):
         with self.assertRaises(KeyError):
-            build_pipelines(tiny_config(), keys=("khong_ton_tai",))
-
-
+            build_pipelines(tiny_config(), keys=("not-a-technique",))
 
 
 class TestEvaluation(unittest.TestCase):
-    """CV phải cho mean ± std, đủ metric yêu cầu #3, và cờ chống rò rỉ phải PASS."""
+    """Cross-validation must report mean and standard deviation, the required metrics, and pass leak checks."""
 
     @classmethod
     def setUpClass(cls):
@@ -202,7 +191,7 @@ class TestEvaluation(unittest.TestCase):
     def _evaluate(self, key: str) -> TechniqueResult:
         return evaluate_technique(self.specs[key], self.dataset, self.cfg, log=lambda _m: None)
 
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm cho baseline")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required for the baseline")
     def test_baseline_cv_and_holdout_metrics(self):
         result = self._evaluate("baseline")
         self.assertEqual(result.status, "ok", result.reason)
@@ -219,18 +208,18 @@ class TestEvaluation(unittest.TestCase):
         self.assertTrue(0.0 <= result.holdout["fpr"] <= 1.0)
         self.assertFalse(result.is_resampling)
 
-    @unittest.skipUnless(HAS_IMBLEARN and HAS_LIGHTGBM, "Cần imblearn + lightgbm")
+    @unittest.skipUnless(HAS_IMBLEARN and HAS_LIGHTGBM, "imblearn and lightgbm are required")
     def test_resampling_flags_are_pass_and_size_is_recorded(self):
         result = self._evaluate("smote")
         self.assertEqual(result.status, "ok", result.reason)
         self.assertTrue(result.is_resampling)
         self.assertTrue(all(result.checks.values()), result.checks)
-        self.assertIn("resampling dùng imblearn.pipeline", result.checks)
+        self.assertIn("resampling uses imblearn.pipeline", result.checks)
         self.assertGreater(result.n_train_after_mean, result.folds[0].n_train)
         self.assertGreater(result.resample_seconds_mean, 0.0)
         self.assertLess(result.folds[0].ir_after, result.folds[0].ir_before)
 
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required")
     def test_summary_rows_expose_metrics_for_cv_and_holdout(self):
         results = [self._evaluate("baseline")]
         cv_rows = summary_rows(results, source="cv")
@@ -243,7 +232,7 @@ class TestEvaluation(unittest.TestCase):
 
 
 class TestInsights(unittest.TestCase):
-    """Công thức so sánh của phần phân tích phải đúng (kiểm tra bằng số liệu giả)."""
+    """The comparison formulas in the insight section must be correct for the supplied figures."""
 
     @staticmethod
     def _result(key: str, group: str, *, pr_auc: float, f1: float, recall: float, fpr: float,
@@ -259,7 +248,7 @@ class TestInsights(unittest.TestCase):
         result.folds = [FoldResult(fold=1, n_train=1000, n_val=200, n_train_after=n_after,
                                    ir_before=10.0, ir_after=2.0, metrics=metrics,
                                    fit_seconds=seconds, resample_seconds=0.2,
-                                   checks={"fold_val_nguyên_vẹn": True})]
+                                   checks={"fold_validation_untouched": True})]
         return result
 
     @classmethod
@@ -316,9 +305,9 @@ class TestInsights(unittest.TestCase):
 
 
 class TestEndToEnd(unittest.TestCase):
-    """Chạy thực nghiệm cỡ nhỏ có ghi artifact và kiểm tra nội dung báo cáo."""
+    """Run a small experiment that writes artifacts and check the report contents."""
 
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm để chạy thực nghiệm")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required to run the experiment")
     def test_small_run_writes_all_artifacts(self):
         with tempfile.TemporaryDirectory() as td:
             cfg = tiny_config(n_samples=1500, n_splits=2, out_dir=pathlib.Path(td), write=True,
@@ -329,7 +318,7 @@ class TestEndToEnd(unittest.TestCase):
             statuses = {item.key: item.status for item in result["results"]}
             self.assertEqual(set(statuses.values()), {"ok"}, statuses)
             for name in ("summary.md", "summary.csv", "cv_mean_std.csv", "results.json", "run.log"):
-                self.assertTrue((pathlib.Path(td) / name).exists(), f"thiếu artifact {name}")
+                self.assertTrue((pathlib.Path(td) / name).exists(), f"missing artifact {name}")
             markdown = (pathlib.Path(td) / "summary.md").read_text(encoding="utf-8")
             for expected in ("Phương pháp đơn lẻ vs Phương pháp kết hợp", "PR-AUC", "FPR",
                              "Kiểm chứng chống rò rỉ", "Phân tích chuyên sâu", "PASS"):
@@ -338,7 +327,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertIn("pr_auc", findings["ranking"])
             self.assertIn("smote_tomek", findings["hybrid_vs_single"])
 
-    @unittest.skipUnless(HAS_IMBLEARN and HAS_LIGHTGBM, "Cần imblearn + lightgbm")
+    @unittest.skipUnless(HAS_IMBLEARN and HAS_LIGHTGBM, "imblearn and lightgbm are required")
     def test_all_leak_checks_pass_for_resampling_techniques(self):
         cfg = tiny_config(n_samples=1500, n_splits=2, write=False,
                           techniques=("baseline", "smote", "smote_enn", "class_weight"))

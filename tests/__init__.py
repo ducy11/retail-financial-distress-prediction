@@ -1,1 +1,1 @@
-"""tests: kiểm thử pipeline (unittest, stdlib — không cần pytest)."""
+"""Pipeline test suite built on the standard-library `unittest` runner."""

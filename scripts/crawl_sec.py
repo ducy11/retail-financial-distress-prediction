@@ -1,13 +1,8 @@
-"""Tải lại snapshot SEC companyfacts cho các công ty trong downloads.json.
+"""Verify or refresh the SEC companyfacts snapshots listed in downloads.json.
 
-Lệnh: python -m scripts.crawl_sec [--refresh] [--ticker WMT]
-
-Mặc định chỉ KIỂM TRA (so sha256 file local với downloads.json, báo thiếu/hụt).
---refresh tải lại toàn bộ (hoặc --ticker chọn lọc) từ data.sec.gov và cập nhật
-sha256 + thời điểm tải trong data/sec/downloads.json.
-
-Quy tắc SEC: request phải có User-Agent dạng "Tên <email>"; tối đa ~10 req/s.
-Dữ liệu ghi vào data/sec/raw/<TICKER>-companyfacts.json (bị .gitignore).
+By default the script compares each local file's SHA-256 against the registry and reports missing or
+mismatched snapshots; `--refresh` re-downloads from data.sec.gov. SEC requires a real User-Agent and at
+most ~10 requests per second. Run with `python -m scripts.crawl_sec [--refresh] [--ticker WMT]`.
 """
 from __future__ import annotations
 
@@ -26,7 +21,7 @@ from forecasting.config import DATA_DIR, ensure_utf8_stdio
 
 DOWNLOADS = DATA_DIR / "sec" / "downloads.json"
 RAW_DIR = DATA_DIR / "sec" / "raw"
-USER_AGENT = "CS114-do-an research <student@example.edu>"  # TODO: điền email thật
+USER_AGENT = "CS114-do-an research <student@example.edu>"  # TODO: replace with a real contact email
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -39,7 +34,7 @@ def load_downloads() -> Dict[str, Any]:
 
 
 def verify_one(ticker: str, meta: Dict[str, Any]) -> str:
-    """Trạng thái một ticker: ok | mismatch | missing."""
+    """Status of one ticker: ok, mismatch or missing."""
     path = RAW_DIR / f"{ticker}-companyfacts.json"
     if not path.exists():
         return "missing"
@@ -48,7 +43,7 @@ def verify_one(ticker: str, meta: Dict[str, Any]) -> str:
 
 
 def download_one(ticker: str, meta: Dict[str, Any]) -> str:
-    """Tải companyfacts cho một ticker, ghi file + cập nhật meta. Trả trạng thái."""
+    """Download companyfacts for one ticker, write the file and update its metadata."""
     url = meta["url"]
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -63,9 +58,9 @@ def download_one(ticker: str, meta: Dict[str, Any]) -> str:
 def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--refresh", action="store_true", help="Tải lại từ SEC.")
+    parser.add_argument("--refresh", action="store_true", help="Re-download from SEC.")
     parser.add_argument("--ticker", action="append", default=[],
-                        help="Chỉ xử lý các ticker này (mặc định: tất cả).")
+                        help="Process only these tickers (default: all).")
     args = parser.parse_args(argv)
 
     downloads = load_downloads()
@@ -75,15 +70,15 @@ def main(argv=None) -> int:
     status_counts: Dict[str, int] = {}
     for ticker in targets:
         if ticker not in downloads:
-            print(f"  {ticker}: không có trong downloads.json — bỏ qua")
+            print(f"  {ticker}: not present in downloads.json — skipped")
             continue
         meta = downloads[ticker]
         if args.refresh:
             try:
                 status = download_one(ticker, meta)
-                time.sleep(0.15)  # lịch sự với SEC API
+                time.sleep(0.15)  # stay polite towards the SEC API
             except (urllib.error.URLError, TimeoutError) as e:
-                print(f"  {ticker}: LỖI tải — {e}")
+                print(f"  {ticker}: download failed — {e}")
                 status = "error"
         else:
             status = verify_one(ticker, meta)
@@ -94,9 +89,9 @@ def main(argv=None) -> int:
         with open(DOWNLOADS, "w", encoding="utf-8", newline="\n") as f:
             json.dump(downloads, f, ensure_ascii=False, indent=2)
             f.write("\n")
-        print(f"Đã cập nhật {DOWNLOADS.name}")
+        print(f"Updated {DOWNLOADS.name}")
 
-    print("Tổng kết:", status_counts)
+    print("Summary:", status_counts)
     return 0
 
 

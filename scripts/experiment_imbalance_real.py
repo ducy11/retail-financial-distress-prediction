@@ -1,22 +1,8 @@
-"""So sánh kỹ thuật xử lý LỆCH LỚP trên dữ liệu THẬT (corpus 8 công ty), chống rò rỉ theo nhóm.
+"""Compare class-imbalance techniques on the real eight-company corpus, guarding against leakage.
 
-Lệnh: python -m scripts.experiment_imbalance_real [--folds 4] [--no-write] [--no-figures]
-
-Vì sao cần: `imbalance_lab/` và `benchmark_imbalanced.py` đã so 15 kỹ thuật nhưng trên **dữ liệu
-tổng hợp** (98/2 và 95/5). Yêu cầu #2 của đề bài muốn thấy so sánh trên chính bộ dữ liệu đồ án —
-nơi mất cân bằng ở cấp MẪU chỉ nhẹ (IR toàn corpus 1,66; train 1,65) nhưng ở cấp CÔNG TY rất nặng (HD/LOW/WMT 100% nhãn 1).
-Script này trả lời: *trên dữ liệu thật, có kỹ thuật nào cải thiện AP/AUROC không?*
-
-Giao thức (mọi thứ học từ fold-train):
-- `GroupKFold` theo mã cổ phiếu trên train+validation (244 mẫu) ⇒ mỗi fold giữ TRỌN công ty ra ngoài.
-- Sampler nằm TRONG `imblearn.pipeline.Pipeline` ⇒ chỉ chạy trên fold-train; có kiểm tra tập
-  validation của fold không bị đổi kích thước/giá trị (chống rò rỉ, giống `imbalance_lab/cv.py`).
-- Metric: AP, AUROC trên xác suất out-of-fold + F1 tốt nhất trên đường PR của OOF.
-
-Kỹ thuật (6, bám sát 4 họ mô hình của đồ án): none (đối chứng) · class_weight ·
-RandomUnderSampler · TomekLinks · SMOTE · SMOTE+ENN.
-(Không đưa Focal Loss vào phần này vì Focal Loss cần custom objective của LightGBM — ngoài bộ mô hình
-chính của đồ án; Focal Loss được khảo sát riêng trong `imbalance_lab/`.)
+Runs GroupKFold by ticker on train plus validation so every fold holds whole companies out, keeps each
+sampler inside an imblearn Pipeline so it only touches fold-train, and scores AP, AUROC and best-F1 on
+the out-of-fold probabilities. The 64-sample test split keeps its final-holdout role.
 """
 from __future__ import annotations
 
@@ -40,12 +26,12 @@ from forecasting.evaluation import best_f1_point
 from forecasting.features import build_feature_matrix, extract_labels
 from forecasting.models import HYPERPARAMS, make_model
 
-#: Mô hình nền dùng chung cho mọi kỹ thuật (để so sánh công bằng).
+#: Base model shared by every technique, so only the imbalance step differs.
 DEFAULT_BASE = "hist_gradient_boosting"
 
 
 def _techniques() -> List[Dict[str, Any]]:
-    """Danh mục kỹ thuật: bỏ kỹ thuật nào thiếu thư viện (môi trường tự khai báo)."""
+    """Technique catalogue, skipping resampling entries when imbalanced-learn is unavailable."""
     out: List[Dict[str, Any]] = [
         {"name": "none", "group": "baseline", "kind": "plain",
          "description": "không can thiệp (đối chứng)"},
@@ -74,20 +60,20 @@ def _techniques() -> List[Dict[str, Any]]:
              "description": "SMOTE + ENN: sinh mẫu rồi dọn mẫu bị láng giềng phủ nhận"},
         ]
         _ = (SMOTE, RandomUnderSampler, TomekLinks, SMOTEENN)
-    except Exception as exc:  # pragma: no cover - thiếu imbalanced-learn
+    except Exception as exc:  # pragma: no cover - imbalanced-learn missing
         out.append({"name": "resampling_unavailable", "group": "n/a", "kind": "unavailable",
                     "description": f"bỏ qua resampling: {exc}"})
     return out
 
 
 def build_estimator(technique: Dict[str, Any], base: str = DEFAULT_BASE) -> Any:
-    """Pipeline cho một kỹ thuật: sampler (nếu có) nằm TRONG pipeline ⇒ chỉ chạm fold-train."""
+    """Pipeline for one technique, with any sampler inside the pipeline so it only touches fold-train."""
     from sklearn.impute import SimpleImputer
     from sklearn.pipeline import Pipeline
 
     params = dict(HYPERPARAMS.get(base, {}))
     if technique["kind"] != "class_weight":
-        params["class_weight"] = None      # đối chứng & resampling: không thêm trọng số lớp
+        params["class_weight"] = None      # control and resampling variants add no class weights
     if technique["kind"] == "sampler":
         from imblearn.pipeline import Pipeline as ImbPipeline
         from imblearn.over_sampling import SMOTE
@@ -95,8 +81,8 @@ def build_estimator(technique: Dict[str, Any], base: str = DEFAULT_BASE) -> Any:
         from imblearn.combine import SMOTEENN
 
         if technique["factory"] == "smote":
-            # `sampling_strategy=1.0` (cân bằng hoàn toàn) an toàn cho mọi fold: ở corpus này lớp
-            # THIỂU SỐ là lớp 0 (37,7%) nên tỉ lệ < 1 luôn lỗi "phải sinh mẫu cho lớp đa số".
+            # Complete balancing is safe on every fold here: class 0 is the minority at 37.7 percent, so
+            # any ratio below 1.0 would try to synthesise samples for the majority class.
             sampler: Any = SMOTE(random_state=42, k_neighbors=5, sampling_strategy=1.0)
         elif technique["factory"] == "random_under":
             sampler = RandomUnderSampler(random_state=42, sampling_strategy="majority")
@@ -111,7 +97,7 @@ def build_estimator(technique: Dict[str, Any], base: str = DEFAULT_BASE) -> Any:
 
 
 def _sampler_stats(estimator: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-    """IR trước/sau resampling trên chính fold-train (để chứng minh can thiệp diễn ra ở đâu)."""
+    """Imbalance ratio before and after resampling on fold-train, showing where the intervention acts."""
     steps = dict(estimator.steps) if hasattr(estimator, "steps") else {}
     if "sampler" not in steps:
         return {"ir_before": None, "ir_after": None, "n_before": None, "n_after": None}
@@ -135,7 +121,7 @@ def _sampler_stats(estimator: Any, X: np.ndarray, y: np.ndarray) -> Dict[str, An
 def evaluate_technique(technique: Dict[str, Any], samples: List[Dict[str, Any]], base: str,
                        n_splits: int = 4, min_test: int = 4,
                        return_proba: bool = False) -> Dict[str, Any]:
-    """OOF cross-company cho một kỹ thuật; kiểm tra fold-validation không bị sampler chạm vào."""
+    """Out-of-fold cross-company metrics for one technique, checking the fold test set stays untouched."""
     groups = np.asarray([s[GROUP_KEY] for s in samples])
     X, y = build_feature_matrix(samples), extract_labels(samples)
     n_splits = max(2, min(n_splits, len(set(groups.tolist()))))
@@ -149,7 +135,7 @@ def evaluate_technique(technique: Dict[str, Any], samples: List[Dict[str, Any]],
         X_test_before = X[test_idx].copy()
         estimator.fit(X[train_idx], y[train_idx])
         proba[test_idx] = estimator.predict_proba(X[test_idx])[:, 1]
-        # CHỐNG RÒ RỈ: tập test của fold phải không bị đổi (sampler chỉ được chạm fold-train)
+        # Leakage guard: the fold test set must stay identical because the sampler only sees fold-train.
         fold_checks.append(bool(np.array_equal(X_test_before, X[test_idx], equal_nan=True)))
         if fold == 0:
             sampler_info = _sampler_stats(estimator, X[train_idx], y[train_idx])
@@ -170,14 +156,14 @@ def evaluate_technique(technique: Dict[str, Any], samples: List[Dict[str, Any]],
         **{key: sampler_info.get(key) for key in ("ir_before", "ir_after", "n_before", "n_after")},
     }
     if return_proba:
-        # Chỉ dùng nội bộ để kiểm định cặp (bootstrap/DeLong) — KHÔNG ghi vào JSON.
+        # Internal only, for the paired bootstrap and DeLong tests; never written to JSON.
         row["_oof_proba"] = proba
         row["_oof_mask"] = mask
     return row
 
 
 def fig_imbalance_real(rows: List[Dict[str, Any]], reference: Dict[str, Any] | None, path: Path) -> None:
-    """Hình — ΔAP / ΔAUROC cross-company so với đối chứng 'không can thiệp'."""
+    """Figure: cross-company delta AP and delta AUROC against the no-intervention control."""
     if not reference:
         return
     base_ap = reference.get("average_precision") or 0.0
@@ -204,7 +190,7 @@ def fig_imbalance_real(rows: List[Dict[str, Any]], reference: Dict[str, Any] | N
 def conclusions(rows: List[Dict[str, Any]], reference: Dict[str, Any] | None,
                 label_ir: float | None,
                 significance: Dict[str, Any] | None = None) -> List[str]:
-    """Nhận xét tự động: kỹ thuật nào hơn đối chứng, bao nhiêu, và cảnh báo phương pháp luận."""
+    """Automatic reading: which techniques beat the control, by how much, plus methodology warnings."""
     lines: List[str] = []
     if not reference:
         return lines
@@ -258,7 +244,7 @@ def conclusions(rows: List[Dict[str, Any]], reference: Dict[str, Any] | None,
 
 
 def markdown_imbalance_real(summary: Dict[str, Any]) -> str:
-    """Sinh `reports/results/imbalance_real.md` (mọi số đọc từ JSON)."""
+    """Render `reports/results/imbalance_real.md` from the JSON payload."""
     rows = summary["rows"]
     lines = ["# Kỹ thuật xử lý lệch lớp trên DỮ LIỆU THẬT (8 công ty)", "",
              f"- Giao thức: {summary['protocol']['cv']}; {summary['protocol']['leakage']}",
@@ -305,7 +291,7 @@ def markdown_imbalance_real(summary: Dict[str, Any]) -> str:
 
 def run(write: bool = True, folds: int = 4, base: str = DEFAULT_BASE, out_dir: Path | None = None,
         fig_dir: Path | None = None, figures: bool = True) -> Dict[str, Any]:
-    """Chạy danh mục kỹ thuật trên corpus thật và ghi `imbalance_real.{json,md}`."""
+    """Run the technique catalogue on the real corpus and write `imbalance_real.{json,md}`."""
     ensure_dirs()
     ensure_utf8_stdio()
     out = Path(out_dir) if out_dir else RESULTS_DIR
@@ -323,7 +309,7 @@ def run(write: bool = True, folds: int = 4, base: str = DEFAULT_BASE, out_dir: P
     best = max((r for r in rows if r.get("average_precision")),
                key=lambda r: r["average_precision"])
 
-    # Kiểm định cặp cho "kỹ thuật tốt nhất vs đối chứng" trên cùng xác suất out-of-fold.
+    # Paired tests of the best technique against the control on the same out-of-fold probabilities.
     significance: Dict[str, Any] = {}
     if reference is not None and best is not reference:
         from forecasting.significance import delong_test, paired_bootstrap
@@ -342,7 +328,7 @@ def run(write: bool = True, folds: int = 4, base: str = DEFAULT_BASE, out_dir: P
                                                  probabilities["reference"],
                                                  "average_precision", n_boot=2000),
             }
-    for row in rows:                      # bỏ mảng xác suất trước khi ghi JSON
+    for row in rows:                      # drop the probability arrays before writing JSON
         row.pop("_oof_proba", None)
         row.pop("_oof_mask", None)
     summary: Dict[str, Any] = {
@@ -372,23 +358,23 @@ def run(write: bool = True, folds: int = 4, base: str = DEFAULT_BASE, out_dir: P
             json.dumps(summary, ensure_ascii=False, indent=2, default=float) + "\n", encoding="utf-8")
         (out / "imbalance_real.md").write_text(markdown_imbalance_real(summary), encoding="utf-8")
     best = max((r for r in rows if r.get("average_precision")), key=lambda r: r["average_precision"])
-    print(f"Lệch lớp (dữ liệu thật): {len(rows)} kỹ thuật; đối chứng AP = "
-          f"{(reference or {}).get('average_precision', float('nan')):.4f}; tốt nhất = {best['name']} "
-          f"({best['average_precision']:.4f}); rò rỉ: "
+    print(f"Imbalance (real data): {len(rows)} techniques; control AP = "
+          f"{(reference or {}).get('average_precision', float('nan')):.4f}; best = {best['name']} "
+          f"({best['average_precision']:.4f}); leakage: "
           f"{'PASS' if all(r.get('fold_test_untouched') for r in rows) else 'FAIL'}")
     return summary
 
 
 def main(argv=None) -> int:
-    """CLI: `python -m scripts.experiment_imbalance_real [--folds N] [--no-write] [--no-figures]`."""
+    """Command-line entry point for `scripts.experiment_imbalance_real`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--folds", type=int, default=4)
-    parser.add_argument("--base", default=DEFAULT_BASE, help="Mô hình nền dùng chung.")
+    parser.add_argument("--base", default=DEFAULT_BASE, help="Base model shared by every technique.")
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--no-figures", action="store_true")
     args = parser.parse_args(argv)
-    print("=== Kỹ thuật xử lý lệch lớp trên DỮ LIỆU THẬT (GroupKFold theo công ty) ===")
+    print("=== Class-imbalance techniques on the real data (GroupKFold by company) ===")
     run(write=not args.no_write, folds=args.folds, base=args.base, figures=not args.no_figures)
     return 0
 

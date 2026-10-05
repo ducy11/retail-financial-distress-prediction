@@ -1,22 +1,8 @@
-"""Giải thích mô hình bằng giá trị SHAP — **tự cài đặt KernelSHAP**, không cần gói `shap`.
+"""Model explanation with SHAP values from a self-implemented KernelSHAP.
 
-Vì sao tự cài đặt: môi trường của đồ án không có gói `shap` (và không cài thêm được), trong khi
-yêu cầu mức Xuất sắc là *"giải thích mô hình (SHAP/Feature Importance)"*. Ở đây cài đúng thuật toán
-**KernelSHAP** của Lundberg & Lee (2017): với hàm giá trị `v(S) = E[f(x) | các feature trong S]`,
-giá trị Shapley là nghiệm bình phương tối thiểu có trọng số (Shapley kernel) trên các liên minh `S`
-được lấy mẫu:
-
-    π(S) = (M − 1) / [ C(M, |S|) · |S| · (M − |S|) ]
-
-Ba cơ chế tự kiểm chứng được ghi vào artifact (không "tin lời"):
-1. **Efficiency (Σφ_j = f(x) − E[f])** — đo `efficiency_gap` thực tế, kỳ vọng ≈ 0.
-2. **Đối chiếu công thức giải tích** cho hàm tuyến tính `f(x) = w·x + b`: φ_j = w_j (x_j − E[x_j])
-   (xem `linear_shap_exact`, được kiểm thử trong `tests/test_explain.py`).
-3. **Đối chiếu thứ hạng** với permutation importance (hai phương pháp độc lập) để phát hiện bất đồng.
-
-Lưu ý phương pháp luận: SHAP giải thích **mô hình**, không phải quan hệ nhân quả. Khi các feature
-đa cộng tuyến mạnh (đồ án: VIF > 10 ở 33/47 cột), giá trị SHAP chia đều "công" cho các biến tương
-quan nên phải đọc kèm cụm tương quan ở `reports/results/eda_deep.md`.
+Implements the KernelSHAP algorithm of Lundberg and Lee (2017) because the `shap` package is unavailable.
+Three self-checks are recorded in the artifact: the efficiency gap, an analytical cross-check on a linear
+function, and a ranking cross-check against permutation importance.
 """
 from __future__ import annotations
 
@@ -25,26 +11,26 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
-#: Số liên minh lấy mẫu mỗi điểm cần giải thích (M = 47 nên không thể liệt kê 2^47).
+#: Number of sampled coalitions per explained point (M = 47, so 2^47 cannot be enumerated).
 DEFAULT_N_COALITIONS = 200
-#: Số mẫu nền dùng để xấp xỉ E[f | x_S] (càng nhiều càng ổn định, càng chậm).
+#: Number of background samples used to approximate E[f | x_S] (more is more stable, slower).
 DEFAULT_N_BACKGROUND = 40
-#: Sàn trọng số để ma trận thiết kế không suy biến khi C(M,k) quá lớn.
+#: Weight floor so the design matrix is not singular when C(M, k) is too large.
 WEIGHT_FLOOR = 1e-18
 
 
 def coalition_weight(n_features: int, size: int) -> float:
-    """Trọng số Shapley kernel π(S) theo kích thước liên minh (loại S rỗng và S đầy đủ)."""
+    """Shapley kernel weight `pi(S) = (M - 1) / (C(M, |S|) * |S| * (M - |S|))`; empty and full coalitions return 0."""
     if size <= 0 or size >= n_features:
         return 0.0
     return (n_features - 1) / (math.comb(n_features, size) * size * (n_features - size))
 
 
 def sample_coalitions(n_features: int, n_coalitions: int, rng: np.random.Generator) -> np.ndarray:
-    """Ma trận bool (n_coalitions × M): mỗi hàng là một liên minh `S` (True = giữ feature của x).
+    """Boolean matrix (n_coalitions x M): each row is a coalition `S` (True = keep x's feature).
 
-    Kích thước liên minh lấy đều trong 1..M−1 rồi lấy ngẫu nhiên tập con — cách lấy mẫu chuẩn của
-    KernelSHAP khi không thể liệt kê toàn bộ 2^M liên minh.
+    Coalition sizes are drawn uniformly from 1..M-1 then a random subset is taken - the standard
+    KernelSHAP sampling when all 2^M coalitions cannot be enumerated.
     """
     if n_features < 2:
         return np.zeros((0, n_features), dtype=bool)
@@ -58,9 +44,9 @@ def sample_coalitions(n_features: int, n_coalitions: int, rng: np.random.Generat
 def linear_shap_exact(weights: Sequence[float], x: Sequence[float],
                       background: Sequence[Sequence[float]], bias: float = 0.0
                       ) -> Tuple[float, np.ndarray]:
-    """Giá trị Shapley GIẢI TÍCH cho hàm tuyến tính f(x) = w·x + b (dùng làm ground truth).
+    """ANALYTICAL Shapley values for a linear function f(x) = w*x + b (used as ground truth).
 
-    φ_0 = w·E[x] + b và φ_j = w_j (x_j − E[x_j]) — đúng cho mọi tập nền, mọi số feature.
+    phi_0 = w*E[x] + b and phi_j = w_j (x_j - E[x_j]) - exact for any background set and feature count.
     """
     w = np.asarray(weights, dtype=float).ravel()
     x = np.asarray(x, dtype=float).ravel()
@@ -72,7 +58,7 @@ def linear_shap_exact(weights: Sequence[float], x: Sequence[float],
 
 
 def pipeline_predict_fn(pipeline: Any) -> Callable[[np.ndarray], np.ndarray]:
-    """Hàm dự đoán xác suất lớp dương từ một `Pipeline` sklearn đã fit."""
+    """Positive-class probability prediction function from a fitted sklearn `Pipeline`."""
     def predict(matrix: np.ndarray) -> np.ndarray:
         return pipeline.predict_proba(np.asarray(matrix, dtype=float))[:, 1]
 
@@ -81,7 +67,7 @@ def pipeline_predict_fn(pipeline: Any) -> Callable[[np.ndarray], np.ndarray]:
 
 def _mixed_predictions(predict_fn: Callable[[np.ndarray], np.ndarray], background: np.ndarray,
                        x: np.ndarray, masks: np.ndarray) -> np.ndarray:
-    """v(S) cho mọi liên minh: trung bình f khi giữ feature trong S, phần còn lại lấy từ nền."""
+    """v(S) for every coalition: average f while keeping the features in S, the rest taken from the background."""
     n_masks, n_features = masks.shape
     n_background = background.shape[0]
     mixed = np.where(masks[:, None, :], x[None, None, :], background[None, :, :])
@@ -92,7 +78,7 @@ def _mixed_predictions(predict_fn: Callable[[np.ndarray], np.ndarray], backgroun
 def kernel_shap_values(predict_fn: Callable[[np.ndarray], np.ndarray], background: np.ndarray,
                        x: np.ndarray, n_coalitions: int = DEFAULT_N_COALITIONS,
                        rng: Optional[np.random.Generator] = None) -> Dict[str, Any]:
-    """Giá trị SHAP cho MỘT điểm `x`: trả `phi` (M,), `base_value`, `prediction`, `efficiency_gap`."""
+    """SHAP values for ONE point `x`: return `phi` (M,), `base_value`, `prediction`, `efficiency_gap`."""
     background = np.asarray(background, dtype=float)
     if background.ndim == 1:
         background = background.reshape(1, -1)
@@ -113,7 +99,7 @@ def kernel_shap_values(predict_fn: Callable[[np.ndarray], np.ndarray], backgroun
     design = masks.astype(float) * sqrt_w[:, None]
     target = (values - base_value) * sqrt_w
     solution, *_ = np.linalg.lstsq(design, target, rcond=None)
-    # KernelSHAP có ràng buộc hiệu suất: hiệu chỉnh đều mỗi φ để Σφ = f(x) − E[f] đúng chính xác.
+    # KernelSHAP has the efficiency constraint: shift every phi equally so sum(phi) = f(x) - E[f] exactly.
     phi = solution + (prediction - base_value - solution.sum()) / n_features
     return {"phi": phi, "base_value": base_value, "prediction": prediction,
             "efficiency_gap": float(prediction - base_value - phi.sum()),
@@ -123,7 +109,7 @@ def kernel_shap_values(predict_fn: Callable[[np.ndarray], np.ndarray], backgroun
 def kernel_shap_matrix(predict_fn: Callable[[np.ndarray], np.ndarray], background: np.ndarray,
                        X_explain: np.ndarray, n_coalitions: int = DEFAULT_N_COALITIONS,
                        random_state: int = 0) -> Dict[str, Any]:
-    """Giá trị SHAP cho cả ma trận điểm cần giải thích (mỗi hàng một điểm) + chỉ số tự kiểm chứng."""
+    """SHAP values for a whole matrix of points to explain (one row per point) + self-check metrics."""
     X_explain = np.asarray(X_explain, dtype=float)
     rng = np.random.default_rng(random_state)
     rows = [kernel_shap_values(predict_fn, background, X_explain[i], n_coalitions=n_coalitions,
@@ -144,13 +130,13 @@ def kernel_shap_matrix(predict_fn: Callable[[np.ndarray], np.ndarray], backgroun
 
 
 def mean_abs_shap(phi: np.ndarray) -> np.ndarray:
-    """Độ quan trọng toàn cục: trung bình |φ_j| trên các điểm đã giải thích (giống `shap` summary)."""
+    """Global importance: mean |phi_j| over the explained points (same as the `shap` summary)."""
     return np.mean(np.abs(np.asarray(phi, dtype=float)), axis=0)
 
 
 def permutation_importance_ranking(pipeline: Any, X: np.ndarray, y: np.ndarray,
                                    n_repeats: int = 5, random_state: int = 0) -> Optional[np.ndarray]:
-    """ΔAUROC khi hoán vị từng cột (đối chiếu độc lập với SHAP); `None` nếu chỉ có một lớp."""
+    """Delta AUROC when permuting each column (independent cross-check with SHAP); `None` if a single class."""
     from sklearn.inspection import permutation_importance
 
     y = np.asarray(y)
@@ -162,7 +148,7 @@ def permutation_importance_ranking(pipeline: Any, X: np.ndarray, y: np.ndarray,
 
 
 def rank_agreement(a: np.ndarray, b: np.ndarray, top: int = 15) -> Dict[str, Any]:
-    """Mức đồng thuận giữa hai bảng xếp hạng feature: Spearman + Jaccard của top-k."""
+    """Agreement between two feature rankings: Spearman + Jaccard of the top-k."""
     from scipy.stats import spearmanr
 
     a = np.asarray(a, dtype=float)

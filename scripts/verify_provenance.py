@@ -1,20 +1,7 @@
-"""Kiểm chứng NGUỒN GỐC dữ liệu — chứng minh số liệu là THẬT, không bịa.
+"""Prove the prepared numbers are real by tracing every cell back to the SEC snapshot.
 
-Lệnh: python -m scripts.verify_provenance [--quick]
-
-Vì sao cần (và khác gì `scripts/audit_data.py`): `audit_data` kiểm tra tính nhất quán **bên trong**
-repo (số liệu trong báo cáo ↔ artifact, split ↔ manifest, đẳng thức kế toán…). Script này đi **ra
-ngoài** bộ dữ liệu prepared: mở lại snapshot SEC thô (`data/sec/raw/*-companyfacts.json`, ~129 MB —
-đúng file đã tải từ API công khai của SEC) và xác nhận từng con số bằng ba phép kiểm độc lập:
-
-1. **HASH**: SHA-256 của mọi file raw phải khớp `data/sec/downloads.json` (chống sửa tay dữ liệu).
-2. **FACT TỒN TẠI THẬT**: với **mọi** fact ghi trong `sources` của
-   `data/retail-expanded/*-16-indicators-vnd.json` (tag, start/end, val, accn, form), phải tìm thấy
-   bản ghi y hệt trong companyfacts của SEC ⇒ con số trong repo chính là con số SEC đã công bố.
-3. **QUY ĐỔI**: `*_vnd` phải bằng `val × 25.000` (đúng `fx_policy.vnd_per_usd` khai trong file),
-   và chỉ tiêu không có fact (`method = "absent"`) phải là `null` (không được bịa số).
-
-Kết quả ghi ra `reports/results/provenance.{json,md}`; exit code ≠ 0 nếu có bất kỳ mismatch nào.
+Reopens the raw companyfacts files and checks that each SHA-256 matches the registry, that every recorded
+fact exists verbatim in the SEC data, and that each `*_vnd` value equals the declared rate or is null.
 """
 from __future__ import annotations
 
@@ -34,7 +21,7 @@ VND_RATE_KEY = "vnd_per_usd"
 
 
 def sha256_of(path: Path) -> str:
-    """SHA-256 của một file (đọc theo khối để không nạp cả file lớn vào RAM)."""
+    """SHA-256 of a file, read in blocks so large snapshots never load into RAM at once."""
     digest = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
@@ -43,28 +30,28 @@ def sha256_of(path: Path) -> str:
 
 
 def load_downloads(path: Path = DOWNLOADS) -> Dict[str, Dict[str, Any]]:
-    """Đọc registry tải SEC (CIK, URL, sha256, thời điểm tải)."""
+    """Read the SEC download registry (CIK, URL, sha256, download time)."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def check_hashes(downloads: Dict[str, Dict[str, Any]], raw_dir: Path = RAW_DIR
                  ) -> List[Dict[str, str]]:
-    """Đối chiếu SHA-256 từng file raw với registry; trả danh sách mismatch."""
+    """Compare each raw file's SHA-256 against the registry and return the mismatches."""
     mismatches: List[Dict[str, str]] = []
     for ticker, meta in sorted(downloads.items()):
         raw = raw_dir / f"{ticker}-companyfacts.json"
         if not raw.exists():
-            mismatches.append({"ticker": ticker, "reason": "thiếu file raw"})
+            mismatches.append({"ticker": ticker, "reason": "raw file missing"})
             continue
         actual = sha256_of(raw)
         if actual.lower() != str(meta.get("sha256", "")).lower():
-            mismatches.append({"ticker": ticker, "reason": "sha256 khác registry",
+            mismatches.append({"ticker": ticker, "reason": "sha256 differs from the registry",
                                "expected": str(meta.get("sha256")), "actual": actual})
     return mismatches
 
 
 def iter_facts(raw: Dict[str, Any], tag: str) -> Iterable[Dict[str, Any]]:
-    """Mọi bản ghi của một tag trong companyfacts (mọi taxonomy, mọi unit)."""
+    """Every record of one tag in companyfacts, across all taxonomies and units."""
     for _taxonomy, tags in (raw.get("facts") or {}).items():
         entry = tags.get(tag)
         if not entry:
@@ -75,7 +62,7 @@ def iter_facts(raw: Dict[str, Any], tag: str) -> Iterable[Dict[str, Any]]:
 
 
 def fact_present(raw: Dict[str, Any], fact: Dict[str, Any]) -> bool:
-    """True nếu có bản ghi SEC khớp (tag, end, val, accn, form[, start]) với fact đã ghi."""
+    """True when a SEC record matches the recorded fact on tag, end, val, accn, form and start."""
     for item in iter_facts(raw, str(fact.get("tag"))):
         if item.get("end") != fact.get("end") or item.get("val") != fact.get("val"):
             continue
@@ -90,12 +77,11 @@ def fact_present(raw: Dict[str, Any], fact: Dict[str, Any]) -> bool:
 
 
 def derived_vnd(facts: List[Dict[str, Any]], rate: int, method: str) -> int | None:
-    """Giá trị VND mà file phải có, tính TỪ các fact SEC theo đúng `method` đã khai.
+    """VND value the file must hold, derived from the SEC facts under the declared `method`.
 
-    Quy tắc (đối chiếu `data/retail-expanded/*-16-indicators-vnd.json`):
-    - `instant` / `reported_quarter` / `reported_first_quarter`: một fact ⇒ `val × rate`;
-    - `current_ytd_minus_previous_ytd`: hai fact luỹ kế ⇒ `(val_đầu − val_trước) × rate`;
-    - method khác (chưa hỗ trợ) ⇒ `None` (báo riêng, KHÔNG coi là lỗi dữ liệu).
+    Instant, reported_quarter and reported_first_quarter multiply a single value by the rate, while
+    current_ytd_minus_previous_ytd subtracts the two year-to-date values first. An unsupported method
+    returns None and is reported separately rather than treated as a data error.
     """
     values = [int(f.get("val") or 0) for f in facts]
     if not values:
@@ -108,7 +94,7 @@ def derived_vnd(facts: List[Dict[str, Any]], rate: int, method: str) -> int | No
 
 
 def verify_document(ticker: str, doc: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Kiểm fact thật + quy đổi VND cho MỘT file retail-expanded."""
+    """Verify fact existence and the VND conversion for one retail-expanded file."""
     rate = int(doc.get("fx_policy", {}).get(VND_RATE_KEY, 0) or 0)
     rows = doc.get("rows") or []
     checked = missing_fact = bad_vnd = absent_filled = absent_checked = unsupported = 0
@@ -121,13 +107,13 @@ def verify_document(ticker: str, doc: Dict[str, Any], raw: Dict[str, Any]) -> Di
             source = sources.get(field) or {}
             facts = source.get("facts") or []
             method = str(source.get("method") or "")
-            if not facts:  # `method = "absent"`: thiếu ở SEC ⇒ phải là null, KHÔNG được bịa
+            if not facts:  # absent method: no SEC fact, so the value must be null, never invented
                 absent_checked += 1
                 if raw_value not in (None, ""):
                     absent_filled += 1
                     if len(examples) < 6:
                         examples.append({"row": index, "sample": label, "field": field,
-                                         "problem": "không có fact nhưng vẫn có giá trị"})
+                                         "problem": "no fact exists but a value was stored"})
                 continue
             checked += 1
             for fact in facts:
@@ -135,7 +121,7 @@ def verify_document(ticker: str, doc: Dict[str, Any], raw: Dict[str, Any]) -> Di
                     missing_fact += 1
                     if len(examples) < 6:
                         examples.append({"row": index, "sample": label, "field": field,
-                                         "problem": "fact không tồn tại trong companyfacts SEC",
+                                         "problem": "fact absent from the SEC companyfacts",
                                          "tag": fact.get("tag"), "end": fact.get("end"),
                                          "val": fact.get("val"), "accn": fact.get("accn")})
             expected = derived_vnd(facts, rate, method)
@@ -150,7 +136,7 @@ def verify_document(ticker: str, doc: Dict[str, Any], raw: Dict[str, Any]) -> Di
                 bad_vnd += 1
                 if len(examples) < 6:
                     examples.append({"row": index, "sample": label, "field": field,
-                                     "problem": "quy đổi VND sai", "method": method,
+                                     "problem": "wrong VND conversion", "method": method,
                                      "expected_vnd": expected, "actual_vnd": raw_value})
     return {"ticker": ticker, "n_rows": len(rows), "fx_rate": rate,
             "n_cells": len(rows) * len(BASE_FIELDS), "n_absent_cells": absent_checked,
@@ -159,9 +145,8 @@ def verify_document(ticker: str, doc: Dict[str, Any], raw: Dict[str, Any]) -> Di
             "n_unsupported_method": unsupported, "examples": examples}
 
 
-
 def run(quick: bool = False) -> Dict[str, Any]:
-    """Chạy toàn bộ kiểm chứng; ghi `reports/results/provenance.{json,md}`."""
+    """Run every check and write `reports/results/provenance.{json,md}`."""
     ensure_utf8_stdio()
     downloads = load_downloads()
     hash_mismatches = check_hashes(downloads)
@@ -203,16 +188,16 @@ def run(quick: bool = False) -> Dict[str, Any]:
     (RESULTS_DIR / "provenance.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
     (RESULTS_DIR / "provenance.md").write_text(markdown_provenance(result), encoding="utf-8")
-    print(f"Kiểm chứng nguồn gốc: {totals['n_raw_files_hashed']} file SEC đã hash "
-          f"({totals['n_hash_mismatch']} lệch); {totals['n_facts_checked']} fact đối chiếu raw "
-          f"({totals['n_facts_missing_in_sec']} không tìm thấy); "
-          f"{totals['n_vnd_mismatch']} lỗi quy đổi; {totals['n_absent_but_filled']} ô bịa số "
-          f"⇒ {'ĐẠT' if totals['ok'] else 'CÓ VẤN ĐỀ'}")
+    print(f"Provenance: {totals['n_raw_files_hashed']} SEC files hashed "
+          f"({totals['n_hash_mismatch']} mismatched); {totals['n_facts_checked']} facts checked against "
+          f"the raw data ({totals['n_facts_missing_in_sec']} not found); "
+          f"{totals['n_vnd_mismatch']} conversion errors; {totals['n_absent_but_filled']} invented cells "
+          f"=> {'PASS' if totals['ok'] else 'PROBLEMS FOUND'}")
     return result
 
 
 def markdown_provenance(result: Dict[str, Any]) -> str:
-    """Sinh `reports/results/provenance.md` (mọi số đọc từ dict kết quả)."""
+    """Render `reports/results/provenance.md` from the result mapping."""
     from forecasting.eda import markdown_table
 
     totals = result["totals"]
@@ -271,7 +256,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--quick", action="store_true",
-                        help="chỉ kiểm 2 công ty đầu (nhanh, không đọc hết 129 MB)")
+                        help="check only the first two companies (fast, avoids the full 129 MB)")
     args = parser.parse_args(list(argv) if argv is not None else None)
     result = run(quick=args.quick)
     return 0 if result["totals"]["ok"] else 1

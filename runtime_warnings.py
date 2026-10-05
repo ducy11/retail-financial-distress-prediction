@@ -1,30 +1,33 @@
-"""Lọc CẢNH BÁO VÔ HẠI của thư viện để log CLI/test sạch — không che cảnh báo của code dự án.
+"""Filter known harmless library warnings so CLI and test logs stay clean.
 
-Vì sao cần một chỗ chung thay vì lọc rải rác?
-1. Cảnh báo phát sinh từ CẶP PHIÊN BẢN thư viện, không phải từ logic của đề tài:
-   - scikit-learn 1.6 truyền tuỳ chọn `iprint` xuống scipy 1.18 (scipy đã bỏ tuỳ chọn này) ⇒ MỖI lần
-     fit `LogisticRegression` in ra `OptimizeWarning: Unknown solver options: iprint`;
-   - matplotlib 3.9 gọi API đã deprecate của pyparsing ⇒ `PyparsingDeprecationWarning` khi vẽ hình.
-   Cả hai KHÔNG làm đổi tham số/kết quả mô hình (đã kiểm chứng: metric giống hệt khi bật/tắt lọc).
-2. `unittest` (khi chạy `python -m unittest ...`) gọi `warnings.simplefilter("default")` SAU khi đã
-   import module test, nên filter đặt ở cấp module bị "che" và cảnh báo lại hiện ra. Vì vậy các
-   module test gọi lại `quiet_library_warnings()` trong `setUpModule()` (chạy sau runner).
+The filters are centralized here because the warnings come from library version pairs, not from this
+project's logic:
+- scikit-learn 1.6 passes an `iprint` option to scipy 1.18, which dropped it, so every
+  `LogisticRegression` fit prints `OptimizeWarning: Unknown solver options: iprint`.
+- matplotlib 3.9 calls a deprecated pyparsing API, so drawing a figure prints
+  `PyparsingDeprecationWarning`.
+Both leave model parameters and metrics unchanged; results are identical with and without filtering.
 
-Chỉ lọc ĐÚNG thông điệp/đối tượng đã biết; mọi cảnh báo khác (kể cả của code dự án) vẫn hiển thị.
-Gỡ module này khi nâng cấp scikit-learn/scipy/matplotlib sang bộ phiên bản tương thích.
+`unittest`, when running `python -m unittest ...`, calls `warnings.simplefilter("default")` after test
+modules are imported, so a filter set at import time is shadowed and the warning reappears. Test
+modules therefore call `quiet_library_warnings()` again inside `setUpModule()`.
+
+Only the exact known messages and owners are filtered; every other warning, including ones from this
+project's own code, still shows. Remove this module once scikit-learn, scipy and matplotlib are
+upgraded to a compatible set.
 """
 from __future__ import annotations
 
 import warnings
 
-try:  # `OptimizeWarning` là cảnh báo của scipy
+try:  # `OptimizeWarning` is a scipy warning
     from scipy.optimize import OptimizeWarning
-except Exception:  # pragma: no cover - môi trường không có scipy
+except Exception:  # pragma: no cover - environment without scipy
     class OptimizeWarning(UserWarning):  # type: ignore[no-redef]
-        """Fallback khi scipy không cung cấp `OptimizeWarning`."""
+        """Fallback when scipy does not provide `OptimizeWarning`."""
 
 
-#: Các filter vô hại đã biết (kwarg đúng chuẩn `warnings.filterwarnings`).
+#: Known harmless filters (kwargs matching `warnings.filterwarnings`).
 LIBRARY_WARNING_FILTERS = (
     {"message": "Unknown solver options: iprint", "category": OptimizeWarning},
     {"category": DeprecationWarning, "module": r"matplotlib\..*"},
@@ -33,24 +36,24 @@ LIBRARY_WARNING_FILTERS = (
 
 
 def _pattern_text(value: object) -> str:
-    """Chuỗi pattern của một filter (`warnings` lưu dạng regex đã compile hoặc `None`)."""
+    """Pattern string of one filter (`warnings` stores a compiled regex or `None`)."""
     if value is None:
         return ""
     return getattr(value, "pattern", str(value))
 
 
 def _filter_key(action: str, message: object, category: type, module: object) -> tuple:
-    """Khoá nhận dạng một filter (dùng để gỡ bản cũ trước khi chèn lại)."""
+    """Identity key of one filter (used to drop the old copy before re-inserting)."""
     return (action, _pattern_text(message), category, _pattern_text(module))
 
 
 def quiet_library_warnings() -> None:
-    """Đưa các filter vô hại lên ĐẦU `warnings.filters` (mỗi filter chỉ giữ đúng một bản).
+    """Move the harmless filters to the front of `warnings.filters`, keeping one copy each.
 
-    Phải chèn lại ở ĐẦU chứ không chỉ "thêm nếu chưa có": `unittest` gọi
-    `warnings.simplefilter("default")` ngay trước khi chạy test, chèn `default` vào đầu danh sách
-    và như vậy filter cũ (dù vẫn còn trong danh sách) bị "che" — cảnh báo `iprint` lại in ra. Vì
-    vậy hàm này gỡ bản cũ rồi chèn lại lên đầu; gọi bao nhiêu lần cũng an toàn, danh sách không phình.
+    Re-inserting at the front is required: `unittest` calls `warnings.simplefilter("default")` just
+    before running tests, which pushes `default` to the front and shadows the older filter (still in
+    the list), so the `iprint` warning prints again. This drops the stale copy and re-inserts it at
+    the front, so repeated calls are safe and the list never grows.
     """
     for flt in LIBRARY_WARNING_FILTERS:
         key = _filter_key("ignore", flt.get("message", ""), flt["category"], flt.get("module", ""))

@@ -1,21 +1,8 @@
-"""EDA chuyên sâu — thuần numpy/scipy/scikit-learn, KHÔNG cần pandas.
+"""Deep exploratory analysis of the feature matrix, labels, relationships and drift.
 
-Bổ sung cho `scripts/eda.py` (đã có: độ phủ chỉ tiêu, cân bằng lớp, boxplot, chuỗi thời gian)
-bốn nhóm kiểm tra còn thiếu trước khi tin vào metric:
-
-1. Chất lượng MA TRẬN FEATURE (47 cột): tỉ lệ thiếu theo split, cột hằng/gần hằng, độ lệch
-   (`skew`), đuôi nặng (`kurtosis`), outlier theo IQR và |z| > 3, dải giá trị vô lý.
-2. NHÃN ở cấp thực thể: entropy/Gini, Imbalance Ratio theo split/công ty/năm/quý, độ dài "spell"
-   liên tiếp, xác suất chuyển trạng thái, công ty nhãn đơn lớp, số thực thể hiệu dụng.
-3. QUAN HỆ: feature ↔ nhãn (point-biserial, AUC 1 feature + hướng, mutual information, lift theo
-   decile, BH-FDR) và feature ↔ feature (Pearson/Spearman, cụm đa cộng tuyến, số chiều hiệu dụng).
-4. RÒ RỈ & DỊCH CHUYỂN: KS 2 mẫu + standardized mean difference + PSI train→test, mức chồng lấn
-   lịch sử giữa các mẫu (temporal overlap), tỉ lệ dòng trùng feature giữa các split, và
-   "missingness có mang thông tin nhãn" (chi-square).
-
-Nguyên tắc: mọi hàm nhận mảng/dict thuần (test độc lập được, không đọc file), CLI nằm ở
-`scripts/eda_deep.py` — giống cách tách `scripts/eda.py` (CLI) khỏi `forecasting/features.py` (logic).
-EDA **không** fit mô hình và **không** dùng test để chọn cấu hình.
+Every function takes plain arrays or dicts so it is independently testable, and the CLI lives in
+`scripts/eda_deep.py`. The analysis fits no model and never uses test data to pick a configuration, but
+does compare train and test distributions for drift.
 """
 from __future__ import annotations
 
@@ -36,43 +23,39 @@ from .features import RATIO_PARTS, build_feature_matrix, extract_labels, feature
 
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402  (backend phải đặt trước khi import pyplot)
+import matplotlib.pyplot as plt  # noqa: E402  (backend must be set before importing pyplot)
 
-#: Bốn split chuẩn trong prepared.
+#: The four standard splits in prepared.
 SPLITS = ("train", "validation", "test", "purged")
-#: Split dùng để tính thống kê feature (purged là dải đệm, không phải tập học).
+#: Splits used for feature statistics (purged is a buffer band, not a learning set).
 FEATURE_SPLITS = ("train", "validation", "test")
-#: Cặp so sánh dịch chuyển phân phối (chuỗi thời gian ⇒ train cũ hơn test).
+#: Distribution-drift comparison pair (time series => train is older than test).
 REFERENCE_SPLIT = "train"
 COMPARISON_SPLIT = "test"
 
-# ---------------------------------------------------------------------------
-# Ngưỡng cảnh báo (dùng cho phần "kết luận tự động" trong báo cáo)
-# ---------------------------------------------------------------------------
-#: Cỡ mẫu tối thiểu sau khi bỏ NaN để tin một hệ số tương quan / AUC 1 feature.
+# Warning thresholds used by the automatic conclusions in the report.
+#: Minimum sample size after dropping NaN to trust a correlation / single-feature AUC.
 MIN_PAIR_N = 30
-#: Tỉ lệ thiếu trên 20% ⇒ feature phải impute nhiều, cảnh báo.
+#: Missing rate above 20% => heavy imputation needed, warn.
 MISSING_WARN_PCT = 20.0
-#: |skew| > 5 và excess kurtosis > 20 ⇒ đuôi nặng, tỷ số có thể "nổ" khi mẫu số nhỏ.
+#: |skew| > 5 and excess kurtosis > 20 => heavy tails, a ratio can "blow up" on small denominators.
 SKEW_WARN = 5.0
 KURTOSIS_WARN = 20.0
-#: Trên 5% số mẫu nằm ngoài [Q1 - 1.5 IQR, Q3 + 1.5 IQR] ⇒ nên xem lại vì sao.
+#: More than 5% of samples outside [Q1 - 1.5 IQR, Q3 + 1.5 IQR] => worth revisiting why.
 OUTLIER_WARN_PCT = 5.0
-#: KS statistic ≥ 0.30 hoặc |SMD| ≥ 0.50 ⇒ phân phối train/test dịch chuyển đáng kể.
+#: KS statistic >= 0.30 or |SMD| >= 0.50 => train/test distributions drift noticeably.
 DRIFT_KS_WARN = 0.30
 DRIFT_SMD_WARN = 0.50
-#: |r| ≥ 0.90 được coi là cùng một cụm thông tin (đa cộng tuyến).
+#: |r| >= 0.90 is treated as the same information cluster (collinearity).
 CORR_CLUSTER_THRESHOLD = 0.90
-#: Ngưỡng phân loại mất cân bằng — giữ GIỐNG `scripts/class_balance.py` để không mâu thuẫn.
+#: Imbalance classification thresholds, kept identical to `scripts/class_balance.py` for consistency.
 BALANCED_MIN_MINORITY_PCT = 40.0
 SEVERE_MAX_MINORITY_PCT = 20.0
 
 
-# ---------------------------------------------------------------------------
-# 0. Thống kê cơ bản dùng chung (entropy, Gini, Imbalance Ratio, BH-FDR)
-# ---------------------------------------------------------------------------
+# Shared statistics: entropy, Gini impurity, imbalance ratio and BH-FDR correction.
 def shannon_entropy(counts: Sequence[int]) -> float:
-    """Entropy Shannon (bit): 0 bit = một lớp, 1 bit = cân bằng nhị phân."""
+    """Shannon entropy (bits): 0 bits = one class, 1 bit = balanced binary."""
     total = float(sum(counts))
     if total <= 0:
         return 0.0
@@ -80,7 +63,7 @@ def shannon_entropy(counts: Sequence[int]) -> float:
 
 
 def normalized_entropy(counts: Sequence[int]) -> float:
-    """Entropy / log2(số lớp) — so sánh được giữa các bài toán khác số lớp."""
+    """Entropy / log2(number of classes) - comparable across problems with different class counts."""
     classes = sum(1 for c in counts if c > 0)
     if classes <= 1:
         return 0.0
@@ -88,7 +71,7 @@ def normalized_entropy(counts: Sequence[int]) -> float:
 
 
 def gini_impurity(counts: Sequence[int]) -> float:
-    """Gini impurity: 0 = thuần nhất, 0.5 = cân bằng nhị phân."""
+    """Gini impurity: 0 = pure, 0.5 = balanced binary."""
     total = float(sum(counts))
     if total <= 0:
         return 0.0
@@ -96,7 +79,7 @@ def gini_impurity(counts: Sequence[int]) -> float:
 
 
 def imbalance_ratio(counts: Sequence[int]) -> float:
-    """IR = mẫu đa số / mẫu thiểu số (``inf`` nếu chỉ có một lớp)."""
+    """IR = majority samples / minority samples (``inf`` when there is only one class)."""
     if len(counts) < 2:
         return float("inf")
     positive, negative = int(counts[0]), int(counts[1])
@@ -106,7 +89,7 @@ def imbalance_ratio(counts: Sequence[int]) -> float:
 
 
 def effective_number(counts: Sequence[int]) -> float:
-    """Số thực thể hiệu dụng 1/Σp² — 8 công ty cân bằng = 8.0; một công ty chiếm 90% ⇒ gần 1."""
+    """Effective number of entities 1/sum(p^2) - 8 balanced companies = 8.0; one company at 90% -> near 1."""
     total = float(sum(counts))
     if total <= 0:
         return 0.0
@@ -114,7 +97,7 @@ def effective_number(counts: Sequence[int]) -> float:
 
 
 def imbalance_level(minority_pct: float) -> str:
-    """Phân loại mức mất cân bằng theo tỉ lệ % lớp thiểu số (khớp `scripts/class_balance.py`)."""
+    """Classify imbalance by minority-class percentage (matches `scripts/class_balance.py`)."""
     if minority_pct >= BALANCED_MIN_MINORITY_PCT:
         return "balanced"
     if minority_pct >= SEVERE_MAX_MINORITY_PCT:
@@ -123,9 +106,10 @@ def imbalance_level(minority_pct: float) -> str:
 
 
 def benjamini_hochberg(p_values: Sequence[Optional[float]]) -> List[Optional[float]]:
-    """q-value Benjamini–Hochberg (giữ nguyên vị trí; `None` cho giá trị thiếu).
+    """Benjamini-Hochberg q-values (keeps positions; `None` for missing values).
 
-    Vì sao cần: 47 feature × nhiều kiểm định ⇒ với α = 0.05 sẽ có ~2 "phát hiện" thuần ngẫu nhiên.
+    With 47 features under many tests, a raw alpha of 0.05 would yield roughly two purely random
+    findings, so q-values control the false discovery rate.
     """
     indexed = [(i, float(p)) for i, p in enumerate(p_values)
                if p is not None and math.isfinite(float(p))]
@@ -143,13 +127,13 @@ def benjamini_hochberg(p_values: Sequence[Optional[float]]) -> List[Optional[flo
 
 
 def _finite(values: np.ndarray) -> np.ndarray:
-    """Bỏ NaN/inf khỏi một dãy."""
+    """Drop NaN/inf from a sequence."""
     arr = np.asarray(values, dtype=float).ravel()
     return arr[np.isfinite(arr)]
 
 
 def _round(value: Any, digits: int = 6) -> Any:
-    """Làm tròn để JSON/markdown ổn định giữa các lần chạy; NaN/inf → None."""
+    """Round so JSON/markdown stay stable across runs; NaN/inf -> None."""
     try:
         f = float(value)
     except (TypeError, ValueError):
@@ -160,10 +144,10 @@ def _round(value: Any, digits: int = 6) -> Any:
 
 
 def _median_impute(X: np.ndarray) -> np.ndarray:
-    """Median-impute cho MỤC ĐÍCH EDA (MI, ma trận tương quan, PCA).
+    """Median-impute for EDA PURPOSES (MI, correlation matrix, PCA).
 
-    Cố ý KHÔNG dùng cho mô hình: giá trị thay thế phải được học trong Pipeline trên từng
-    fold-train, nếu không sẽ là rò rỉ thống kê (xem `forecasting/models.py`).
+    Deliberately NOT used for the model: replacement values must be learned inside the Pipeline per
+    fold-train, otherwise it is statistical leakage (see `forecasting/models.py`).
     """
     arr = np.array(X, dtype=float, copy=True)
     for j in range(arr.shape[1]):
@@ -174,21 +158,19 @@ def _median_impute(X: np.ndarray) -> np.ndarray:
     return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-# ---------------------------------------------------------------------------
-# 0b. Tiện ích chọn dữ liệu cho EDA CƠ BẢN (mục 3.1–3.6 của báo cáo)
-# ---------------------------------------------------------------------------
-#: Hệ số quy đổi chỉ tiêu tiền VND → "nghìn tỷ VND" cho bảng mô tả dễ đọc.
+# Data-selection helpers for the basic EDA report sections.
+#: Conversion factor from VND amounts to "trillion VND" for readable descriptive tables.
 VND_PER_TRILLION = 1e12
 
 
 def latest_ratio_names() -> List[str]:
-    """Tên 14 tỷ số ở dạng "giá trị quý gần nhất" (`*_latest`) — đơn vị so sánh được giữa công ty."""
+    """Names of the 14 ratios in "latest quarter value" form (`*_latest`) - comparable across companies."""
     return [f"{name}_latest" for name in RATIO_PARTS]
 
 
 def latest_ratio_matrix(samples: Sequence[Dict[str, Any]]
                         ) -> Tuple[np.ndarray, List[str], np.ndarray]:
-    """Ma trận 14 tỷ số `*_latest` + vector nhãn (chọn cột từ `feature_names()` theo tên)."""
+    """Matrix of the 14 `*_latest` ratios + label vector (columns selected from `feature_names()` by name)."""
     names = latest_ratio_names()
     full = [str(name) for name in feature_names()]
     index = [full.index(name) for name in names]
@@ -198,9 +180,9 @@ def latest_ratio_matrix(samples: Sequence[Dict[str, Any]]
 def indicator_value_matrix(rows_by_ticker: Dict[str, List[Dict[str, Any]]],
                            fields: Sequence[str] | None = None,
                            scale: float = VND_PER_TRILLION) -> Tuple[np.ndarray, List[str]]:
-    """Ma trận giá trị 16 chỉ tiêu (mọi công ty × mọi quý) đã quy đổi đơn vị (mặc định nghìn tỷ VND).
+    """Matrix of the 16 indicator values (every company x every quarter) in converted units (default trillion VND).
 
-    Dùng cho bảng thống kê mô tả DỮ LIỆU GỐC (khác ma trận feature 47 cột của mô hình).
+    Used for descriptive statistics of the RAW DATA (different from the model's 47-column feature matrix).
     """
     columns = [str(f) for f in (fields or BASE_FIELDS)]
     rows = [row for rows in rows_by_ticker.values() for row in rows]
@@ -212,16 +194,14 @@ def indicator_value_matrix(rows_by_ticker: Dict[str, List[Dict[str, Any]]],
     return matrix, columns
 
 
-# ---------------------------------------------------------------------------
-# 1. Phân tích sâu nhãn/lớp (imbalance, entropy, spell, chuyển trạng thái)
-# ---------------------------------------------------------------------------
+# Label and class analysis: imbalance, entropy, run length and state transitions.
 def _target_end(sample: Dict[str, Any]) -> str:
-    """Ngày kết thúc kỳ target — dùng để sắp thứ tự thời gian trong mỗi công ty."""
+    """Target-period end date - used to sort by time within each company."""
     return str(sample["request"]["target_period_end"])
 
 
 def distribution_of(labels: Sequence[int]) -> Dict[str, Any]:
-    """Thống kê một dãy nhãn 0/1: đếm, %, IR, entropy, Gini, baseline lớp đa số."""
+    """Statistics for a 0/1 label sequence: counts, %, IR, entropy, Gini, majority-class baseline."""
     values = [int(v) for v in labels]
     n = len(values)
     if n == 0:
@@ -247,12 +227,12 @@ def distribution_of(labels: Sequence[int]) -> Dict[str, Any]:
 
 
 def _switches(labels: Sequence[int]) -> int:
-    """Số lần nhãn ĐỔI trạng thái giữa hai quý liên tiếp (0 ⇒ nhãn là hằng số của công ty)."""
+    """Number of label FLIPS between consecutive quarters (0 => the label is constant per company)."""
     return int(sum(1 for a, b in zip(labels, labels[1:]) if a != b))
 
 
 def _max_run(labels: Sequence[int], value: int) -> int:
-    """Chuỗi (spell) dài nhất của một giá trị nhãn — đo mức "dính" theo thời gian."""
+    """Longest run (spell) of one label value - measures how "sticky" the label is over time."""
     best = current = 0
     for v in labels:
         current = current + 1 if int(v) == value else 0
@@ -261,7 +241,7 @@ def _max_run(labels: Sequence[int], value: int) -> int:
 
 
 def _transition_counts(sequences: Sequence[Sequence[int]]) -> Dict[str, int]:
-    """Đếm chuyển trạng thái nhãn giữa hai quý liên tiếp, gộp trên mọi công ty."""
+    """Count label state transitions between consecutive quarters, pooled over all companies."""
     counts = {"0->0": 0, "0->1": 0, "1->0": 0, "1->1": 0}
     for seq in sequences:
         for a, b in zip(seq, seq[1:]):
@@ -270,16 +250,16 @@ def _transition_counts(sequences: Sequence[Sequence[int]]) -> Dict[str, int]:
 
 
 def _calendar_quarter(date_text: str) -> str:
-    """``"2014-07-31"`` → ``"Q3"`` (quý dương lịch của kỳ target — kiểm tra mùa vụ)."""
+    """``"2014-07-31"`` -> ``"Q3"`` (calendar quarter of the target period - seasonality check)."""
     text = str(date_text)
     month = int(text[5:7]) if len(text) >= 7 else 0
     return f"Q{(month - 1) // 3 + 1}" if month else "?"
 
 
 def label_deep_dive(samples_by_split: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
-    """Phân tích nhãn theo 4 trục: split, công ty, thời gian, chuỗi trạng thái.
+    """Analyze labels along 4 axes: split, company, time, state runs.
 
-    Trả về dict thuần JSON: ``per_split``, ``overall``, ``per_ticker``, ``per_year``,
+    Returns a pure JSON dict: ``per_split``, ``overall``, ``per_ticker``, ``per_year``,
     ``per_quarter``, ``transitions``, ``entities``, ``flags``.
     """
     pooled = [s for name in SPLITS for s in samples_by_split.get(name, [])]
@@ -354,14 +334,13 @@ def label_deep_dive(samples_by_split: Dict[str, List[Dict[str, Any]]]) -> Dict[s
     }
 
 
-# ---------------------------------------------------------------------------
-# 2. Chất lượng ma trận feature (missing, hằng số, đuôi nặng, outlier)
-# ---------------------------------------------------------------------------
+# Feature matrix quality: missingness, constant columns, heavy tails and outliers.
 def feature_statistics(X: np.ndarray, names: Sequence[str]) -> List[Dict[str, Any]]:
-    """Thống kê từng cột feature: missing %, hằng/gần hằng, phân vị, skew, đuôi, outlier.
+    """Per-column feature stats: missing %, constant/near-constant, quantiles, skew, tails, outliers.
 
-    Vì sao: 47 cột được tạo bởi công thức tỷ số ⇒ dễ có cột gần như hằng số (vô dụng),
-    cột thiếu > 50% (impute chi phối) và cột đuôi cực nặng (`debt_to_equity` khi vốn chủ nhỏ).
+    The 47 columns come from ratio formulas, so an almost-constant column (useless), a column missing
+    more than 50% (imputation dominates) and a very heavy-tailed column (`debt_to_equity` when equity is
+    small) can all appear.
     """
     records: List[Dict[str, Any]] = []
     for j, name in enumerate(names):
@@ -388,7 +367,8 @@ def feature_statistics(X: np.ndarray, names: Sequence[str]) -> List[Dict[str, An
         z_hi = int(np.sum(np.abs(finite - float(np.mean(finite))) / std > 3.0)) if std > 0 else 0
         record.update({
             "is_constant": bool(values.size == 1),
-            # "gần hằng số" = gần như vô dụng nhưng KHÁC hằng số tuyệt đối ⇒ hai cờ loại trừ nhau
+            # A near-constant column is almost useless yet differs from a constant one, so the two flags
+            # are mutually exclusive.
             "is_near_constant": bool(values.size > 1 and counts.max() / finite.size >= 0.95),
             "top_value_share": _round(float(counts.max() / finite.size), 4),
             "mean": _round(float(np.mean(finite))),
@@ -414,7 +394,7 @@ def feature_statistics(X: np.ndarray, names: Sequence[str]) -> List[Dict[str, An
 
 
 def feature_quality_flags(stats: Sequence[Dict[str, Any]]) -> Dict[str, List[str]]:
-    """Danh sách feature cần xem lại theo từng loại vấn đề (dùng cho kết luận tự động)."""
+    """List of features to revisit by problem type (used for automatic conclusions)."""
     def pick(predicate) -> List[str]:
         return [str(r["feature"]) for r in stats if predicate(r)]
 
@@ -430,18 +410,16 @@ def feature_quality_flags(stats: Sequence[Dict[str, Any]]) -> Dict[str, List[str
     }
 
 
-# ---------------------------------------------------------------------------
-# 3a. Quan hệ feature ↔ nhãn (point-biserial, AUC 1 feature, MI, lift, BH-FDR)
-# ---------------------------------------------------------------------------
+# Feature to label association: point-biserial, single-feature AUC, mutual information, lift, BH-FDR.
 def target_association(X: np.ndarray, y: Sequence[int], names: Sequence[str],
                        min_pairs: int = MIN_PAIR_N) -> Dict[str, Any]:
-    """Mức liên hệ của TỪNG feature với nhãn, kèm kiểm định và hiệu chỉnh đa so sánh.
+    """Strength of association of EACH feature with the label, with tests and multiplicity correction.
 
-    Trả về 4 chỉ số bổ trợ nhau (không thay thế permutation importance ở `scripts/analyze.py`):
-    - ``auc`` / ``effect_rank_biserial`` = 2·AUC − 1: đo mức TÁCH hai lớp, có hướng;
-    - ``point_biserial_r`` + ``p_value`` + ``q_value_bh``: ý nghĩa thống kê sau hiệu chỉnh;
-    - ``mutual_information``: bắt được liên hệ PHI TUYẾN mà Pearson bỏ qua;
-    - ``lift_top_decile``: nhãn dương ở 10% giá trị cao nhất so với tỉ lệ nền (đọc theo nghiệp vụ).
+    Returns 4 complementary measures (does not replace permutation importance in `scripts/analyze.py`):
+    - ``auc`` / ``effect_rank_biserial`` = 2*AUC - 1: measures class SEPARATION, with direction;
+    - ``point_biserial_r`` + ``p_value`` + ``q_value_bh``: statistical significance after correction;
+    - ``mutual_information``: catches NON-LINEAR association that Pearson misses;
+    - ``lift_top_decile``: positive-label rate in the top 10% of values vs the base rate (business read).
     """
     y_arr = np.asarray([int(v) for v in y], dtype=int)
     mi_available = False
@@ -477,7 +455,7 @@ def target_association(X: np.ndarray, y: Sequence[int], names: Sequence[str],
                 row.update({
                     "auc": _round(auc, 4),
                     "effect_rank_biserial": _round(2.0 * auc - 1.0, 4),
-                    "direction": "giá trị cao ⇒ nhãn 1" if auc > 0.5 else "giá trị thấp ⇒ nhãn 1",
+                    "direction": "high value => label 1" if auc > 0.5 else "low value => label 1",
                     "point_biserial_r": _round(float(r_value), 4),
                     "p_value": _round(float(p_value), 8),
                     "lift_top_decile": _round(float(top.mean()) / base, 4) if base > 0 and top.size else None,
@@ -497,20 +475,18 @@ def target_association(X: np.ndarray, y: Sequence[int], names: Sequence[str],
         "n_significant_after_bh_5pct": int(sum(1 for r in rows if (r["q_value_bh"] or 1.0) < 0.05)),
         "n_effect_ge_0_30": int(sum(1 for r in rows if abs(r["effect_rank_biserial"] or 0.0) >= 0.30)),
         "n_usable_features": int(sum(1 for r in rows if r["auc"] is not None)),
-        "multiple_testing_note": ("47 kiểm định ⇒ q-value BH; xếp hạng theo |2·AUC−1| để không phụ "
-                                 "thuộc cỡ mẫu, không dùng p-value đơn lẻ."),
+        "multiple_testing_note": ("47 tests => BH q-values; rank by |2*AUC-1| to avoid depending "
+                                 "on sample size, never read a lone p-value."),
     }
 
 
-# ---------------------------------------------------------------------------
-# 3b. Quan hệ feature ↔ feature (tương quan, cụm đa cộng tuyến, số chiều hiệu dụng)
-# ---------------------------------------------------------------------------
+# Feature to feature association: correlation, collinear clusters and effective dimensionality.
 def pairwise_correlation(X: np.ndarray, method: str = "pearson",
                          min_pairs: int = MIN_PAIR_N) -> np.ndarray:
-    """Ma trận tương quan theo cặp GIÁ TRỊ HỮU HẠN (pairwise complete case).
+    """Pairwise correlation over finite values only (pairwise complete case).
 
-    Vì sao không impute rồi mới tính: 47 cột có lượng missing rất khác nhau; impute trước sẽ
-    tạo tương quan giả giữa các cột cùng bị thiếu (artefact của median).
+    Imputing before correlating would create spurious correlation between columns that are missing
+    together, a median artefact, because the 47 columns have very different missing rates.
     """
     arr = np.asarray(X, dtype=float)
     k = arr.shape[1]
@@ -537,7 +513,7 @@ def pairwise_correlation(X: np.ndarray, method: str = "pearson",
 
 def correlation_clusters(corr: np.ndarray, names: Sequence[str],
                          threshold: float = CORR_CLUSTER_THRESHOLD) -> List[List[str]]:
-    """Gom feature thành cụm "cùng một thông tin" bằng union-find trên |r| ≥ ngưỡng."""
+    """Group features into "same information" clusters using union-find over |r| >= threshold."""
     n = len(names)
     parent = list(range(n))
 
@@ -562,10 +538,11 @@ def correlation_clusters(corr: np.ndarray, names: Sequence[str],
 
 
 def effective_dimensionality(X: np.ndarray) -> Dict[str, Any]:
-    """Số chiều hiệu dụng của ma trận feature (median-impute + chuẩn hoá, chỉ để EDA).
+    """Effective dimensionality of the feature matrix (median-impute + standardize, EDA only).
 
-    - ``participation_ratio`` = (Σλ)²/Σλ² — nhỏ hơn nhiều so với số cột ⇒ feature thừa.
-    - ``n_components_for_95pct_variance`` — số thành phần cần để giữ 95% phương sai.
+    - ``participation_ratio`` = (sum lambda)^2 / sum(lambda^2) - much smaller than the column count
+      means redundant features.
+    - ``n_components_for_95pct_variance`` - components needed to keep 95% of the variance.
     """
     arr = _median_impute(X)
     std = arr.std(axis=0, ddof=1)
@@ -588,10 +565,10 @@ def effective_dimensionality(X: np.ndarray) -> Dict[str, Any]:
 
 def correlation_analysis(X: np.ndarray, names: Sequence[str],
                          threshold: float = CORR_CLUSTER_THRESHOLD) -> Dict[str, Any]:
-    """Tương quan feature ↔ feature: cặp mạnh nhất, cụm đa cộng tuyến, số chiều hiệu dụng.
+    """Feature <-> feature correlation: strongest pairs, collinear clusters, effective dimensionality.
 
-    So sánh Pearson (tuyến tính) với Spearman (hạng) để biết quan hệ có bị outlier chi phối không:
-    chênh lệch lớn giữa hai hệ số ở cùng một cặp là dấu hiệu đuôi nặng.
+    Compare Pearson (linear) with Spearman (rank) to know whether outliers dominate the relation:
+    a large gap between the two on the same pair flags heavy tails.
     """
     pearson = pairwise_correlation(X, "pearson")
     spearman = pairwise_correlation(X, "spearman")
@@ -620,17 +597,15 @@ def correlation_analysis(X: np.ndarray, names: Sequence[str],
         "pearson_matrix": [[_round(v, 4) for v in row] for row in pearson],
         "spearman_matrix": [[_round(v, 4) for v in row] for row in spearman],
         "feature_order": [str(name) for name in names],
-        "note": ("Tương quan cặp dùng chung giá trị hữu hạn (không impute) nên cỡ mẫu mỗi cặp "
-                 "khác nhau — đọc kèm `missing_pct` trong mục feature."),
+        "note": ("Pairwise correlation uses shared finite values (no imputation), so each pair has a "
+                 "different sample size - read alongside `missing_pct` in the feature section."),
     }
 
 
-# ---------------------------------------------------------------------------
-# 4a. Dịch chuyển phân phối train → test (KS, SMD, PSI)
-# ---------------------------------------------------------------------------
+# Distribution drift from train to test: KS, SMD and PSI.
 def population_stability_index(reference: Sequence[float], current: Sequence[float],
                                bins: int = 10) -> Optional[float]:
-    """PSI theo decile của mẫu tham chiếu — chỉ số vận hành quen thuộc (PSI > 0.2 ⇒ dịch chuyển)."""
+    """PSI on reference deciles - a familiar monitoring metric (PSI > 0.2 => drift)."""
     ref, cur = _finite(np.asarray(reference, dtype=float)), _finite(np.asarray(current, dtype=float))
     if ref.size < bins or cur.size < bins:
         return None
@@ -649,11 +624,11 @@ def population_stability_index(reference: Sequence[float], current: Sequence[flo
 
 def drift_analysis(X_ref: np.ndarray, X_new: np.ndarray, names: Sequence[str],
                    ref_name: str = REFERENCE_SPLIT, new_name: str = COMPARISON_SPLIT) -> Dict[str, Any]:
-    """So phân phối từng feature giữa hai split theo thời gian (train → test).
+    """Compare each feature's distribution between the two time splits (train -> test).
 
-    Ba thước đo vì mỗi cái bắt một kiểu dịch chuyển: KS (toàn phân phối, không giả định),
-    SMD (dịch trung bình theo độ lệch chuẩn gộp), PSI (chuẩn vận hành, dễ đặt ngưỡng cảnh báo).
-    Dịch chuyển mạnh ⇒ kết luận trên test có thể phản ánh phân bố mới, không phải năng lực mô hình.
+    Three measures because each catches a different kind of drift: KS (whole distribution, no
+    assumptions), SMD (mean shift in pooled standard deviations), PSI (deployment standard, easy to
+    threshold). Strong drift means test conclusions may reflect a new distribution, not model skill.
     """
     rows: List[Dict[str, Any]] = []
     for j, name in enumerate(names):
@@ -692,16 +667,14 @@ def drift_analysis(X_ref: np.ndarray, X_new: np.ndarray, names: Sequence[str],
     }
 
 
-# ---------------------------------------------------------------------------
-# 4b. Missingness: mức thiếu theo split + "thiếu có mang thông tin nhãn?"
-# ---------------------------------------------------------------------------
+# Missingness: rate per split and whether missingness carries a label signal.
 def missingness_analysis(X_by_split: Dict[str, np.ndarray], y_by_split: Dict[str, Sequence[int]],
                          names: Sequence[str]) -> Dict[str, Any]:
-    """Phân tích giá trị thiếu: theo split, theo nhãn (MNAR), đồng-thiếu, mật độ thiếu mỗi mẫu.
+    """Missing-value analysis: per split, by label (MNAR), co-missing, per-sample missing density.
 
-    Câu hỏi kỹ thuật: nếu tỉ lệ nhãn 1 khác nhau CÓ Ý NGHĨA giữa nhóm thiếu và nhóm có dữ liệu
-    thì giá trị thiếu không phải "nhiễu vô hại" mà mang thông tin ⇒ median-impute có thể xoá
-    tín hiệu (hoặc tạo tín hiệu giả) và cần thêm cờ `is_missing` cho feature đó.
+    Technical question: if the positive-label rate differs MEANINGFULLY between the missing group and
+    the present group, then a missing value is not "harmless noise" but information => median impute
+    can erase signal (or create fake signal), and the feature needs an extra `is_missing` flag.
     """
     missing_by_split: Dict[str, Dict[str, Any]] = {}
     for split, matrix in X_by_split.items():
@@ -735,7 +708,7 @@ def missingness_analysis(X_by_split: Dict[str, np.ndarray], y_by_split: Dict[str
             ])
             try:
                 _, p_value, _, _ = sps.chi2_contingency(table)
-            except ValueError:  # bảng suy biến (một hàng toàn 0)
+            except ValueError:  # degenerate table (one row all zeros)
                 p_value = 1.0
             row.update({"target_rate_when_missing_pct": _round(rate_absent),
                         "target_rate_when_present_pct": _round(rate_present),
@@ -771,7 +744,7 @@ def missingness_analysis(X_by_split: Dict[str, np.ndarray], y_by_split: Dict[str
             "per_feature": rows,
             "ranked_by_abs_delta": ranked,
             "n_significant_after_bh_5pct": int(sum(1 for r in rows if (r["q_value_bh"] or 1.0) < 0.05)),
-            "test": "chi-square 2×2 (thiếu/có dữ liệu × nhãn) trên train+validation+test",
+            "test": "chi-square 2x2 (missing/present x label) on train+validation+test",
         },
         "co_missing_top": co_missing[:15],
         "identical_missing_pattern_groups": identical_groups,
@@ -785,22 +758,20 @@ def missingness_analysis(X_by_split: Dict[str, np.ndarray], y_by_split: Dict[str
     }
 
 
-# ---------------------------------------------------------------------------
-# 4c. Rò rỉ tiềm ẩn: chồng lấn lịch sử, dòng trùng feature, thứ tự thời gian nhãn
-# ---------------------------------------------------------------------------
+# Potential leakage: history overlap, duplicate feature rows and label time order.
 def _history_periods(sample: Dict[str, Any]) -> List[str]:
-    """Danh sách kỳ kết thúc (`period_end`) của các quý trong lịch sử mẫu."""
+    """List of period-end (`period_end`) values for the quarters in the sample history."""
     return [str(row.get("period_end")) for row in sample["request"]["history"]]
 
 
 def history_overlap_analysis(samples_by_split: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
-    """Đo mức CHỒNG LẤN lịch sử giữa các mẫu — nguyên nhân khiến 324 mẫu ≠ 324 quan sát độc lập.
+    """Measure HISTORY OVERLAP between samples - why 324 samples != 324 independent observations.
 
-    Hai phép đo:
-    1. Trong cùng công ty: hệ số Jaccard giữa lịch sử của hai mẫu liên tiếp (cùng cửa sổ 8 quý
-       ⇒ phần lớn dòng lịch sử dùng chung, hiệu dụng mẫu nhỏ hơn nhiều).
-    2. Giữa train và test: số kỳ lịch sử của test đã xuất hiện trong lịch sử train, và số kỳ
-       target của tập này xuất hiện trong lịch sử tập kia (rò rỉ mục tiêu chéo).
+    Two measurements:
+    1. Within a company: Jaccard between the histories of two consecutive samples (same 8-quarter
+       window => most history rows are shared, so the effective sample is far smaller).
+    2. Between train and test: how many test history periods already appear in train history, and how
+       many target periods of one set appear in the other set's history (cross-target leakage).
     """
     pooled = [s for name in SPLITS for s in samples_by_split.get(name, [])]
     jaccards: List[float] = []
@@ -840,13 +811,14 @@ def history_overlap_analysis(samples_by_split: Dict[str, List[Dict[str, Any]]]) 
                 len(target_keys(REFERENCE_SPLIT) & period_keys(COMPARISON_SPLIT)),
             "n_test_samples": len(samples_by_split.get(COMPARISON_SPLIT, [])),
         },
-        "note": ("Jaccard cao ⇒ các mẫu liên tiếp chia sẻ phần lớn lịch sử: số quan sát ĐỘC LẬP "
-                 "nhỏ hơn số mẫu, và khoảng tin cậy của metric cần đọc theo nhóm công ty."),
+        "note": ("High Jaccard => consecutive samples share most of their history: the number of "
+                 "INDEPENDENT observations is smaller than the sample count, and metric confidence "
+                 "intervals must be read by company cluster."),
     }
 
 
 def _row_keys(X: np.ndarray, decimals: int = 6) -> List[Tuple[Any, ...]]:
-    """Khoá so trùng một dòng feature (NaN thay bằng `None` để so sánh được)."""
+    """Deduplication key for a feature row (NaN replaced by `None` so rows are comparable)."""
     keys: List[Tuple[Any, ...]] = []
     for row in np.asarray(X, dtype=float):
         keys.append(tuple(None if not math.isfinite(v) else round(float(v), decimals) for v in row))
@@ -855,7 +827,7 @@ def _row_keys(X: np.ndarray, decimals: int = 6) -> List[Tuple[Any, ...]]:
 
 def duplicate_feature_rows(X_ref: np.ndarray, X_new: np.ndarray, ref_name: str = REFERENCE_SPLIT,
                            new_name: str = COMPARISON_SPLIT, decimals: int = 6) -> Dict[str, Any]:
-    """Đếm dòng feature trùng khít giữa hai split (dấu hiệu bản ghi lặp/rò rỉ cơ học)."""
+    """Count exactly-duplicated feature rows between two splits (a sign of duplicated records/mechanical leakage)."""
     ref_keys = _row_keys(X_ref, decimals)
     new_keys = _row_keys(X_new, decimals)
     ref_set = set(ref_keys)
@@ -869,7 +841,7 @@ def duplicate_feature_rows(X_ref: np.ndarray, X_new: np.ndarray, ref_name: str =
 
 
 def label_availability_analysis(samples_by_split: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
-    """Kiểm tra thứ tự thời gian của nhãn: nhãn phải có SAU khi kỳ target kết thúc."""
+    """Check the label time order: the label must exist AFTER the target period ends."""
     bad = 0
     gaps: List[int] = []
     total = 0
@@ -897,11 +869,9 @@ def label_availability_analysis(samples_by_split: Dict[str, List[Dict[str, Any]]
     }
 
 
-# ---------------------------------------------------------------------------
-# 5. Hình minh hoạ (matplotlib Agg; CLI ở `scripts/eda_deep.py`)
-# ---------------------------------------------------------------------------
+# Illustrative figures (matplotlib Agg backend).
 def fig_missing_pct_by_split(missing_by_split: Dict[str, Dict[str, Any]], path: Any) -> None:
-    """Hình 1 — heatmap % thiếu theo [feature × split], sắp theo mức thiếu của train."""
+    """Figure 1 - heatmap of missing % by [feature x split], sorted by the train missing rate."""
     splits = [s for s in FEATURE_SPLITS if s in missing_by_split]
     features = sorted(missing_by_split[splits[0]], key=lambda f: -(missing_by_split[splits[0]][f] or 0))
     matrix = np.array([[missing_by_split[s].get(f) or 0.0 for s in splits] for f in features])
@@ -914,14 +884,14 @@ def fig_missing_pct_by_split(missing_by_split: Dict[str, Dict[str, Any]], path: 
             if matrix[i, j] > 0:
                 ax.text(j, i, f"{matrix[i, j]:.0f}", ha="center", va="center", fontsize=6,
                         color="white" if matrix[i, j] > 55 else "black")
-    ax.set_title("Giá trị thiếu theo feature × split (%)", fontsize=9)
+    ax.set_title("Missing values by feature x split (%)", fontsize=9)
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
 
 
 def fig_label_by_ticker(label: Dict[str, Any], path: Any) -> None:
-    """Hình 2 — tỉ lệ nhãn 1 theo công ty (kèm IR và số lần nhãn đổi trạng thái)."""
+    """Figure 2 - positive-label rate by company (with IR and number of label flips)."""
     per_ticker = label.get("per_ticker", {})
     tickers = sorted(per_ticker, key=lambda t: -(per_ticker[t].get("positive_pct") or 0))
     values = [(per_ticker[t].get("positive_pct") or 0.0) for t in tickers]
@@ -930,12 +900,12 @@ def fig_label_by_ticker(label: Dict[str, Any], path: Any) -> None:
     for bar, ticker in zip(bars, tickers[::-1]):
         record = per_ticker[ticker]
         ax.text(bar.get_width() + 1.5, bar.get_y() + bar.get_height() / 2,
-                f"IR={record.get('imbalance_ratio')} | đổi nhãn {record.get('n_switches')} lần",
+                f"IR={record.get('imbalance_ratio')} | label flips {record.get('n_switches')} times",
                 va="center", fontsize=7)
-    ax.axvline(50, color="k", ls="--", lw=1, label="cân bằng 50%")
+    ax.axvline(50, color="k", ls="--", lw=1, label="balanced 50%")
     ax.set_xlim(0, 118)
-    ax.set_xlabel("Tỉ lệ mẫu có nhãn = 1 (%)")
-    ax.set_title("Mất cân bằng ở CẤP CÔNG TY (nhãn là thuộc tính thực thể)")
+    ax.set_xlabel("Share of samples with label = 1 (%)")
+    ax.set_title("Imbalance at the COMPANY level (the label is an entity attribute)")
     ax.grid(alpha=0.3, axis="x")
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -944,7 +914,7 @@ def fig_label_by_ticker(label: Dict[str, Any], path: Any) -> None:
 
 
 def fig_target_association(association: Dict[str, Any], path: Any, top: int = 20) -> None:
-    """Hình 3 — top feature tách hai lớp mạnh nhất (|2·AUC−1|), kèm mutual information."""
+    """Figure 3 - top features separating the two classes best (|2*AUC-1|), with mutual information."""
     ranked = association.get("ranked_by_effect", [])[:top]
     names = [str(r["feature"]) for r in ranked][::-1]
     effects = [(r["effect_rank_biserial"] or 0.0) for r in ranked][::-1]
@@ -957,8 +927,8 @@ def fig_target_association(association: Dict[str, Any], path: Any, top: int = 20
                 bar.get_y() + bar.get_height() / 2, f"MI={mi:.3f}",
                 va="center", ha="left" if bar.get_width() >= 0 else "right", fontsize=7)
     ax.axvline(0, color="k", lw=1)
-    ax.set_xlabel("2·AUC − 1 (đỏ: giá trị cao ⇒ nhãn 1; xanh: giá trị thấp ⇒ nhãn 1)")
-    ax.set_title(f"Liên hệ feature ↔ nhãn (train+validation, top {top})", fontsize=10)
+    ax.set_xlabel("2*AUC - 1 (red: high value => label 1; blue: low value => label 1)")
+    ax.set_title(f"Feature <-> label association (train+validation, top {top})", fontsize=10)
     ax.grid(alpha=0.3, axis="x")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
@@ -967,7 +937,7 @@ def fig_target_association(association: Dict[str, Any], path: Any, top: int = 20
 
 def fig_correlation(matrix: Sequence[Sequence[Optional[float]]], names: Sequence[str],
                     clusters: Sequence[Sequence[str]], path: Any) -> None:
-    """Hình 4 — heatmap tương quan Pearson, sắp theo cụm đa cộng tuyến |r| ≥ ngưỡng."""
+    """Figure 4 - Pearson correlation heatmap, ordered by collinear clusters with |r| >= threshold."""
     array = np.array([[np.nan if v is None else float(v) for v in row] for row in matrix])
     order: List[str] = []
     for cluster in clusters:
@@ -985,7 +955,7 @@ def fig_correlation(matrix: Sequence[Sequence[Optional[float]]], names: Sequence
             ax.add_patch(plt.Rectangle((min(positions) - 0.5, min(positions) - 0.5),
                                        len(positions), len(positions), fill=False,
                                        edgecolor="black", lw=1))
-    ax.set_title("Tương quan Pearson giữa các feature (ô vuông = cụm |r| ≥ 0.90)", fontsize=10)
+    ax.set_title("Pearson correlation between features (boxes = clusters |r| >= 0.90)", fontsize=10)
     fig.colorbar(image, ax=ax, shrink=0.6)
     fig.tight_layout()
     fig.savefig(path, dpi=120)
@@ -993,7 +963,7 @@ def fig_correlation(matrix: Sequence[Sequence[Optional[float]]], names: Sequence
 
 
 def fig_drift_ks_vs_smd(drift: Dict[str, Any], path: Any) -> None:
-    """Hình 5 — dịch chuyển train → test: KS (toàn phân phối) vs SMD (dịch trung bình)."""
+    """Figure 5 - train -> test drift: KS (whole distribution) vs SMD (mean shift)."""
     rows = [r for r in drift.get("per_feature", []) if r.get("ks_statistic") is not None]
     ks = [r["ks_statistic"] for r in rows]
     smd = [(r["smd"] or 0.0) for r in rows]
@@ -1006,9 +976,9 @@ def fig_drift_ks_vs_smd(drift: Dict[str, Any], path: Any) -> None:
     for boundary in (DRIFT_SMD_WARN, -DRIFT_SMD_WARN):
         ax.axvline(boundary, color="crimson", ls="--", lw=1)
     ax.axhline(DRIFT_KS_WARN, color="crimson", ls="--", lw=1)
-    ax.set_xlabel("SMD (test − train, theo SD gộp)")
+    ax.set_xlabel("SMD (test - train, in pooled SD)")
     ax.set_ylabel("KS statistic")
-    ax.set_title("Dịch chuyển phân phối train → test (đỏ = ngưỡng cảnh báo)", fontsize=10)
+    ax.set_title("Train -> test distribution drift (red = warning threshold)", fontsize=10)
     ax.grid(alpha=0.3)
     fig.tight_layout()
     fig.savefig(path, dpi=120)
@@ -1017,7 +987,7 @@ def fig_drift_ks_vs_smd(drift: Dict[str, Any], path: Any) -> None:
 
 def fig_top_feature_ecdf(X: np.ndarray, y: Sequence[int], names: Sequence[str],
                          ranked: Sequence[Dict[str, Any]], path: Any, top: int = 4) -> None:
-    """Hình 6 — ECDF của top feature theo nhãn: thấy mức chồng lấn, không chỉ trung bình."""
+    """Figure 6 - ECDF of the top features by label: see the overlap, not just the mean."""
     labels = np.asarray([int(v) for v in y], dtype=int)
     picked = [r for r in ranked if r.get("auc") is not None][:top]
     fig, axes = plt.subplots(1, max(1, len(picked)), figsize=(3.4 * max(1, len(picked)), 3.6))
@@ -1025,7 +995,7 @@ def fig_top_feature_ecdf(X: np.ndarray, y: Sequence[int], names: Sequence[str],
     for ax, row in zip(axes, picked):
         j = list(map(str, names)).index(str(row["feature"]))
         column = np.asarray(X[:, j], dtype=float)
-        for value, color, label in ((0, "steelblue", "không distress"), (1, "crimson", "distress")):
+        for value, color, label in ((0, "steelblue", "no distress"), (1, "crimson", "distress")):
             subset = np.sort(_finite(column[labels == value]))
             if subset.size:
                 ax.plot(subset, np.arange(1, subset.size + 1) / subset.size, color=color, lw=1.4,
@@ -1033,17 +1003,17 @@ def fig_top_feature_ecdf(X: np.ndarray, y: Sequence[int], names: Sequence[str],
         ax.set_title(f"{row['feature']}\nAUC={row['auc']:.3f}", fontsize=8)
         ax.grid(alpha=0.3)
         ax.tick_params(labelsize=7)
-        ax.set_xlabel("giá trị", fontsize=8)
+        ax.set_xlabel("value", fontsize=8)
     axes[0].set_ylabel("ECDF", fontsize=8)
     axes[0].legend(fontsize=7)
-    fig.suptitle("Phân bố (ECDF) của các feature tách lớp mạnh nhất — theo nhãn", fontsize=10)
+    fig.suptitle("Distribution (ECDF) of the strongest class-separating features - by label", fontsize=10)
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
 
 
 def fig_missingness_information(missingness: Dict[str, Any], path: Any, top: int = 12) -> None:
-    """Hình 7 — chênh tỉ lệ nhãn 1 giữa nhóm THIẾU và nhóm CÓ dữ liệu (cảnh báo MNAR)."""
+    """Figure 7 - gap in positive-label rate between the MISSING group and PRESENT group (MNAR warning)."""
     ranked = [r for r in missingness.get("label_informativeness", {}).get("ranked_by_abs_delta", [])
               if r.get("delta_pct_points") is not None][:top]
     names = [str(r["feature"]) for r in ranked][::-1]
@@ -1052,19 +1022,17 @@ def fig_missingness_information(missingness: Dict[str, Any], path: Any, top: int
     fig, ax = plt.subplots(figsize=(8.4, 5))
     ax.barh(names, deltas, color=colors, alpha=0.85)
     ax.axvline(0, color="k", lw=1)
-    ax.set_xlabel("Δ tỉ lệ nhãn 1 (thiếu − có dữ liệu), điểm %")
-    ax.set_title("Giá trị thiếu có mang thông tin nhãn? (chi-square + BH-FDR)", fontsize=10)
+    ax.set_xlabel("Delta positive-label rate (missing - present), percentage points")
+    ax.set_title("Does a missing value carry a label signal? (chi-square + BH-FDR)", fontsize=10)
     ax.grid(alpha=0.3, axis="x")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
 
 
-# ---------------------------------------------------------------------------
-# 6. Kết luận tự động + báo cáo markdown
-# ---------------------------------------------------------------------------
+# Automatic conclusions and the markdown report.
 def auto_conclusions(summary: Dict[str, Any]) -> List[str]:
-    """Sinh danh sách kết luận/cảnh báo TRỰC TIẾP từ số liệu (không viết tay)."""
+    """Generate the list of conclusions/warnings DIRECTLY from the numbers (nothing hand-written)."""
     label = summary["label"]
     overall = label["overall"]
     flags = summary["feature_quality"]["flags"]
@@ -1076,72 +1044,72 @@ def auto_conclusions(summary: Dict[str, Any]) -> List[str]:
     lines: List[str] = []
 
     lines.append(
-        f"**Mức mất cân bằng (cấp mẫu):** entropy nhãn {overall['entropy_bits']} bit "
-        f"(tối đa 1.0), IR = {overall['imbalance_ratio']}, lớp thiểu số {overall['minority_pct']}% "
-        f"⇒ {overall['level']}; đoán lớp đa số đã đạt {overall['majority_baseline_accuracy_pct']}% "
-        f"⇒ không dùng Accuracy làm thước đo chính.")
+        f"**Imbalance level (sample level):** label entropy {overall['entropy_bits']} bits "
+        f"(max 1.0), IR = {overall['imbalance_ratio']}, minority class {overall['minority_pct']}% "
+        f"=> {overall['level']}; majority-class guessing already reaches {overall['majority_baseline_accuracy_pct']}% "
+        f"=> do not use Accuracy as the primary metric.")
     lines.append(
-        f"**Nhãn gần như là thuộc tính thực thể:** {transitions['persistence_pct']}% cặp quý liên tiếp "
-        f"giữ nguyên nhãn; P(nhãn=1 | quý trước nhãn=1) = {transitions['p_one_given_one']}, "
-        f"P(nhãn=1 | quý trước nhãn=0) = {transitions['p_one_given_zero']}; "
-        f"{entities['share_samples_in_single_class_tickers_pct']}% mẫu thuộc công ty chỉ có MỘT lớp.")
+        f"**The label is almost an entity attribute:** {transitions['persistence_pct']}% of consecutive-quarter "
+        f"pairs keep the same label; P(label=1 | previous label=1) = {transitions['p_one_given_one']}, "
+        f"P(label=1 | previous label=0) = {transitions['p_one_given_zero']}; "
+        f"{entities['share_samples_in_single_class_tickers_pct']}% of samples belong to a company with only ONE class.")
     if entities["tickers_all_one"] or entities["tickers_all_zero"]:
         lines.append(
-            f"**Không được chia tập ngẫu nhiên theo mẫu:** công ty nhãn đơn lớp = "
-            f"{', '.join(entities['tickers_all_one'] + entities['tickers_all_zero'])} ⇒ mọi đánh giá "
-            f"phải chia theo nhóm (`GroupKFold`/LOCO) và nêu IR theo công ty.")
+            f"**Never split randomly by sample:** single-class companies = "
+            f"{', '.join(entities['tickers_all_one'] + entities['tickers_all_zero'])} => every evaluation "
+            f"must split by group (`GroupKFold`/LOCO) and report IR by company.")
     if flags["constant"] or flags["near_constant"]:
         lines.append(
-            f"**Feature vô dụng/giả tín hiệu:** hằng số = "
-            f"{', '.join(flags['constant']) or '—'}; gần hằng số (>95% một giá trị) = "
-            f"{', '.join(flags['near_constant']) or '—'} ⇒ cân nhắc loại.")
+            f"**Useless features / fake signal:** constant = "
+            f"{', '.join(flags['constant']) or '—'}; near-constant (>95% one value) = "
+            f"{', '.join(flags['near_constant']) or '—'} => consider dropping.")
     if flags["missing_gt_20pct"]:
         lines.append(
-            f"**Feature bị impute chi phối** (thiếu > {MISSING_WARN_PCT:.0f}%): "
-            f"{', '.join(flags['missing_gt_20pct'][:12])} ⇒ đọc kèm kiểm định missingness-mang-nhãn.")
+            f"**Features dominated by imputation** (missing > {MISSING_WARN_PCT:.0f}%): "
+            f"{', '.join(flags['missing_gt_20pct'][:12])} => read alongside the missingness-carries-label test.")
     if flags["heavy_tail"]:
         lines.append(
-            f"**Đuôi nặng/lệch mạnh** (|skew| > {SKEW_WARN:.0f} hoặc kurtosis > {KURTOSIS_WARN:.0f}): "
-            f"{', '.join(flags['heavy_tail'][:12])} ⇒ nên thêm winsorize/clip và dùng metric xếp hạng.")
+            f"**Heavy tails / strong skew** (|skew| > {SKEW_WARN:.0f} or kurtosis > {KURTOSIS_WARN:.0f}): "
+            f"{', '.join(flags['heavy_tail'][:12])} => add winsorize/clip and use ranking metrics.")
     if flags["many_outliers"]:
         lines.append(
-            f"**Nhiều outlier theo IQR** (> {OUTLIER_WARN_PCT:.0f}% mẫu): "
+            f"**Many IQR outliers** (> {OUTLIER_WARN_PCT:.0f}% of samples): "
             f"{', '.join(flags['many_outliers'][:12])}.")
     lines.append(
-        f"**Liên hệ feature ↔ nhãn:** {summary['feature_vs_label']['n_usable_features']}/"
-        f"{summary['feature_quality']['n_features']} feature đủ mẫu để tính AUC 1-feature; "
-        f"{summary['feature_vs_label']['n_effect_ge_0_30']} feature có |2·AUC−1| ≥ 0.30; "
-        f"{summary['feature_vs_label']['n_significant_after_bh_5pct']} feature còn ý nghĩa sau BH-FDR.")
+        f"**Feature <-> label association:** {summary['feature_vs_label']['n_usable_features']}/"
+        f"{summary['feature_quality']['n_features']} features have enough samples for a single-feature AUC; "
+        f"{summary['feature_vs_label']['n_effect_ge_0_30']} features have |2*AUC-1| >= 0.30; "
+        f"{summary['feature_vs_label']['n_significant_after_bh_5pct']} features remain significant after BH-FDR.")
     lines.append(
-        f"**Đa cộng tuyến:** {summary['feature_vs_feature']['n_pairs_abs_ge_threshold']} cặp |r| ≥ "
-        f"{summary['feature_vs_feature']['threshold']}, gom thành "
-        f"{len(summary['feature_vs_feature']['clusters_abs_ge_threshold'])} cụm; "
-        f"số chiều hiệu dụng = "
+        f"**Collinearity:** {summary['feature_vs_feature']['n_pairs_abs_ge_threshold']} pairs with |r| >= "
+        f"{summary['feature_vs_feature']['threshold']}, grouped into "
+        f"{len(summary['feature_vs_feature']['clusters_abs_ge_threshold'])} clusters; "
+        f"effective dimensionality = "
         f"{summary['feature_vs_feature']['effective_dimensionality']['participation_ratio']} "
-        f"(trên {summary['feature_quality']['n_features']} cột).")
+        f"(out of {summary['feature_quality']['n_features']} columns).")
     lines.append(
-        f"**Dịch chuyển train → test:** {drift['n_drifted']} feature vượt ngưỡng (KS ≥ {DRIFT_KS_WARN} "
-        f"hoặc |SMD| ≥ {DRIFT_SMD_WARN}), {drift['n_psi_above_0_2']} feature có PSI > 0.2.")
+        f"**Train -> test drift:** {drift['n_drifted']} features exceed the threshold (KS >= {DRIFT_KS_WARN} "
+        f"or |SMD| >= {DRIFT_SMD_WARN}), {drift['n_psi_above_0_2']} features have PSI > 0.2.")
     lines.append(
-        f"**Mẫu không độc lập:** Jaccard lịch sử trung bình giữa hai mẫu liên tiếp cùng công ty = "
+        f"**Samples are not independent:** mean history Jaccard between two consecutive same-company samples = "
         f"{leakage['history_overlap']['consecutive_samples_same_ticker']['mean_history_jaccard']} "
-        f"⇒ số quan sát độc lập nhỏ hơn số mẫu; "
-        f"{leakage['duplicates']['n_new_rows_duplicated_in_ref']} dòng test trùng khít feature với train.")
+        f"=> the number of independent observations is smaller than the sample count; "
+        f"{leakage['duplicates']['n_new_rows_duplicated_in_ref']} test rows are exact duplicates feature với train.")
     lines.append(
-        f"**Kiểm tra thứ tự nhãn:** {leakage['label_availability']['n_label_available_before_target_end']}"
-        f" mẫu có `label_available_on` ≤ ngày kết thúc kỳ target (kỳ vọng 0); khoảng cách trung vị "
-        f"{leakage['label_availability']['median_gap_days']} ngày.")
+        f"**Label time-order check:** {leakage['label_availability']['n_label_available_before_target_end']}"
+        f" samples have `label_available_on` <= the target period end date (expected 0); median gap "
+        f"{leakage['label_availability']['median_gap_days']} days.")
     informative = missing["label_informativeness"]["n_significant_after_bh_5pct"]
     lines.append(
-        f"**Missingness:** {informative} feature có tỉ lệ nhãn khác biệt có ý nghĩa giữa nhóm thiếu và "
-        f"nhóm có dữ liệu (BH-FDR < 5%) ⇒ dữ liệu thiếu theo cơ chế MNAR, median-impute một mình sẽ "
-        f"xoá tín hiệu; đề xuất thêm cờ `is_missing` khi tái huấn luyện.")
+        f"**Missingness:** {informative} features have a significantly different label rate between the missing "
+        f"group and the present group (BH-FDR < 5%) => data is missing under an MNAR mechanism, so median "
+        f"imputation alone erases signal; suggest adding an `is_missing` flag when retraining.")
     return lines
 
 
 def _table(headers: Sequence[str], rows: Sequence[Sequence[Any]],
            aligns: Sequence[str] | None = None) -> str:
-    """Bảng markdown đơn giản (thay cho `DataFrame.to_markdown` khi không có pandas)."""
+    """Simple markdown table (replaces `DataFrame.to_markdown` when pandas is unavailable)."""
     def cell(value: Any) -> str:
         if value is None:
             return "—"
@@ -1158,18 +1126,18 @@ def _table(headers: Sequence[str], rows: Sequence[Sequence[Any]],
 
 def _top(stats: Sequence[Dict[str, Any]], key: str, count: int, reverse: bool = True
          ) -> List[Dict[str, Any]]:
-    """Lấy `count` bản ghi có `key` lớn nhất (bỏ bản ghi thiếu giá trị)."""
+    """Take the `count` records with the largest `key` (dropping records missing the value)."""
     available = [r for r in stats if r.get(key) is not None]
     return sorted(available, key=lambda r: r[key], reverse=reverse)[:count]
 
 
 def outlier_driven_pairs(correlation: Dict[str, Any],
                          gap: float = 0.30) -> List[Dict[str, Any]]:
-    """Cặp biến có tương quan Pearson lệch xa Spearman ⇒ tương quan chủ yếu do NGOẠI LAI.
+    """Variable pairs whose Pearson correlation diverges from Spearman, indicating outlier-driven correlation.
 
-    Vì sao cần: Pearson nhạy với giá trị cực trị, Spearman thì không. Nếu hai hệ số chênh nhau
-    nhiều thì kết luận "hai biến liên quan" là hệ quả của vài quan sát dị biệt, không phải quy luật.
-    Xét **mọi cặp** (không chỉ các cặp mạnh nhất) để không bỏ sót tương quan giả.
+    Pearson is sensitive to extreme values while Spearman is not, so a large gap between the two
+    coefficients on a pair means the apparent relation comes from a few unusual observations rather
+    than a rule. Every pair is checked, not just the strongest, so no spurious correlation is missed.
     """
     pearson = correlation.get("pearson_matrix")
     spearman = correlation.get("spearman_matrix")
@@ -1191,12 +1159,12 @@ def outlier_driven_pairs(correlation: Dict[str, Any],
 
 def markdown_table(headers: Sequence[str], rows: Sequence[Sequence[Any]],
                    aligns: Sequence[str] | None = None) -> str:
-    """Bảng markdown (API công khai — dùng chung cho `scripts/eda.py` và báo cáo tự động)."""
+    """Markdown table (public API - shared by `scripts/eda.py` and the automatic report)."""
     return _table(headers, rows, aligns)
 
 
 def markdown_eda_deep(summary: Dict[str, Any]) -> str:
-    """Sinh `reports/results/eda_deep.md` từ summary — mọi số đều lấy từ JSON, không nhập tay."""
+    """Build `reports/results/eda_deep.md` from the summary - every number comes from JSON, none typed by hand."""
     scope, label = summary["scope"], summary["label"]
     stats, flags = summary["feature_quality"]["stats"], summary["feature_quality"]["flags"]
     association = summary["feature_vs_label"]
@@ -1204,24 +1172,24 @@ def markdown_eda_deep(summary: Dict[str, Any]) -> str:
     drift, missing = summary["drift"], summary["missingness"]
     leakage = summary["leakage"]
 
-    lines = ["# EDA chuyên sâu — feature, nhãn, tương quan, dịch chuyển", "",
-             "*Sinh tự động bởi `python -m scripts.eda_deep` (module: `forecasting/eda.py`). "
-             "Không có số nào nhập tay.*", "",
-             "## 0. Phạm vi", "",
-             f"- Mẫu: " + ", ".join(f"{k}={v}" for k, v in scope["n_samples"].items()),
-             f"- Feature: **{scope['n_features']}** cột (từ `forecasting.features.feature_names()`).",
-             f"- Liên hệ feature–nhãn và tương quan được tính trên **{scope['association_eval_set']}**; "
-             f"test chỉ dùng cho chẩn đoán dịch chuyển (train → test).",
+    lines = ["# Deep EDA - features, labels, correlation, drift", "",
+             "*Generated automatically by `python -m scripts.eda_deep` (module: `forecasting/eda.py`). "
+             "No number is typed by hand.*", "",
+             "## 0. Scope", "",
+             f"- Samples: " + ", ".join(f"{k}={v}" for k, v in scope["n_samples"].items()),
+             f"- Features: **{scope['n_features']}** columns (from `forecasting.features.feature_names()`).",
+             f"- Feature-label association and correlation are computed on **{scope['association_eval_set']}**; "
+             f"test is used only for the drift diagnostic (train -> test).",
              "",
-             "## 1. Chất lượng ma trận feature", "",
-             f"- Feature hằng số: **{', '.join(flags['constant']) or '—'}**; gần hằng số (>95% một giá "
-             f"trị): **{', '.join(flags['near_constant']) or '—'}**.",
-             f"- Thiếu > {MISSING_WARN_PCT:.0f}%: **{len(flags['missing_gt_20pct'])}** feature; "
-             f"đuôi nặng: **{len(flags['heavy_tail'])}**; nhiều outlier IQR: "
+             "## 1. Feature matrix quality", "",
+             f"- Constant features: **{', '.join(flags['constant']) or '—'}**; near-constant (>95% one "
+             f"value): **{', '.join(flags['near_constant']) or '—'}**.",
+             f"- Missing > {MISSING_WARN_PCT:.0f}%: **{len(flags['missing_gt_20pct'])}** features; "
+             f"heavy tail: **{len(flags['heavy_tail'])}**; many IQR outliers: "
              f"**{len(flags['many_outliers'])}**.",
              ""]
     lines.append(_table(
-        ["Feature", "Thiếu %", "#giá trị", "Median", "P1–P99", "Skew", "Kurtosis", "Outlier IQR %", "= 0 %"],
+        ["Feature", "Missing %", "#values", "Median", "P1-P99", "Skew", "Kurtosis", "IQR outlier %", "= 0 %"],
         [[r["feature"], r.get("missing_pct"), r.get("n_unique"), r.get("median"),
           f"{r.get('p1')} … {r.get('p99')}", r.get("skew"), r.get("kurtosis_excess"),
           r.get("iqr_outlier_pct"), r.get("zero_pct")]
@@ -1230,72 +1198,72 @@ def markdown_eda_deep(summary: Dict[str, Any]) -> str:
     lines += [f"- {r['feature']}: skew={r.get('skew')}, kurtosis={r.get('kurtosis_excess')}, "
               f"outlier IQR={r.get('iqr_outlier_pct')}%"
               for r in _top(stats, "kurtosis_excess", 5)]
-    lines += ["", "![Thiếu theo feature × split]"
+    lines += ["", "![Missing by feature x split]"
               "(../reports/figures/eda_deep/01_missing_pct_by_split.png)", "",
-              "![Missingness mang thông tin nhãn]"
+              "![Missingness carries a label signal]"
               "(../reports/figures/eda_deep/07_missingness_information.png)", ""]
 
-    lines += ["## 2. Nhãn: mất cân bằng, entropy, chuỗi trạng thái", "",
-              _table(["Tập", "n", "Dương", "Tỉ lệ dương %", "IR", "Entropy (bit)",
-                      "Entropy chuẩn hoá", "Gini", "Baseline đa số %", "Mức"],
+    lines += ["## 2. Labels: imbalance, entropy, state runs", "",
+              _table(["Split", "n", "Positive", "Positive rate %", "IR", "Entropy (bits)",
+                      "Entropy normalized", "Gini", "Majority baseline %", "Level"],
                      [[name, r.get("n"), r.get("positive"), r.get("positive_pct"),
                        r.get("imbalance_ratio"), r.get("entropy_bits"), r.get("entropy_normalized"),
                        r.get("gini"), r.get("majority_baseline_accuracy_pct"), r.get("level")]
                       for name, r in label["per_split"].items()],
                      ["---", "---:", "---:", "---:", "---:", "---:", "---:", "---:", "---:", "---"]),
               "",
-              _table(["Công ty", "n", "Tỉ lệ dương %", "IR", "Mức", "Lần đổi nhãn",
-                      "Chuỗi 1 dài nhất", "Chuỗi 0 dài nhất"],
+              _table(["Company", "n", "Positive rate %", "IR", "Level", "Label flips",
+                      "Longest run of 1", "Longest run of 0"],
                      [[t, r.get("n"), r.get("positive_pct"), r.get("imbalance_ratio"), r.get("level"),
                        r.get("n_switches"), r.get("max_run_one"), r.get("max_run_zero")]
                       for t, r in sorted(label["per_ticker"].items(),
                                          key=lambda kv: -(kv[1].get("positive_pct") or 0))],
                      ["---", "---:", "---:", "---:", "---", "---:", "---:", "---:"]),
               "",
-              f"- Chuyển trạng thái giữa hai quý liên tiếp: `{label['transitions']['counts']}`; "
+              f"- Transitions between consecutive quarters: `{label['transitions']['counts']}`; "
               f"P(1|1) = {label['transitions']['p_one_given_one']}, "
               f"P(1|0) = {label['transitions']['p_one_given_zero']}, "
-              f"giữ nguyên nhãn = **{label['transitions']['persistence_pct']}%**.",
-              f"- Thực thể: **{label['entities']['n_tickers']}** công ty, số thực thể hiệu dụng "
+              f"label stays the same = **{label['transitions']['persistence_pct']}%**.",
+              f"- Entities: **{label['entities']['n_tickers']}** companies, effective number of entities "
               f"= **{label['entities']['effective_number_of_tickers']}**; "
-              f"{label['entities']['share_samples_in_single_class_tickers_pct']}% mẫu thuộc công ty "
-              f"chỉ có một lớp.",
-              f"- Mức mất cân bằng nặng nhất: " + ", ".join(
+              f"{label['entities']['share_samples_in_single_class_tickers_pct']}% of samples belong to a " 
+              f"company with only one class.",
+              f"- Worst imbalance: " + ", ".join(
                   f"{r['ticker']} (IR={r['imbalance_ratio']})"
                   for r in label["entities"]["worst_imbalance"]) + ".",
               "",
-              "![Tỉ lệ nhãn theo công ty]"
+              "![Label rate by company]"
               "(../reports/figures/eda_deep/02_label_by_ticker.png)", ""]
 
-    lines += ["## 3. Quan hệ feature ↔ nhãn", "",
-              f"- {association['n_usable_features']}/{scope['n_features']} feature tính được AUC "
-              f"1-feature; {association['n_effect_ge_0_30']} feature có |2·AUC−1| ≥ 0.30; "
-              f"{association['n_significant_after_bh_5pct']} feature còn ý nghĩa sau BH-FDR.",
-              f"- Lưu ý: {association['multiple_testing_note']}", "",
-              _table(["Feature", "#cặp", "AUC", "Hướng", "r (point-biserial)", "q-value BH",
-                      "MI", "Lift decile trên"],
+    lines += ["## 3. Feature <-> label association", "",
+              f"- {association['n_usable_features']}/{scope['n_features']} features allow a "
+              f"single-feature AUC; {association['n_effect_ge_0_30']} features have |2*AUC-1| >= 0.30; "
+              f"{association['n_significant_after_bh_5pct']} features remain significant after BH-FDR.",
+              f"- Reading: {association['multiple_testing_note']}", "",
+              _table(["Feature", "#pairs", "AUC", "Direction", "r (point-biserial)", "BH q-value",
+                      "MI", "Top-decile lift"],
                      [[r["feature"], r.get("n_pairs"), r.get("auc"), r.get("direction"),
                        r.get("point_biserial_r"), r.get("q_value_bh"), r.get("mutual_information"),
                        r.get("lift_top_decile")]
                       for r in association["ranked_by_effect"][:15]],
                      ["---", "---:", "---:", "---", "---:", "---:", "---:", "---:"]),
               "",
-              "![Liên hệ feature ↔ nhãn]"
+              "![Feature <-> label association]"
               "(../reports/figures/eda_deep/03_target_association.png)",
               "",
-              "![ECDF top feature theo nhãn]"
+              "![ECDF of top features by label]"
               "(../reports/figures/eda_deep/06_top_feature_ecdf.png)", ""]
 
     dims = corr["effective_dimensionality"]
-    lines += ["## 4. Quan hệ feature ↔ feature (đa cộng tuyến)", "",
-              f"- **{corr['n_pairs_abs_ge_threshold']}** cặp có |r| ≥ {corr['threshold']}; "
-              f"**{corr['n_features_in_clusters']}** feature nằm trong "
-              f"{len(corr['clusters_abs_ge_threshold'])} cụm thông tin.",
-              f"- Số chiều hiệu dụng (participation ratio) = **{dims.get('participation_ratio')}** "
-              f"trên {dims.get('n_columns')} cột; cần "
-              f"**{dims.get('n_components_for_95pct_variance')}** thành phần cho 95% phương sai.",
-              "", f"**Cụm mạnh nhất (|r| ≥ {corr['threshold']}):**", "",
-              _table(["#", "Cụm feature", "Số cột"],
+    lines += ["## 4. Feature <-> feature relationship (collinearity)", "",
+              f"- **{corr['n_pairs_abs_ge_threshold']}** pairs with |r| >= {corr['threshold']}; "
+              f"**{corr['n_features_in_clusters']}** features sit in "
+              f"{len(corr['clusters_abs_ge_threshold'])} information clusters.",
+              f"- Effective dimensionality (participation ratio) = **{dims.get('participation_ratio')}** "
+              f"out of {dims.get('n_columns')} columns; "
+              f"**{dims.get('n_components_for_95pct_variance')}** components cover 95% of the variance.",
+              "", f"**Strongest clusters (|r| >= {corr['threshold']}):**", "",
+              _table(["#", "Feature cluster", "Columns"],
                      [[index + 1, ", ".join(cluster), len(cluster)]
                       for index, cluster in enumerate(corr["clusters_abs_ge_threshold"][:10])],
                      ["---:", "---", "---:"]),
@@ -1304,28 +1272,28 @@ def markdown_eda_deep(summary: Dict[str, Any]) -> str:
                      [[p["a"], p["b"], p["pearson"], p["spearman"]]
                       for p in corr["strongest_pairs"][:10]],
                      ["---", "---", "---:", "---:"]),
-              "- Đọc cột Spearman để biết tương quan có bị outlier chi phối không.",
+              "- Read the Spearman column to see whether a correlation is driven by outliers.",
               "",
-              "![Heatmap tương quan theo cụm]"
+              "![Correlation heatmap by cluster]"
               "(../reports/figures/eda_deep/04_correlation_clustered.png)", ""]
 
-    lines += ["## 5. Dịch chuyển phân phối train → test", "",
-              f"- **{drift['n_drifted']}** feature vượt ngưỡng cảnh báo "
-              f"(KS ≥ {DRIFT_KS_WARN} hoặc |SMD| ≥ {DRIFT_SMD_WARN}); "
-              f"{drift['n_psi_above_0_2']} feature có PSI > 0.2; "
-              f"{drift['n_significant_after_bh_5pct']} feature khác biệt có ý nghĩa sau BH-FDR.",
-              f"- Cảnh báo đọc số: PSI chia 10 khoảng trên mẫu test chỉ {scope['n_samples'].get(COMPARISON_SPLIT)} "
-              f"dòng nên mỗi khoảng ~{max(1, scope['n_samples'].get(COMPARISON_SPLIT, 1) // 10)} quan sát "
-              f"⇒ PSI nhạy nhiễu, dùng KS/SMD làm tiêu chí chính, PSI để theo dõi về sau.",
+    lines += ["## 5. Train -> test distribution drift", "",
+              f"- **{drift['n_drifted']}** features exceed the warning threshold "
+              f"(KS >= {DRIFT_KS_WARN} or |SMD| >= {DRIFT_SMD_WARN}); "
+              f"{drift['n_psi_above_0_2']} features have PSI > 0.2; "
+              f"{drift['n_significant_after_bh_5pct']} features differ significantly after BH-FDR.",
+              f"- Reading caveat: PSI splits the test sample of only {scope['n_samples'].get(COMPARISON_SPLIT)} "
+              f"rows into 10 bins, so ~{max(1, scope['n_samples'].get(COMPARISON_SPLIT, 1) // 10)} observations "
+              f"per bin => PSI is noise-sensitive; use KS/SMD as the main criterion and PSI for monitoring.",
               "",
-              _table(["Feature", "Mean train", "Mean test", "KS", "KS p-value", "q-value BH",
+              _table(["Feature", "Mean train", "Mean test", "KS", "KS p-value", "BH q-value",
                       "SMD", "PSI"],
                      [[r["feature"], r.get("mean_ref"), r.get("mean_new"), r.get("ks_statistic"),
                        r.get("ks_p_value"), r.get("q_value_bh"), r.get("smd"), r.get("psi")]
                       for r in drift["ranked_by_ks"][:15]],
                      ["---", "---:", "---:", "---:", "---:", "---:", "---:", "---:"]),
               "",
-              "![Dịch chuyển train → test]"
+              "![Train -> test drift]"
               "(../reports/figures/eda_deep/05_drift_ks_vs_smd.png)", ""]
 
     overlap = leakage["history_overlap"]
@@ -1334,58 +1302,56 @@ def markdown_eda_deep(summary: Dict[str, Any]) -> str:
     availability = leakage["label_availability"]
     density = missing["missing_density_per_sample"]
     split_history_key = f"history_periods_{REFERENCE_SPLIT}_vs_{COMPARISON_SPLIT}"
-    lines += ["## 6. Rò rỉ tiềm ẩn & tính độc lập của mẫu", "",
-              f"- Hai mẫu liên tiếp cùng công ty chia sẻ lịch sử (Jaccard): mean "
+    lines += ["## 6. Potential leakage & sample independence", "",
+              f"- Two consecutive same-company samples share history (Jaccard): mean "
               f"**{consecutive['mean_history_jaccard']}**, median {consecutive['median_history_jaccard']}, "
-              f"min {consecutive['min_history_jaccard']} trên {consecutive['n_pairs']} cặp.",
-              f"- Kỳ lịch sử của test đã có trong train: "
+              f"min {consecutive['min_history_jaccard']} over {consecutive['n_pairs']} pairs.",
+              f"- Test history periods already in train: "
               f"**{overlap[split_history_key]['share_of_test_history_periods_in_train_pct']}%**; "
-              f"kỳ target của test xuất hiện trong lịch sử train: "
-              f"**{overlap['cross_split_target_leak']['n_test_targets_seen_in_train_history']}** mẫu.",
-              f"- Dòng feature trùng khít test↔train: **{duplicates['n_new_rows_duplicated_in_ref']}**; "
-              f"trùng trong nội bộ train: {duplicates['n_duplicate_rows_within_ref']}.",
-              f"- Thứ tự thời gian nhãn: {availability['n_label_available_before_target_end']} mẫu có "
-              f"nhãn công bố TRƯỚC khi kỳ target kết thúc (kỳ vọng 0); khoảng cách trung vị "
-              f"{availability['median_gap_days']} ngày.",
-              f"- Mật độ thiếu mỗi mẫu: trung bình {density['mean_features_missing']}/"
-              f"{density['n_features']} feature, cao nhất {density['max_features_missing']}; "
-              f"tỉ lệ mẫu thiếu > 50% feature = {density['share_rows_with_gt_50pct_missing']}.",
+              f"test target periods appearing in train history: "
+              f"**{overlap['cross_split_target_leak']['n_test_targets_seen_in_train_history']}** samples.",
+              f"- Exact duplicate feature rows test<->train: **{duplicates['n_new_rows_duplicated_in_ref']}**; "
+              f"duplicates within train: {duplicates['n_duplicate_rows_within_ref']}.",
+              f"- Label time order: {availability['n_label_available_before_target_end']} samples have a "
+              f"label published BEFORE the target period ends (expected 0); median gap "
+              f"{availability['median_gap_days']} days.",
+              f"- Missing density per sample: mean {density['mean_features_missing']}/"
+              f"{density['n_features']} features, max {density['max_features_missing']}; "
+              f"share of samples missing > 50% of features = {density['share_rows_with_gt_50pct_missing']}.",
               "",
-              "**Feature thiếu mang thông tin nhãn (top 10 theo |Δ|):**", "",
-              _table(["Feature", "#thiếu", "Tỉ lệ nhãn 1 khi THIẾU %", "khi CÓ %", "Δ điểm %",
-                      "q-value BH"],
+              "**Missing features that carry a label signal (top 10 by |delta|):**", "",
+              _table(["Feature", "#missing", "Label-1 rate when MISSING %", "when PRESENT %", "Delta pp",
+                      "BH q-value"],
                      [[r["feature"], r.get("n_missing"), r.get("target_rate_when_missing_pct"),
                        r.get("target_rate_when_present_pct"), r.get("delta_pct_points"),
                        r.get("q_value_bh")]
                       for r in missing["label_informativeness"]["ranked_by_abs_delta"][:10]],
                      ["---", "---:", "---:", "---:", "---:", "---:"]),
               "",
-              "**Cặp feature thường thiếu cùng nhau (top 5):**", "",
-              _table(["Feature A", "Feature B", "#thiếu cùng", "Jaccard"],
+              "**Feature pairs that often go missing together (top 5):**", "",
+              _table(["Feature A", "Feature B", "#both missing", "Jaccard"],
                      [[r["a"], r["b"], r["n_both_missing"], r["jaccard"]]
                       for r in missing["co_missing_top"][:5]],
                      ["---", "---", "---:", "---:"]), ""]
 
-    lines += ["## 7. Kết luận tự động", ""]
+    lines += ["## 7. Automatic conclusions", ""]
     lines += [f"{index + 1}. {text}" for index, text in enumerate(summary["auto_conclusions"])]
-    lines += ["", "## 8. Hình", ""]
+    lines += ["", "## 8. Figures", ""]
     lines += [f"- `{path}`" for path in summary["figures"]]
     return "\n".join(lines) + "\n"
 
 
-# ---------------------------------------------------------------------------
-# 7. Điều phối: chạy toàn bộ EDA chuyên sâu + ghi artifact
-# ---------------------------------------------------------------------------
+# Orchestration: run the whole deep EDA and write artifacts.
 def run(write: bool = True, out_dir: Any = None, fig_dir: Any = None,
         figures: bool = True) -> Dict[str, Any]:
-    """Chạy EDA chuyên sâu, ghi `eda_deep.{json,md}` (+ 7 hình) và trả summary.
+    """Run the deep EDA, write `eda_deep.{json,md}` (+ 7 figures) and return the summary.
 
-    `out_dir` / `fig_dir` cho phép test trỏ vào thư mục tạm thay vì `reports/`.
-    Liên hệ feature–nhãn và tương quan dùng **train+validation** (không chạm test); test chỉ
-    xuất hiện trong phép so dịch chuyển phân phối.
+    `out_dir` and `fig_dir` let tests point at a temp folder instead of `reports/`.
+    Feature-label association and correlation use train and validation only (test untouched); test
+    appears only in the distribution-drift comparison.
     """
     ensure_dirs()
-    ensure_utf8_stdio()  # hàm này cũng được gọi trực tiếp từ test/notebook ⇒ đừng phụ thuộc CLI
+    ensure_utf8_stdio()  # also called directly from tests/notebooks, so don't depend on the CLI
     out = Path(out_dir) if out_dir else RESULTS_DIR
     figs = Path(fig_dir) if fig_dir else (FIGURES_DIR / "eda_deep")
     out.mkdir(parents=True, exist_ok=True)
@@ -1437,7 +1403,7 @@ def run(write: bool = True, out_dir: Any = None, fig_dir: Any = None,
             "n_samples": {name: len(samples_by_split[name]) for name in SPLITS},
             "n_features": len(names),
             "feature_names": names,
-            "association_eval_set": "train+validation — test không dùng để mô tả liên hệ",
+            "association_eval_set": "train+validation - test is not used to describe association",
             "reference_split": REFERENCE_SPLIT,
             "comparison_split": COMPARISON_SPLIT,
         },
@@ -1461,9 +1427,9 @@ def run(write: bool = True, out_dir: Any = None, fig_dir: Any = None,
             json.dumps(summary, ensure_ascii=False, indent=2, default=float) + "\n", encoding="utf-8")
         (out / "eda_deep.md").write_text(markdown_eda_deep(summary), encoding="utf-8")
 
-    print(f"EDA chuyên sâu: {summary['feature_quality']['n_features']} feature trên "
-          f"{len(X_analysis)} mẫu (train+validation); {drift['n_drifted']} feature dịch chuyển "
-          f"train→test; {correlation['n_pairs_abs_ge_threshold']} cặp |r| ≥ "
-          f"{correlation['threshold']}; nhãn: {label['overall']['level']} "
-          f"(entropy {label['overall']['entropy_bits']} bit)")
+    print(f"Deep EDA: {summary['feature_quality']['n_features']} features over "
+          f"{len(X_analysis)} samples (train+validation); {drift['n_drifted']} features drift "
+          f"train->test; {correlation['n_pairs_abs_ge_threshold']} pairs with |r| >= "
+          f"{correlation['threshold']}; labels: {label['overall']['level']} "
+          f"(entropy {label['overall']['entropy_bits']} bits)")
     return summary

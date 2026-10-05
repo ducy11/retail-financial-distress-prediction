@@ -1,14 +1,8 @@
-"""Kiểm thử `imbalance_lab`: bảo đảm KHÔNG rò rỉ dữ liệu và các hàm ngưỡng tính đúng.
+"""Verify `labs.imbalance_lab`: no data leakage, and threshold functions that compute correctly.
 
-Chạy: python -m unittest discover -s tests -v
-
-Nhóm test:
-1. `TestDataAndSplits`     — tỉ lệ mất cân bằng 98/2 và chia tập stratified.
-2. `TestResampling`        — SMOTE/undersample chỉ đổi tập train; không đụng validation.
-3. `TestNoLeakage`         — pipeline resampling chỉ train trên dữ liệu đã resample CỦA FOLD;
-                             `scale_pos_weight` chỉ tính từ nhãn của fold.
-4. `TestThresholds`        — hàm ngưỡng khớp cách tính bằng sklearn/brute-force.
-5. `TestRunSmoke`          — chạy end-to-end cỡ nhỏ (bỏ qua nếu thiếu lightgbm).
+The suite covers the 98/2 dataset and its stratified split, resampling that only alters the train
+partition, the guarantee that the classifier sees fold-train only and that `scale_pos_weight` derives from
+the given labels, the threshold helpers against a brute-force reference, and a small smoke run.
 """
 from __future__ import annotations
 
@@ -21,25 +15,25 @@ import numpy as np
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from imbalance_lab import config as C  # noqa: E402
-from imbalance_lab.data import (label_distribution, make_imbalanced_dataset,  # noqa: E402
+from labs.imbalance_lab import config as C  # noqa: E402
+from labs.imbalance_lab.data import (label_distribution, make_imbalanced_dataset,  # noqa: E402
                                 stratified_holdout_split)
-from imbalance_lab.metrics import metrics_at_threshold  # noqa: E402
-from imbalance_lab.models import ScalePosWeightClassifier  # noqa: E402
-from imbalance_lab.samplers import (SMOTE, RandomUnderSampler,  # noqa: E402
+from labs.imbalance_lab.metrics import metrics_at_threshold  # noqa: E402
+from labs.imbalance_lab.models import ScalePosWeightClassifier  # noqa: E402
+from labs.imbalance_lab.samplers import (SMOTE, RandomUnderSampler,  # noqa: E402
                                     build_sampler_pipeline, make_samplers, resampling_backend)
-from imbalance_lab.thresholds import (best_cost_threshold, best_f1_threshold,  # noqa: E402
+from labs.imbalance_lab.thresholds import (best_cost_threshold, best_f1_threshold,  # noqa: E402
                                       scan_counts, threshold_for_precision)
 
 try:
     import lightgbm  # noqa: F401
     HAS_LIGHTGBM = True
-except Exception:  # pragma: no cover - môi trường không có lightgbm
+except Exception:  # pragma: no cover - lightgbm is absent
     HAS_LIGHTGBM = False
 
 
 class RecordingClassifier:
-    """Classifier giả: ghi lại số mẫu và phân phối nhãn nó NHẬN ĐƯỢC khi `fit`."""
+    """A stub classifier that records the sample count and label mix it receives in `fit`."""
 
     def __init__(self) -> None:
         self.n_seen: int = -1
@@ -97,7 +91,7 @@ class TestResampling(unittest.TestCase):
 
 
 class TestNoLeakage(unittest.TestCase):
-    """Các test cốt lõi: resampling KHÔNG được chạm vào validation/test."""
+    """Core checks: resampling must never touch the validation set or the test set."""
 
     def test_pipeline_resamples_only_fold_train_and_val_untouched(self):
         X, y = make_imbalanced_dataset(n_samples=4000, random_state=4)
@@ -111,21 +105,21 @@ class TestNoLeakage(unittest.TestCase):
                                  random_state=0)
         pipeline = build_sampler_pipeline(samplers, recorder, prefer_imblearn=True)
         pipeline.fit(X_tr, y_tr)
-        pipeline.predict_proba(X_va)  # suy luận trên validation
+        pipeline.predict_proba(X_va)  # inference on validation
 
-        # (1) classifier chỉ thấy dữ liệu ĐÃ RESAMPLE của fold train
+        # 1. The classifier sees only the resampled fold-train data.
         expected = label_distribution(y_tr)
-        self.assertNotEqual(recorder.n_seen, expected["n"])          # đã resample
-        self.assertLess(recorder.n_seen, expected["n"])              # và nhỏ hơn (undersample)
-        self.assertGreater(recorder.n_positive_seen, expected["n_positive"])  # SMOTE sinh thêm dương
-        # (2) validation KHÔNG bị đổi một byte nào
+        self.assertNotEqual(recorder.n_seen, expected["n"])          # resampling happened
+        self.assertLess(recorder.n_seen, expected["n"])              # and shrank it (undersample)
+        self.assertGreater(recorder.n_positive_seen, expected["n_positive"])  # SMOTE added positives
+        # 2. Validation is unchanged byte for byte.
         self.assertTrue(np.array_equal(X_va, X_va_before))
         self.assertTrue(np.array_equal(y_va, y_va_before))
-        # (3) tỉ lệ nhãn validation vẫn đúng như dữ liệu gốc (2%)
+        # 3. The validation label rate still matches the source data at 2 percent.
         self.assertAlmostEqual(100.0 * (y_va == 1).mean(), 2.0, delta=1.0)
 
     def test_scale_pos_weight_uses_only_given_fold_labels(self):
-        """Trọng số phải suy từ nhãn được truyền vào `fit`, không phải từ hằng số toàn cục."""
+        """The weight must derive from the labels passed to `fit`, not from a global constant."""
         model = ScalePosWeightClassifier(random_state=0)
         y_balanced = np.array([0] * 50 + [1] * 50)
         model.fit(np.zeros((100, 3)), y_balanced)
@@ -184,13 +178,13 @@ class TestThresholds(unittest.TestCase):
 
 
 class TestRunSmoke(unittest.TestCase):
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm cho test end-to-end")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required for the end-to-end test")
     def test_run_returns_all_strategies(self):
-        from imbalance_lab.run import run
+        from labs.imbalance_lab.run import run
         result = run(n_samples=3000, include_leaky=False, write=False)
         self.assertEqual(result["strategies"],
                          ["baseline", "cost_sensitive", "resampling", "resampling_calibrated"])
-        self.assertEqual(len(result["strategy_rows"]), 4 * 4)  # 4 chiến lược × 4 chế độ ngưỡng
+        self.assertEqual(len(result["strategy_rows"]), 4 * 4)  # four strategies by four threshold modes
         for row in result["strategy_rows"]:
             self.assertTrue(0.0 <= row["pr_auc"] <= 1.0)
             self.assertTrue(0.0 <= row["brier"] <= 1.0)
@@ -198,12 +192,12 @@ class TestRunSmoke(unittest.TestCase):
         self.assertTrue(resample_rows)
         self.assertGreater(resample_rows[0]["train_ir_before"], resample_rows[0]["train_ir_after"])
 
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm cho test hiệu chuẩn")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required for the calibration test")
     def test_calibrated_strategy_produces_valid_probabilities(self):
-        """Biến thể hiệu chuẩn phải chạy được và cho xác suất hợp lệ (không rò rỉ: test riêng)."""
-        from imbalance_lab.data import make_imbalanced_dataset, stratified_holdout_split
-        from imbalance_lab.metrics import metrics_at_threshold
-        from imbalance_lab.models import build_strategy
+        """The calibrated variant must run and yield valid probabilities without touching the test split."""
+        from labs.imbalance_lab.data import make_imbalanced_dataset, stratified_holdout_split
+        from labs.imbalance_lab.metrics import metrics_at_threshold
+        from labs.imbalance_lab.models import build_strategy
 
         X, y = make_imbalanced_dataset(n_samples=2000, random_state=11)
         split = stratified_holdout_split(X, y, test_size=0.25, seed=11)
@@ -211,7 +205,7 @@ class TestRunSmoke(unittest.TestCase):
         model = strategy["factory"]()
         model.fit(split["X_train"], split["y_train"])
         proba = model.predict_proba(split["X_test"])[:, 1]
-        self.assertTrue(((proba >= 0) & (proba <= 1)).all(), "xác suất phải nằm trong [0, 1]")
+        self.assertTrue(((proba >= 0) & (proba <= 1)).all(), "probabilities must lie in [0, 1]")
         metrics = metrics_at_threshold(split["y_test"], proba, 0.5)
         self.assertIn("brier", metrics)
         self.assertTrue(0.0 <= metrics["brier"] <= 1.0)

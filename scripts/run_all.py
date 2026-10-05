@@ -1,13 +1,8 @@
-"""Chạy TOÀN BỘ pipeline theo thứ tự và ghi log — một lệnh tái lập mọi artifact.
+"""Run the full pipeline in order and log the outcome, reproducing every artifact in one command.
 
-Lệnh: python -m scripts.run_all [--skip tune,analysis] [--only train,evaluate]
-
-Vì sao cần: kết quả trong `reports/` phải tái tạo được từ dữ liệu trong repo. Script này chạy
-lần lượt data → provenance → eda → eda_deep → train → baselines → validation → tuning → evaluate →
-report → analyze → prep_exp → imbalance_real → search → explain → significance → label_sensitivity →
-relabel → predict → make_report → export_office, ghi log vào `reports/results/run_all.log`.
-
-Bước nào lỗi thì ghi rõ trong log và tiếp tục (trừ `train`/`evaluate` là bước lõi).
+Executes the stages listed in `STEPS` sequentially and captures each stage's stdout into
+`reports/results/run_all.log`, continuing past failures and treating `train` and `evaluate` as core.
+Run with `python -m scripts.run_all [--skip tune,analysis] [--only train,evaluate]`.
 """
 from __future__ import annotations
 
@@ -22,34 +17,34 @@ from typing import Any, Dict, List, Tuple
 
 from forecasting.config import RESULTS_DIR, ensure_dirs, ensure_utf8_stdio
 
-#: (nhãn, module, hàm, kwargs, bước lõi?)
+#: (label, module, callable, kwargs, is_core_step)
 STEPS: List[Tuple[str, str, str, Dict[str, Any], bool]] = [
-    ("data (tái tạo split từ retail-expanded)", "forecasting.data", "run", {"force": False}, False),
-    ("prepare_sec (PORT ETL: tái tạo 16 chỉ tiêu từ snapshot SEC + đối chiếu ngược)",
+    ("data (rebuild the split from retail-expanded)", "forecasting.data", "run", {"force": False}, False),
+    ("prepare_sec (ported ETL: rebuild the 16 indicators from the SEC snapshot and back-check)",
      "scripts.prepare_sec", "run", {}, False),
-    ("provenance (kiểm chứng dữ liệu THẬT từ snapshot SEC)",
+    ("provenance (verify the data against the SEC snapshot)",
      "scripts.verify_provenance", "run", {}, False),
-    ("eda (hình EDA + bảng tổng quan)", "scripts.eda", "run", {}, False),
-    ("eda_deep (feature/nhãn/tương quan/drift chuyên sâu)", "scripts.eda_deep", "run", {}, False),
-    ("train (4 họ mô hình, chọn theo AP cross-company)", "forecasting.train", "run", {}, True),
-    ("baselines (dummy / ticker-prior / 1-feature / quy tắc Altman)", "forecasting.baselines", "run", {}, False),
-    ("validation (GroupKFold / LOCO / bootstrap mẫu & cụm / walk-forward)",
+    ("eda (EDA figures and overview tables)", "scripts.eda", "run", {}, False),
+    ("eda_deep (features, labels, correlations and drift)", "scripts.eda_deep", "run", {}, False),
+    ("train (four model families, selected by cross-company AP)", "forecasting.train", "run", {}, True),
+    ("baselines (dummy / ticker prior / single feature / Altman rule)", "forecasting.baselines", "run", {}, False),
+    ("validation (GroupKFold / LOCO / sample and cluster bootstrap / walk-forward)",
      "forecasting.validation", "run", {}, False),
-    ("tuning (GridSearchCV chia theo công ty)", "forecasting.tuning", "run", {}, False),
-    ("evaluate (chốt trên test, 1 lần)", "forecasting.evaluate", "run", {}, True),
-    ("report (bảng dự báo từng mẫu + histogram)", "forecasting.report", "run", {}, False),
-    ("analyze (importance / ablation / lỗi / ngưỡng)", "scripts.analyze", "run", {}, False),
-    ("prep_exp (winsorize × scaler trên dữ liệu thật)",
+    ("tuning (GridSearchCV split by company)", "forecasting.tuning", "run", {}, False),
+    ("evaluate (final test scoring, run once)", "forecasting.evaluate", "run", {}, True),
+    ("report (per-sample prediction table and histogram)", "forecasting.report", "run", {}, False),
+    ("analyze (importance / ablation / errors / thresholds)", "scripts.analyze", "run", {}, False),
+    ("prep_exp (winsorize x scaler on the real data)",
      "scripts.experiment_preprocessing", "run", {}, False),
-    ("imbalance_real (kỹ thuật lệch lớp trên dữ liệu thật)",
+    ("imbalance_real (class-imbalance techniques on the real data)",
      "scripts.experiment_imbalance_real", "run", {}, False),
-    ("search (random search + sổ thực nghiệm runs.csv)", "scripts.search", "run", {}, False),
-    ("explain (SHAP/KernelSHAP + hình giải thích)", "scripts.explain_model", "run", {}, False),
+    ("search (random search plus the runs.csv ledger)", "scripts.search", "run", {}, False),
+    ("explain (SHAP/KernelSHAP and explanation figures)", "scripts.explain_model", "run", {}, False),
     ("significance (DeLong + paired bootstrap)", "scripts.significance", "run", {}, False),
-    ("label_sensitivity (độ nhạy theo 4 định nghĩa nhãn)",
+    ("label_sensitivity (sensitivity across four label definitions)",
      "scripts.label_sensitivity", "run", {}, False),
-    ("relabel (nhãn quy tắc tái lập + so sánh)", "scripts.relabel", "run", {}, False),
-    ("predict (demo: chấm 1 mẫu bằng mô hình đã chốt)", "scripts.predict", "run",
+    ("relabel (reproducible rule labels and comparison)", "scripts.relabel", "run", {}, False),
+    ("predict (demo: score one sample with the frozen model)", "scripts.predict", "run",
      {"sample_id": "HD-2024Q2"}, False),
     ("make_report (docs/BAO-CAO.md + slide.md)", "scripts.make_report", "run", {}, False),
     ("export_office (Word .docx + Slide .pptx)", "scripts.export_office", "run", {}, False),
@@ -62,7 +57,7 @@ def _call(module_name: str, func_name: str, kwargs: Dict[str, Any]) -> Any:
 
 
 def run(skip: List[str] | None = None, only: List[str] | None = None) -> Dict[str, Any]:
-    """Chạy pipeline; trả {bước: trạng thái}."""
+    """Run the pipeline and return a mapping of step key to status."""
     ensure_dirs()
     skip = skip or []
     only = only or []
@@ -75,40 +70,40 @@ def run(skip: List[str] | None = None, only: List[str] | None = None) -> Dict[st
         if only and key not in only:
             continue
         if key in skip:
-            lines.append(f"[BỎ QUA] {label}")
+            lines.append(f"[SKIP]   {label}")
             status[key] = "skipped"
             continue
         buffer = io.StringIO()
         try:
             with warnings.catch_warnings(), redirect_stdout(buffer), redirect_stderr(buffer):
-                warnings.simplefilter("ignore")  # log sạch; cảnh báo kỹ thuật không phải kết quả
+                warnings.simplefilter("ignore")  # keep the log clean; technical warnings are not results
                 result = _call(module_name, func_name, kwargs)
             status[key] = "ok"
             lines.append(f"[OK]     {label}")
         except (ModuleNotFoundError, AttributeError) as e:
             status[key] = f"missing ({type(e).__name__})"
-            lines.append(f"[CHƯA CÓ] {label} — {e}")
-        except Exception as e:  # noqa: BLE001 - log lại toàn bộ để debug
+            lines.append(f"[MISSING] {label} — {e}")
+        except Exception as e:  # noqa: BLE001 - capture the full traceback for debugging
             status[key] = f"failed: {type(e).__name__}"
-            lines.append(f"[LỖI]    {label} — {type(e).__name__}: {e}")
+            lines.append(f"[ERROR]  {label} — {type(e).__name__}: {e}")
             lines.append(traceback.format_exc())
         body = buffer.getvalue().strip()
         if body:
             lines.append("    " + body.replace("\n", "\n    "))
         _ = result
 
-    header = "=== run_all: trạng thái các bước ==="
+    header = "=== run_all: step status ==="
     text = "\n".join([header] + [f"  {k}: {v}" for k, v in status.items()] + ["", *lines])
     log_path.write_text(text + "\n", encoding="utf-8")
-    print(text if len(text) < 6000 else text[:6000] + "\n... (xem đầy đủ trong run_all.log)")
+    print(text if len(text) < 6000 else text[:6000] + "\n... (see the full log in run_all.log)")
     return status
 
 
 def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--skip", default="", help="Bỏ qua các bước, phân tách bằng dấu phẩy.")
-    parser.add_argument("--only", default="", help="Chỉ chạy các bước này, phân tách bằng dấu phẩy.")
+    parser.add_argument("--skip", default="", help="Steps to skip, comma-separated.")
+    parser.add_argument("--only", default="", help="Run only these steps, comma-separated.")
     args = parser.parse_args(argv)
     status = run(skip=[s for s in args.skip.split(",") if s],
                  only=[s for s in args.only.split(",") if s])

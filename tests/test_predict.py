@@ -1,12 +1,8 @@
-"""Kiểm thử bản demo dự đoán (`scripts/predict.py`).
+"""Verify the scoring demo in `scripts/predict.py`.
 
-Chạy: python -m unittest tests.test_predict -v
-
-Vì sao cần: script này là "sản phẩm chạy được" để demo trong buổi bảo vệ, nên phải chắc chắn:
-1. Dựng lại ĐÚNG số feature mà artifact đã huấn luyện (không lệch âm thầm 47 vs 46 cột).
-2. Quyết định phải theo **ngưỡng vận hành** trong artifact (không phải 0,5).
-3. Tra mẫu phải trả đúng split (để cảnh báo backtest) và báo lỗi rõ khi không có mẫu.
-4. Phần KernelSHAP phải thoả ràng buộc efficiency: Σφ + E[f] ≈ f(x).
+The script is the runnable artifact for the demo, so the suite checks that it rebuilds exactly the feature
+width the artifact was trained on, that the decision uses the artifact operating threshold rather than
+0.5, that sample lookup returns the right split, and that KernelSHAP meets the efficiency identity.
 """
 from __future__ import annotations
 
@@ -25,15 +21,15 @@ from scripts.predict import (find_sample, format_report, load_model,  # noqa: E4
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 HAS_ARTIFACT = (MODELS_DIR / "best.joblib").exists()
-SKIP_REASON = "chưa có reports/models/best.joblib (chạy `python -m forecasting.train` trước)"
+SKIP_REASON = "reports/models/best.joblib is missing; run `python -m forecasting.train` first"
 
 
-def setUpModule() -> None:  # noqa: D103 - hook của unittest
+def setUpModule() -> None:  # noqa: D103 - unittest hook
     quiet_library_warnings()
 
 
 class TestFindSample(unittest.TestCase):
-    """Tra mẫu theo sample_id / (ticker, quarter) và theo split."""
+    """Look up a sample by id or by ticker and quarter, returning its split."""
 
     def test_find_by_sample_id_returns_known_split(self):
         sample, split = find_sample(sample_id="HD-2024Q2")
@@ -56,7 +52,7 @@ class TestFindSample(unittest.TestCase):
 
 
 class TestScoring(unittest.TestCase):
-    """Chấm điểm: số feature khớp artifact, ngưỡng vận hành, xác suất hợp lệ."""
+    """Scoring: the feature width matches the artifact, the threshold is the operating one, probabilities valid."""
 
     @classmethod
     def setUpClass(cls):
@@ -83,7 +79,7 @@ class TestScoring(unittest.TestCase):
         self.assertEqual(result["decision"], expected)
 
     def test_operating_threshold_prefers_artifact_then_summary(self):
-        """Thiếu `threshold` trong artifact ⇒ đọc `summary.json`; cuối cùng mới là 0,5."""
+        """With no threshold in the artifact the value comes from `summary.json`, falling back to 0.5."""
         expected = 0.5
         summary_path = RESULTS_DIR / "summary.json"
         if summary_path.exists():
@@ -100,7 +96,7 @@ class TestScoring(unittest.TestCase):
 
 
 class TestExplain(unittest.TestCase):
-    """Ràng buộc efficiency của KernelSHAP khi gọi qua bộ demo."""
+    """KernelSHAP efficiency constraint when invoked through the demo."""
 
     @classmethod
     def setUpClass(cls):
@@ -116,7 +112,7 @@ class TestExplain(unittest.TestCase):
         self.assertEqual(len(explain["contributions"]), 5)
         self.assertAlmostEqual(explain["prediction"], result["probability"], places=9)
         self.assertLess(abs(explain["efficiency_gap"]), 1e-6)
-        # Σφ trên TOÀN BỘ feature = f(x) − E[f]; top-K chỉ là một phần nên chỉ kiểm tra dấu/hướng
+        # Summing phi over every feature gives f(x) - E[f]; top-K is a subset, so only membership is checked.
         self.assertTrue(all(c["feature"] in set(feature_names())
                             for c in explain["contributions"]))
 

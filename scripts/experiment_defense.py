@@ -1,30 +1,8 @@
-"""Thực nghiệm BỔ SUNG phục vụ phản biện: **LiteSVM** và **XGBoost** (không thuộc pipeline chính).
+"""Supplementary experiments for the defense: LiteSVM and XGBoost outside the main pipeline.
 
-Vì sao có script này (đọc trước khi trích số liệu):
-- Hội đồng hỏi *"Có cần chạy thêm LiteSVM không?"* và *"Sao không so từng lớp trên XGBoost?"*.
-  Pipeline chính của đồ án (`scripts/run_all.py`) **cố ý** chỉ dùng 4 họ thuần scikit-learn
-  (logistic · random forest · hist-gradient-boosting · MLP). Script này chạy THÊM hai thứ đó trên
-  **đúng bộ dữ liệu của đồ án** để câu trả lời có số liệu, chứ không phải suy đoán.
-- Script KHÔNG nằm trong `run_all.py` và KHÔNG ghi vào `docs/BAO-CAO.md`, nên không làm lệch
-  "22 bước / 234 test / 98.200 phép kiểm tra" đã công bố. Artifact riêng:
-  `reports/results/defense_models.json` + `.md`.
-
-Ba phần:
-1. `litesvm_real`   — LiteSVM (LinearSVC lề cực đại + SGD hinge, có/không `class_weight`) trên
-   **corpus thật** (train 212 / val 32 / test 64), đặt cạnh 4 họ mô hình của đồ án.
-2. `litesvm_synth`  — cùng LiteSVM trên **bộ giả lập 95/5** dùng lại CHÍNH XÁC bộ sinh dữ liệu của
-   `benchmark_imbalanced.py` (`make_dataset`, seed 42, stratified 80/20) ⇒ so trực tiếp được với
-   bảng đã có `reports/benchmark_imbalanced.md`.
-3. `xgboost_deep`   — XGBoost trên corpus thật: mặc định · `scale_pos_weight` động · early stopping
-   trên validation; kèm **báo cáo theo từng lớp**, **ma trận nhầm lẫn** ở ngưỡng 0,5 và ở ngưỡng vận
-   hành của đồ án, và **khoảng cách train↔val** (bằng chứng overfitting).
-
-Lệnh: python -m scripts.experiment_defense            (chạy cả 3 phần, ghi artifact)
-      python -m scripts.experiment_defense --no-write (chỉ in ra màn hình)
-
-Chống rò rỉ: mọi bước học (impute/scale/calibration/trọng số lớp/early stopping) chỉ dùng train
-(riêng early stopping dùng validation ⇒ được ghi rõ trong artifact là "chọn mô hình bằng val,
-KHÔNG dùng test").
+The main pipeline deliberately uses four pure scikit-learn families, so this script runs LiteSVM on the
+real corpus and on the 95/5 synthetic set, plus XGBoost with per-class reporting, confusion matrices and
+train-to-validation gaps. It stays out of `run_all` and writes `results/defense_models.{json,md}`.
 """
 from __future__ import annotations
 
@@ -56,25 +34,25 @@ from forecasting.evaluation import evaluate_proba, metrics_at_threshold  # noqa:
 from forecasting.features import build_feature_matrix, extract_labels  # noqa: E402
 from forecasting.models import DEFAULT_MODEL_ORDER, make_model, predict_proba  # noqa: E402
 
-#: Ngưỡng vận hành thật của đồ án (đọc từ artifact, không hardcode).
+#: Real operating threshold, read from the artifact rather than hard-coded.
 OPERATING_THRESHOLD_FALLBACK = 0.7879126873178737
 OUTPUT_JSON = RESULTS_DIR / "defense_models.json"
 OUTPUT_MD = RESULTS_DIR / "defense_models.md"
-#: Số lần lặp lại phép đo độ trễ suy luận (lấy trung vị) và số dòng dùng để đo.
+#: Repeat count for the median inference latency and the number of rows measured.
 LATENCY_REPEATS = 5
 LATENCY_ROWS = 1000
-#: Tên hiển thị của 4 họ mô hình chính thức (khớp `docs/BAO-CAO.md`).
+#: Display names of the four official model families, matching `docs/BAO-CAO.md`.
 PRETTY = {"logistic": "Logistic Regression", "random_forest": "Random Forest",
           "hist_gradient_boosting": "HistGradientBoosting", "mlp": "MLP (mạng nơ-ron)"}
 
 
 def log(message: str = "") -> None:
-    """In log ra terminal."""
+    """Print a log line to the terminal."""
     print(message, flush=True)
 
 
 def operating_threshold() -> float:
-    """Ngưỡng vận hành đã chốt trong `summary.json` (fallback nếu thiếu file)."""
+    """Operating threshold frozen in `summary.json`, with a fallback when the file is absent."""
     path = RESULTS_DIR / "summary.json"
     if path.exists():
         with open(path, encoding="utf-8") as f:
@@ -83,19 +61,14 @@ def operating_threshold() -> float:
 
 
 def make_litesvm(kind: str, *, balanced: bool = False, random_state: int = RANDOM_SEED) -> Pipeline:
-    """Pipeline LiteSVM: `impute(median) → scale → [Platt] LiteSVM`.
+    """Pipeline of impute, scale and a calibrated LiteSVM.
 
-    "LiteSVM" = phiên bản SVM **tuyến tính, chi phí thấp** (không kernel, không lưu support vector
-    dày đặc): `LinearSVC` (lề cực đại, loss hinge, liblinear) hoặc `SGDClassifier(loss="hinge")`
-    (giảm gradient ngẫu nhiên). Cả hai đều KHÔNG có `predict_proba` ⇒ bọc
-    `CalibratedClassifierCV(method="sigmoid", cv=3)` để đổi margin thành xác suất (Platt scaling),
-    nhờ đó tính được F1/ngưỡng cùng thang với các mô hình khác.
-
-    Vì sao phải scale: SVM nhạy với đơn vị đo (nó tối ưu KHOẢNG CÁCH tới siêu phẳng), khác mô hình
-    cây. Scaler nằm trong Pipeline nên chỉ học từ train ⇒ không rò rỉ.
+    LiteSVM means a cheap linear SVM, either `LinearSVC` or `SGDClassifier` with the hinge loss, which
+    lack `predict_proba` and are wrapped in `CalibratedClassifierCV` for Platt scaling. Scaling is needed
+    because the SVM optimises a distance, and it lives in the pipeline so it learns from train only.
     """
     if kind == "linearsvc":
-        # dual="auto" để liblinear/scipy tự chọn chế độ tối ưu theo n_features vs n_samples.
+        # dual="auto" lets liblinear pick the solver mode from the feature-to-sample ratio.
         base: Any = LinearSVC(C=1.0, dual="auto", max_iter=5000,
                               class_weight="balanced" if balanced else None,
                               random_state=random_state)
@@ -113,12 +86,12 @@ def make_litesvm(kind: str, *, balanced: bool = False, random_state: int = RANDO
 
 
 def classes_from(model: Pipeline) -> np.ndarray:
-    """Vector lớp của pipeline đã fit (lấy từ estimator bên trong calibration)."""
+    """Class vector of a fitted pipeline, taken from the estimator inside the calibration wrapper."""
     return np.asarray(getattr(model, "classes_", [0, 1]))
 
 
 def _per_class(y: np.ndarray, proba: np.ndarray, threshold: float) -> Dict[str, Any]:
-    """Báo cáo theo TỪNG LỚP + ma trận nhầm lẫn tại `threshold`."""
+    """Per-class metrics plus the confusion matrix at the given threshold."""
     pred = (np.asarray(proba) >= threshold).astype(int)
     precision, recall, f1, support = precision_recall_fscore_support(
         y, pred, labels=[0, 1], zero_division=0)
@@ -136,7 +109,7 @@ def _per_class(y: np.ndarray, proba: np.ndarray, threshold: float) -> Dict[str, 
 
 
 def _latency_ms(model: Any, X: np.ndarray, rows: int = LATENCY_ROWS) -> float:
-    """Độ trễ suy luận trung vị (ms cho `rows` dòng) — nhân bản mẫu cho đủ số dòng."""
+    """Median inference latency in milliseconds for `rows` rows, tiling samples to reach that count."""
     if len(X) == 0:
         return float("nan")
     reps = int(np.ceil(rows / len(X)))
@@ -150,7 +123,7 @@ def _latency_ms(model: Any, X: np.ndarray, rows: int = LATENCY_ROWS) -> float:
 
 
 def eval_model(model: Any, X: np.ndarray, y: np.ndarray, threshold: float) -> Dict[str, Any]:
-    """Metric đầy đủ của một mô hình đã fit trên một tập bất kỳ."""
+    """Every metric for a fitted model on an arbitrary split."""
     proba = predict_proba(model, X)
     full = evaluate_proba(y, proba, operating_threshold=threshold)
     return {
@@ -167,7 +140,7 @@ def eval_model(model: Any, X: np.ndarray, y: np.ndarray, threshold: float) -> Di
 
 
 def _train_timed(model: Any, X: np.ndarray, y: np.ndarray) -> float:
-    """Fit mô hình và trả về thời gian huấn luyện (giây)."""
+    """Fit the model and return the training time in seconds."""
     start = time.perf_counter()
     model.fit(X, y)
     return float(time.perf_counter() - start)
@@ -176,7 +149,7 @@ def _train_timed(model: Any, X: np.ndarray, y: np.ndarray) -> float:
 def _row(name: str, group: str, model: Any, X_tr: np.ndarray, y_tr: np.ndarray,
          X_va: np.ndarray, y_va: np.ndarray, X_te: np.ndarray, y_te: np.ndarray,
          threshold: float) -> Dict[str, Any]:
-    """Fit + đánh giá một mô hình trên train/val/test; trả một hàng kết quả đầy đủ."""
+    """Fit and evaluate one model on train, validation and test, returning a complete result row."""
     seconds = _train_timed(model, X_tr, y_tr)
     row = {"name": name, "group": group, "train_time_s": seconds,
            "latency_ms_per_1000": _latency_ms(model, X_te),
@@ -188,10 +161,10 @@ def _row(name: str, group: str, model: Any, X_tr: np.ndarray, y_tr: np.ndarray,
 
 
 def part_litesvm_real(threshold: float) -> Dict[str, Any]:
-    """Phần 1: LiteSVM (lề cực đại) + 4 họ mô hình của đồ án trên **corpus thật**.
+    """First part: LiteSVM next to the four project families on the real corpus.
 
-    Lưu ý phương pháp: LinearSVC/SGD hinge không có `predict_proba` nên được bọc
-    `CalibratedClassifierCV(sigmoid, cv=3)` (Platt scaling) — hiệu chuẩn cũng chỉ học từ train.
+    The hinge-loss estimators expose no `predict_proba`, so they are wrapped in
+    `CalibratedClassifierCV` with Platt scaling, itself fitted on train only.
     """
     train_s, val_s, test_s = (load_prepared(s) for s in ("train", "validation", "test"))
     X_tr, y_tr = build_feature_matrix(train_s), extract_labels(train_s)
@@ -207,7 +180,7 @@ def part_litesvm_real(threshold: float) -> Dict[str, Any]:
     for name in DEFAULT_MODEL_ORDER:
         rows.append(_row(PRETTY[name], "project", make_model(name),
                          X_tr, y_tr, X_va, y_va, X_te, y_te, threshold))
-    log(f"  [LiteSVM/real] {len(rows)} mô hình — test AUROC: " + ", ".join(
+    log(f"  [LiteSVM/real] {len(rows)} models — test AUROC: " + ", ".join(
         f"{r['name'].split(' · ')[-1]}={r['test']['auroc']:.4f}" for r in rows))
     return {"protocol": "corpus thật (train 212 / val 32 / test 64); ngưỡng vận hành lấy từ summary.json",
             "threshold": threshold, "rows": rows}
@@ -215,7 +188,7 @@ def part_litesvm_real(threshold: float) -> Dict[str, Any]:
 
 def _synth_row(label: str, group: str, model: Any, X_tr: np.ndarray, y_tr: np.ndarray,
                X_te: np.ndarray, y_te: np.ndarray) -> Dict[str, Any]:
-    """Fit + metric khớp đúng cột của `reports/benchmark_imbalanced.md` (bộ giả lập 95/5)."""
+    """Fit and score with the exact columns of `reports/benchmark_imbalanced.md` on the 95/5 set."""
     seconds = _train_timed(model, X_tr, y_tr)
     proba = predict_proba(model, X_te)
     pred = (proba >= 0.5).astype(int)
@@ -232,10 +205,12 @@ def _synth_row(label: str, group: str, model: Any, X_tr: np.ndarray, y_tr: np.nd
 
 
 def part_litesvm_synthetic() -> Dict[str, Any]:
-    """Phần 2: LiteSVM trên **bộ giả lập 95/5** dùng lại đúng bộ sinh dữ liệu của
-    `benchmark_imbalanced.make_dataset` (n=10.000, weights [0.95, 0.05], seed 42) ⇒ so được
-    trực tiếp với bảng đã có trong `reports/benchmark_imbalanced.md`."""
-    from benchmark_imbalanced import make_dataset
+    """Second part: LiteSVM on the 95/5 synthetic set, reusing `labs.benchmark.make_dataset`.
+
+    The generator uses n=10000, weights [0.95, 0.05] and seed 42, so the numbers line up directly with
+    the existing table in `reports/benchmark_imbalanced.md`.
+    """
+    from labs.benchmark import make_dataset
 
     X, y = make_dataset()
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.20, stratify=y,
@@ -253,7 +228,7 @@ def part_litesvm_synthetic() -> Dict[str, Any]:
                                   ("LiteSVM · LinearSVC + balanced", "linearsvc", True)):
         rows.append(_synth_row(label, "litesvm", make_litesvm(kind, balanced=balanced),
                                X_tr, y_tr, X_te, y_te))
-    log("  [LiteSVM/synthetic 95-5] xong")
+    log("  [LiteSVM/synthetic 95-5] done")
     return {"protocol": "make_classification(n_samples=10000, weights=[0.95,0.05], seed 42), "
                         "stratified 80/20, ngưỡng 0.5",
             "n_train": int(len(y_tr)), "n_test": int(len(y_te)),
@@ -261,31 +236,32 @@ def part_litesvm_synthetic() -> Dict[str, Any]:
 
 
 def _xgboost(**kw: Any) -> Any:
-    """`XGBClassifier` đã kiểm tra tương thích; trả `None` nếu môi trường không dùng được.
+    """Return a compatibility-checked `XGBClassifier`, or None when the environment cannot run it.
 
-    Vì sao phải thử trước: XGBoost 2.x + scikit-learn 1.6 có thể lỗi runtime (repo từng gặp); khi đó
-    phần XGBoost bị BỎ QUA và ghi rõ lý do thay vì im lặng trả số sai.
+    XGBoost 2.x with scikit-learn 1.6 can fail at runtime, so a tiny probe fit runs first and the
+    XGBoost section is skipped with an explicit reason instead of returning wrong numbers.
     """
     try:
         from xgboost import XGBClassifier
-    except Exception as exc:  # pragma: no cover - thiếu thư viện
-        log(f"  (bỏ qua XGBoost) không import được: {exc}")
+    except Exception as exc:  # pragma: no cover - library missing
+        log(f"  (skipping XGBoost) import failed: {exc}")
         return None
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             XGBClassifier(n_estimators=5, n_jobs=1).fit(np.zeros((20, 3)), np.array([0, 1] * 10))
-    except Exception as exc:  # pragma: no cover - xung đột phiên bản
-        log(f"  (bỏ qua XGBoost) fit thử thất bại: {type(exc).__name__}: {exc}")
+    except Exception as exc:  # pragma: no cover - version conflict
+        log(f"  (skipping XGBoost) probe fit failed: {type(exc).__name__}: {exc}")
         return None
     return XGBClassifier(**kw)
 
 
 def part_xgboost_real(threshold: float) -> Dict[str, Any]:
-    """Phần 3: XGBoost (tham chiếu boosting) trên **corpus thật**, kèm báo cáo TỪNG LỚP.
+    """Third part: XGBoost as a boosting reference on the real corpus, with per-class reporting.
 
-    Ba biến thể: mặc định · `scale_pos_weight = n_âm/n_dương` (tính từ train) · early stopping với
-    `eval_set` = validation ⇒ **số vòng được chọn bằng validation** (ghi rõ trong artifact).
+    Three variants are run: default, `scale_pos_weight` from the train class ratio, and early stopping
+    with validation as the eval set, so the round count is chosen on validation and stated in the
+    artifact.
     """
     from forecasting.features import feature_names
 
@@ -326,8 +302,8 @@ def part_xgboost_real(threshold: float) -> Dict[str, Any]:
             top = sorted(((names[int(str(k)[1:])], v) for k, v in gain.items() if str(k).startswith("f")),
                          key=lambda kv: -kv[1])[:10]
             row["importance_gain_top10"] = [{"feature": f, "gain": float(g)} for f, g in top]
-        except Exception as exc:  # pragma: no cover - phiên bản xgboost khác
-            log(f"  (bỏ qua importance) {exc}")
+        except Exception as exc:  # pragma: no cover - different xgboost version
+            log(f"  (skipping importance) {exc}")
         rows.append(row)
     log("  [XGBoost/real] " + ", ".join(f"{r['name'][:22]}={r['test']['auroc']:.4f}" for r in rows))
     return {"protocol": "corpus thật; early stopping chọn số vòng trên validation (KHÔNG dùng test)",
@@ -335,7 +311,7 @@ def part_xgboost_real(threshold: float) -> Dict[str, Any]:
 
 
 def _fmt(value: Any, digits: int = 4) -> str:
-    """Định dạng số cho bảng markdown (an toàn với `None`/NaN)."""
+    """Format a number for the markdown tables, tolerating None and NaN."""
     try:
         return f"{float(value):.{digits}f}"
     except (TypeError, ValueError):
@@ -343,7 +319,7 @@ def _fmt(value: Any, digits: int = 4) -> str:
 
 
 def markdown(sections: Dict[str, Any], threshold: float) -> str:
-    """Sinh bảng markdown cho cả ba phần (để đối chiếu nhanh khi phản biện)."""
+    """Render the markdown tables for all three parts, for quick cross-checking during the defense."""
     lines = ["# Thực nghiệm phản biện: LiteSVM & XGBoost (ngoài pipeline chính)", "",
              f"- Ngưỡng vận hành của đồ án (đọc từ `summary.json`): **{threshold:.4f}**",
              "- Chống rò rỉ: impute/scale/hiệu chuẩn/trọng số lớp chỉ học từ train; riêng biến thể",
@@ -388,10 +364,10 @@ def markdown(sections: Dict[str, Any], threshold: float) -> str:
 
 
 def run(write: bool = True) -> Dict[str, Any]:
-    """Chạy 3 phần thực nghiệm và (tuỳ chọn) ghi artifact vào `reports/results/`."""
+    """Run the three experiment parts and optionally write the artifacts under `reports/results/`."""
     ensure_dirs()
     threshold = operating_threshold()
-    log("=== Thực nghiệm phản biện: LiteSVM & XGBoost (ngoài pipeline chính) ===")
+    log("=== Defense experiments: LiteSVM and XGBoost outside the main pipeline ===")
     sections = {"threshold": threshold,
                 "litesvm_real": part_litesvm_real(threshold),
                 "litesvm_synthetic": part_litesvm_synthetic(),
@@ -400,12 +376,12 @@ def run(write: bool = True) -> Dict[str, Any]:
         OUTPUT_JSON.write_text(json.dumps(sections, ensure_ascii=False, indent=2, default=float) + "\n",
                                encoding="utf-8")
         OUTPUT_MD.write_text(markdown(sections, threshold), encoding="utf-8")
-        log(f"Đã ghi: reports/results/{OUTPUT_JSON.name} + reports/results/{OUTPUT_MD.name}")
+        log(f"Wrote: reports/results/{OUTPUT_JSON.name} + reports/results/{OUTPUT_MD.name}")
     return sections
 
 
 def main(argv=None) -> int:
-    """CLI: `python -m scripts.experiment_defense [--no-write]`."""
+    """Command-line entry point for `scripts.experiment_defense`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-write", action="store_true")

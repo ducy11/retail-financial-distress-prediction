@@ -1,16 +1,8 @@
-"""Tìm kiếm siêu tham số (random search) + **sổ thực nghiệm** `reports/results/runs.csv`.
+"""Hyperparameter random search with an experiment ledger.
 
-Lệnh: python -m scripts.search [--trials 40] [--models logistic,random_forest,...] [--no-write]
-
-Vì sao: phiếu chấm mức Xuất sắc yêu cầu "tối ưu siêu tham số bài bản **có lưu vết thực nghiệm**".
-Môi trường đồ án không có `optuna`/MLflow, nên script này:
-1. Chạy **random search** (log-uniform cho tham số scale) với mục tiêu **AP cross-company**
-   (StratifiedGroupKFold — cùng giao thức với `forecasting.tuning`).
-2. Ghi **mọi trial** ra `reports/results/runs.csv` ⇒ tra cứu lại từng cấu hình/seed/thời gian.
-3. So với `GridSearchCV` trong `reports/results/tuning.json` và với cấu hình mặc định trong
-   `HYPERPARAMS` ⇒ trả lời "tìm kiếm rộng hơn có đáng chi phí không?".
-
-Ghi ra: `reports/results/search.{json,md}` + `reports/results/runs.csv`.
+Runs random search against cross-company average precision using StratifiedGroupKFold, the same protocol
+as `forecasting.tuning`, records every trial in `reports/results/runs.csv`, and compares the result with
+GridSearchCV and the defaults in `HYPERPARAMS`. Writes `reports/results/search.{json,md}`.
 """
 from __future__ import annotations
 
@@ -33,12 +25,12 @@ from forecasting.models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY
 from forecasting.search import (SEARCH_SPACES, compare_with_grid, cross_company_ap, random_search,
                                 write_ledger)
 
-#: Mô hình mặc định đưa vào tìm kiếm — lấy từ registry (nguồn duy nhất: `forecasting.models`).
+#: Models searched by default, taken from the single registry in `forecasting.models`.
 DEFAULT_MODELS = list(DEFAULT_MODEL_ORDER)
 
 
 def _grid_reference(model: str) -> Dict[str, Any] | None:
-    """Lấy kết quả GridSearchCV của cùng mô hình từ `tuning.json` (nếu có)."""
+    """Read the GridSearchCV result for the same model from `tuning.json`, when present."""
     path = RESULTS_DIR / "tuning.json"
     if not path.exists():
         return None
@@ -53,7 +45,7 @@ def _grid_reference(model: str) -> Dict[str, Any] | None:
 
 
 def fig_search(rows: List[Dict[str, Any]], path: Path) -> None:
-    """Hình — phân bố CV-AP của mọi trial, đánh dấu điểm tốt nhất và mốc GridSearch/mặc định."""
+    """Plot the CV average precision of every trial, marking the best point and the grid reference."""
     if not rows:
         return
     models = sorted({r["model"] for r in rows})
@@ -84,14 +76,14 @@ def fig_search(rows: List[Dict[str, Any]], path: Path) -> None:
 def run(write: bool = True, trials: int = 40, models: List[str] | None = None,
         folds: int = 4, winsorize: str = "none", out_dir: Path | None = None,
         fig_dir: Path | None = None, figures: bool = True) -> Dict[str, Any]:
-    """Chạy random search cho từng mô hình, ghi artifact + sổ thực nghiệm `runs.csv`."""
+    """Run random search per model and write the artifacts plus the `runs.csv` ledger."""
     ensure_dirs()
     ensure_utf8_stdio()
     out = Path(out_dir) if out_dir else RESULTS_DIR
     figs = Path(fig_dir) if fig_dir else (RESULTS_DIR.parent / "figures" / "search")
     names = [m for m in (models or DEFAULT_MODELS) if m in MODEL_REGISTRY]
     splits = {n: load_prepared(n) for n in ("train", "validation")}
-    samples = splits["train"] + splits["validation"]   # tune trên train+validation (không chạm test)
+    samples = splits["train"] + splits["validation"]   # tune on train plus validation, never on test
     X, y = build_feature_matrix(samples), extract_labels(samples)
     groups = np.asarray([s[GROUP_KEY] for s in samples])
 
@@ -143,14 +135,14 @@ def run(write: bool = True, trials: int = 40, models: List[str] | None = None,
         (out / "search.md").write_text(markdown_search(summary), encoding="utf-8")
 
     best_row = max(rows, key=lambda r: r.get("best_cv_average_precision") or 0) if rows else {}
-    print(f"Search: {len(names)} mô hình × {trials} trial; tốt nhất {best_row.get('model')} "
-          f"CV-AP={best_row.get('best_cv_average_precision')}; Δ vs Grid="
-          f"{best_row.get('delta_vs_grid')}; sổ: {ledger_path.name} ({len(trials_all)} dòng)")
+    print(f"Search: {len(names)} models x {trials} trials; best {best_row.get('model')} "
+          f"CV-AP={best_row.get('best_cv_average_precision')}; delta vs Grid="
+          f"{best_row.get('delta_vs_grid')}; ledger: {ledger_path.name} ({len(trials_all)} rows)")
     return summary
 
 
 def markdown_search(summary: Dict[str, Any]) -> str:
-    """Sinh `reports/results/search.md` (mọi số đọc từ JSON, không nhập tay)."""
+    """Render `reports/results/search.md` from the JSON payload."""
     rows = summary["rows"]
     lines = ["# Tìm kiếm siêu tham số: random search + sổ thực nghiệm", "",
              f"- Phương pháp: {summary['method']}",
@@ -191,18 +183,18 @@ def markdown_search(summary: Dict[str, Any]) -> str:
 
 
 def main(argv=None) -> int:
-    """CLI: `python -m scripts.search [--trials N] [--models ...] [--no-write] [--no-figures]`."""
+    """Command-line entry point for `scripts.search`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--trials", type=int, default=40, help="Số trial mỗi mô hình.")
-    parser.add_argument("--models", default="", help="Danh sách mô hình, phân tách bằng dấu phẩy.")
+    parser.add_argument("--trials", type=int, default=40, help="Number of trials per model.")
+    parser.add_argument("--models", default="", help="Comma-separated list of models.")
     parser.add_argument("--folds", type=int, default=4)
     parser.add_argument("--winsorize", default="none", choices=("none", "iqr", "p1p99"))
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--no-figures", action="store_true")
     args = parser.parse_args(argv)
     models = [m for m in args.models.split(",") if m] or None
-    print("=== Random search + sổ thực nghiệm (mục tiêu CV-AP cross-company) ===")
+    print("=== Random search with experiment ledger (objective: cross-company CV-AP) ===")
     run(write=not args.no_write, trials=args.trials, models=models, folds=args.folds,
         winsorize=args.winsorize, figures=not args.no_figures)
     return 0

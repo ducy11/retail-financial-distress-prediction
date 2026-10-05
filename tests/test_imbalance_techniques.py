@@ -1,19 +1,8 @@
-"""Kiểm thử DANH MỤC KỸ THUẬT mất cân bằng (yêu cầu #2): đủ mục, chống rò rỉ, ngưỡng PR, Focal Loss.
+"""Verify the imbalance technique catalogue (requirement 2): coverage, leakage, thresholds and focal loss.
 
-Chạy: python -m unittest discover -s tests -v
-
-Nhóm test:
-1. `TestCatalogCoverage`    — danh mục phủ ĐỦ mọi nhóm trong yêu cầu (kể cả khi ai đó sửa code);
-                              mọi kỹ thuật dựng được estimator/factory.
-2. `TestSamplerTechniques`  — tỉ lệ mục tiêu của từng sampler (cả bản nội bộ lẫn imblearn);
-                              Tomek/ENN chỉ LÀM SẠCH biên (không đổi số mẫu thiểu số); không sửa input.
-3. `TestFocalLoss`          — grad/hess giải tích khớp sai phân số; `gamma=0` thoái hoá về weighted
-                              BCE; hessian > 0; huấn luyện cho xác suất hợp lệ; `alpha=None` tính động.
-4. `TestPRThresholds`       — ngưỡng lấy từ ĐƯỜNG PR: là điểm thật của đường cong, PR-AUC khớp
-                              `average_precision_score`, F1 ≥ F1@0.5, best_cost tối thiểu chi phí.
-5. `TestNoLeakage`          — resampling chỉ trên fold-train; validation/test nguyên vẹn;
-                              ngưỡng chọn lại từ OOF cho ĐÚNG giá trị đã dùng (không lấy từ test).
-6. `TestCatalogRunSmoke`    — chạy end-to-end cỡ nhỏ + ghi artifact vào thư mục tạm.
+The suite checks that the catalogue covers every required group, that each sampler reaches its target ratio
+without mutating inputs, that the analytic focal-loss gradient and hessian match finite differences, that
+thresholds come from the precision-recall curve, and that resampling stays inside fold-train.
 """
 from __future__ import annotations
 
@@ -30,25 +19,25 @@ from sklearn.metrics import average_precision_score
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from imbalance_lab import config as C  # noqa: E402
-from imbalance_lab.losses import FocalLossClassifier, focal_grad_hess, focal_loss_value  # noqa: E402
-from imbalance_lab.models import BalancedWeightClassifier  # noqa: E402
-from imbalance_lab.samplers import (SamplerChain, make_hybrid_sampler,  # noqa: E402
+from labs.imbalance_lab import config as C  # noqa: E402
+from labs.imbalance_lab.losses import FocalLossClassifier, focal_grad_hess, focal_loss_value  # noqa: E402
+from labs.imbalance_lab.models import BalancedWeightClassifier  # noqa: E402
+from labs.imbalance_lab.samplers import (SamplerChain, make_hybrid_sampler,  # noqa: E402
                                     make_single_sampler, resampling_backend)
-from imbalance_lab.techniques import (BASELINE_TECHNIQUE, IMPLEMENTATION,  # noqa: E402
+from labs.imbalance_lab.techniques import (BASELINE_TECHNIQUE, IMPLEMENTATION,  # noqa: E402
                                       REFERENCE_GROUPS, REQUIRED_GROUPS, TECHNIQUE_ORDER,
                                       _markdown, build_technique, run, technique_group)
-from imbalance_lab.thresholds import (pr_curve_points, tune_thresholds,  # noqa: E402
+from labs.imbalance_lab.thresholds import (pr_curve_points, tune_thresholds,  # noqa: E402
                                       tune_thresholds_from_pr_curve)
 
 try:
     import lightgbm  # noqa: F401
 
     HAS_LIGHTGBM = True
-except Exception:  # pragma: no cover - môi trường thiếu lightgbm
+except Exception:  # pragma: no cover - lightgbm is absent
     HAS_LIGHTGBM = False
 
-#: Kỳ vọng ĐÚNG theo danh sách yêu cầu (không đọc từ code ⇒ test bắt được việc bỏ sót kỹ thuật).
+#: Expected groups listed independently of the code, so a missing technique fails the test.
 EXPECTED_GROUPS: Dict[str, set] = {
     "data-level/oversampling": {"ros", "smote", "borderline_smote", "adasyn"},
     "data-level/undersampling": {"rus", "tomek", "enn"},
@@ -60,41 +49,41 @@ EXPECTED_GROUPS: Dict[str, set] = {
 
 
 def tiny_dataset(n_samples: int = 1500, weights=(0.95, 0.05), seed: int = 0):
-    """Dữ liệu nhỏ, mất cân bằng, tất định — dùng cho mọi test dưới đây."""
+    """A small deterministic imbalanced dataset shared by the tests below."""
     X, y = make_classification(n_samples=n_samples, n_features=10, n_informative=6, n_classes=2,
                                weights=list(weights), flip_y=0.0, random_state=seed)
     return X.astype(float), y.astype(int)
 
 
 def _ratio(y: np.ndarray) -> float:
-    """Tỉ lệ thiểu/đa (đúng nghĩa `sampling_strategy` của imblearn)."""
+    """Minority-to-majority ratio, matching imblearn's `sampling_strategy`."""
     y = np.asarray(y)
     return float((y == 1).sum()) / max(int((y == 0).sum()), 1)
 
 
 class TestCatalogCoverage(unittest.TestCase):
-    """Danh mục phải phủ ĐỦ 5 nhóm và từng kỹ thuật mà yêu cầu #2 liệt kê."""
+    """The catalogue must cover all five groups and every technique listed by requirement 2."""
 
     def test_required_groups_and_techniques_present(self):
         self.assertEqual(set(REQUIRED_GROUPS), set(EXPECTED_GROUPS))
         for group, expected in EXPECTED_GROUPS.items():
             with self.subTest(group=group):
                 self.assertTrue(expected.issubset(set(REQUIRED_GROUPS[group])),
-                                f"{group}: thiếu {sorted(expected - set(REQUIRED_GROUPS[group]))}")
+                                f"{group}: missing {sorted(expected - set(REQUIRED_GROUPS[group]))}")
 
     def test_every_technique_has_doc_and_implementation(self):
         known_groups = set(EXPECTED_GROUPS) | set(REFERENCE_GROUPS)
         for key in TECHNIQUE_ORDER:
             with self.subTest(technique=key):
                 spec = build_technique(key, quick=True)
-                self.assertTrue(spec["doc"], f"{key}: thiếu mô tả")
-                self.assertTrue(IMPLEMENTATION.get(key), f"{key}: thiếu mục 'cài đặt' trong IMPLEMENTATION")
+                self.assertTrue(spec["doc"], f"{key}: docstring is missing")
+                self.assertTrue(IMPLEMENTATION.get(key), f"{key}: no implementation entry")
                 self.assertTrue(callable(spec["factory"]))
-                self.assertIsNotNone(spec["estimator"], f"{key}: không dựng được estimator")
+                self.assertIsNotNone(spec["estimator"], f"{key}: estimator could not be built")
                 self.assertIn(technique_group(key), known_groups)
 
     def test_baseline_is_present_and_runs_first(self):
-        """Yêu cầu #3 cần mốc BASELINE (chưa xử lý) để so sánh ⇒ phải có và chạy trước tiên."""
+        """Requirement 3 needs an untreated baseline for comparison, so it must exist and run first."""
         self.assertIn(BASELINE_TECHNIQUE, TECHNIQUE_ORDER)
         self.assertEqual(TECHNIQUE_ORDER[0], BASELINE_TECHNIQUE)
         self.assertEqual(technique_group(BASELINE_TECHNIQUE), "baseline")
@@ -109,7 +98,7 @@ class TestCatalogCoverage(unittest.TestCase):
                 self.assertEqual(spec["is_resampling"], bool(spec["samplers"]))
                 if spec["is_resampling"]:
                     self.assertIsNotNone(spec["probe_factory"],
-                                         f"{key}: thiếu probe_factory để log phân phối sau resample")
+                                         f"{key}: probe_factory is required to log the resampled distribution")
 
     def test_hybrid_group_uses_two_steps(self):
         for key in REQUIRED_GROUPS["hybrid"]:
@@ -121,9 +110,8 @@ class TestCatalogCoverage(unittest.TestCase):
                 self.assertTrue(hasattr(steps[0][1], "fit_resample"))
 
 
-
 class TestSamplerTechniques(unittest.TestCase):
-    """Mỗi sampler phải đạt tỉ lệ mục tiêu, chỉ LÀM SẠCH đúng chỗ, và không sửa dữ liệu đầu vào."""
+    """Each sampler must reach its target ratio, clean only the border, and never mutate its inputs."""
 
     @classmethod
     def setUpClass(cls):
@@ -137,7 +125,7 @@ class TestSamplerTechniques(unittest.TestCase):
         return SamplerChain(steps).fit_resample(X, y)
 
     def test_oversamplers_reach_target_ratio(self):
-        """RandomOverSampler / SMOTE / BorderlineSMOTE / ADASYN đạt ~50% số mẫu đa số (cả 2 backend)."""
+        """RandomOverSampler, SMOTE, BorderlineSMOTE and ADASYN reach about half the majority count."""
         for prefer_imblearn in (True, False):
             for kind in ("ros", "smote", "borderline_smote", "adasyn"):
                 with self.subTest(backend="imblearn" if prefer_imblearn else "builtin", kind=kind):
@@ -147,7 +135,7 @@ class TestSamplerTechniques(unittest.TestCase):
                                                 k_neighbors=C.TECHNIQUE_K_NEIGHBORS,
                                                 random_state=0)
                     _Xr, yr = self._resample(steps)
-                    self.assertGreater(len(yr), len(self.y), f"{kind}: phải sinh thêm mẫu")
+                    self.assertGreater(len(yr), len(self.y), f"{kind}: samples must be added")
                     self.assertAlmostEqual(_ratio(yr), C.TECHNIQUE_OVER_STRATEGY, delta=0.03)
 
     def test_undersampler_reaches_target_ratio(self):
@@ -162,7 +150,7 @@ class TestSamplerTechniques(unittest.TestCase):
                 self.assertAlmostEqual(_ratio(yr), C.TECHNIQUE_UNDER_STRATEGY, delta=0.03)
 
     def test_cleaning_techniques_keep_minority_untouched(self):
-        """Tomek/ENN là 'clean-sampling': bỏ mẫu ĐA SỐ ở biên, KHÔNG đổi số mẫu thiểu số."""
+        """Tomek and ENN clean the border, dropping majority samples and keeping the minority count fixed."""
         n_positive = int((self.y == 1).sum())
         for prefer_imblearn in (True, False):
             for kind in ("tomek", "enn"):
@@ -174,8 +162,8 @@ class TestSamplerTechniques(unittest.TestCase):
                                                 random_state=0)
                     _Xr, yr = self._resample(steps)
                     self.assertEqual(int((yr == 1).sum()), n_positive,
-                                     f"{kind}: không được bỏ mẫu thiểu số")
-                    self.assertLessEqual(len(yr), len(self.y), f"{kind}: chỉ được BỎ mẫu")
+                                     f"{kind}: minority samples must not be removed")
+                    self.assertLessEqual(len(yr), len(self.y), f"{kind}: samples may only be removed")
 
     def test_hybrid_techniques_balance_then_clean(self):
         for kind in ("smote_tomek", "smote_enn"):
@@ -192,7 +180,7 @@ class TestSamplerTechniques(unittest.TestCase):
             with self.subTest(technique=kind):
                 self.assertAlmostEqual(_ratio(yr), C.TECHNIQUE_OVER_STRATEGY, delta=0.06)
                 self.assertLess(len(yr), len(ys),
-                                f"{kind}: bước làm sạch phải bỏ bớt mẫu so với SMOTE thuần")
+                                f"{kind}: the cleaning step must drop samples relative to plain SMOTE")
 
     def test_samplers_never_mutate_inputs(self):
         kinds = [("single", kind) for kind in ("ros", "smote", "borderline_smote", "adasyn", "rus",
@@ -215,20 +203,19 @@ class TestSamplerTechniques(unittest.TestCase):
         self.assertIn(resampling_backend(True), ("imblearn", "builtin"))
 
 
-
 def _sigmoid(z: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(z, -60.0, 60.0)))
 
 
 def _focal_loss_per_sample(y: np.ndarray, z: np.ndarray, gamma: float, alpha: float) -> np.ndarray:
-    """Focal loss TỪNG MẪU tính từ logit (để kiểm chứng grad/hess bằng sai phân số)."""
+    """Per-sample focal loss computed from the logit, used to check the analytic gradients."""
     p = np.clip(_sigmoid(z), 1e-12, 1.0 - 1e-12)
     return -(y * alpha * (1.0 - p) ** gamma * np.log(p)
              + (1.0 - y) * (1.0 - alpha) * p ** gamma * np.log1p(-p))
 
 
 class TestFocalLoss(unittest.TestCase):
-    """Focal Loss (custom objective LightGBM): công thức phải ĐÚNG, không chỉ 'chạy được'."""
+    """Focal loss as a LightGBM custom objective: the formulas must be correct, not merely runnable."""
 
     GAMMA, ALPHA = 2.0, 0.75
 
@@ -246,7 +233,7 @@ class TestFocalLoss(unittest.TestCase):
             minus = _focal_loss_per_sample(self.y[i:i + 1], np.array([z - h]), self.GAMMA, self.ALPHA)
             numeric = float((plus[0] - minus[0]) / (2 * h))
             self.assertAlmostEqual(float(grad[i]), numeric, delta=1e-5,
-                                   msg=f"gradient sai ở mẫu {i}")
+                                   msg=f"gradient is wrong for sample {i}")
 
     def test_hessian_matches_finite_difference_of_gradient(self):
         _grad, hess = focal_grad_hess(self.y, self.z, self.GAMMA, self.ALPHA)
@@ -259,7 +246,7 @@ class TestFocalLoss(unittest.TestCase):
             minus = focal_grad_hess(self.y, self.z - eps, self.GAMMA, self.ALPHA)[0][i]
             numeric = float((plus - minus) / (2 * h))
             self.assertAlmostEqual(float(hess[i]), numeric, delta=1e-4,
-                                   msg=f"hessian sai ở mẫu {i}")
+                                   msg=f"hessian is wrong for sample {i}")
 
     def test_gamma_zero_reduces_to_weighted_bce(self):
         grad, hess = focal_grad_hess(self.y, self.z, 0.0, self.ALPHA)
@@ -271,24 +258,24 @@ class TestFocalLoss(unittest.TestCase):
         np.testing.assert_allclose(hess, expected_hess, rtol=0, atol=1e-9)
 
     def test_hessian_is_strictly_positive(self):
-        """LightGBM yêu cầu hessian > 0 — điều kiện để custom objective không phân kỳ."""
+        """LightGBM requires a positive hessian so the custom objective does not diverge."""
         extreme = np.concatenate([self.z, np.array([-30.0, -5.0, 0.0, 5.0, 30.0])])
         y = np.concatenate([self.y, np.array([1.0, 0.0, 1.0, 0.0, 1.0])])
         _grad, hess = focal_grad_hess(y, extreme, self.GAMMA, self.ALPHA)
-        self.assertTrue(bool(np.all(hess > 0.0)), "có hessian ≤ 0 ⇒ LightGBM sẽ lỗi")
+        self.assertTrue(bool(np.all(hess > 0.0)), "a hessian at or below zero would make LightGBM fail")
 
     def test_loss_value_prefers_confident_correct_predictions(self):
         good = focal_loss_value(np.array([1, 0]), np.array([0.99, 0.01]), self.GAMMA, self.ALPHA)
         bad = focal_loss_value(np.array([1, 0]), np.array([0.01, 0.99]), self.GAMMA, self.ALPHA)
         self.assertLess(good, bad)
 
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm cho FocalLossClassifier")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required for FocalLossClassifier")
     def test_classifier_probabilities_and_dynamic_alpha(self):
         X, y = tiny_dataset(n_samples=1200, seed=3)
         model = FocalLossClassifier(gamma=2.0, alpha=None, n_estimators=60,
                                     learning_rate=0.1, random_state=0)
         model.fit(X, y)
-        expected_alpha = float((y == 0).sum()) / len(y)          # alpha = n_âm/n
+        expected_alpha = float((y == 0).sum()) / len(y)          # alpha is the negative share
         self.assertAlmostEqual(model.alpha_, expected_alpha, places=9)
         proba = model.predict_proba(X)
         self.assertEqual(proba.shape, (len(y), 2))
@@ -297,7 +284,7 @@ class TestFocalLoss(unittest.TestCase):
         self.assertEqual(set(model.predict(X).tolist()), {0, 1})
 
     def test_balanced_class_weight_uses_fit_labels(self):
-        """`class_weight='balanced'` phải suy trọng số từ nhãn NHẬN ĐƯỢC khi fit (không rò rỉ)."""
+        """`class_weight='balanced'` must derive its weights from the labels passed to `fit`."""
         X, y = tiny_dataset(n_samples=600, weights=(0.8, 0.2), seed=5)
         model = BalancedWeightClassifier(random_state=0).fit(X, y)
         from sklearn.utils.class_weight import compute_class_weight
@@ -307,16 +294,15 @@ class TestFocalLoss(unittest.TestCase):
         self.assertAlmostEqual(model.class_weight_[1], float(expected[1]), places=9)
 
 
-
 class TestPRThresholds(unittest.TestCase):
-    """Threshold tuning theo ĐƯỜNG PR (thay vì 0.5) phải lấy ứng viên từ chính đường cong."""
+    """Threshold tuning from the precision-recall curve must take candidates from the curve itself."""
 
     @classmethod
     def setUpClass(cls):
         rng = np.random.default_rng(7)
         n = 1500
         cls.y = (rng.random(n) < 0.08).astype(int)
-        # Xác suất "có tín hiệu": lớp dương lệch lên rõ rệt nhưng vẫn chồng lấn.
+        # Probabilities carrying signal: positives shift up clearly while still overlapping.
         cls.proba = np.clip(0.35 * cls.y + rng.random(n) * 0.75, 0.0, 1.0)
 
     def test_pr_auc_matches_sklearn(self):
@@ -331,7 +317,7 @@ class TestPRThresholds(unittest.TestCase):
                                               precision_target=C.PRECISION_TARGET)
         candidates = np.unique(np.concatenate([curve["thresholds"], np.array([0.5, 1.0])]))
         self.assertTrue(bool(np.any(np.isclose(candidates, tuned["best_f1"]["threshold"]))),
-                        "ngưỡng tốt nhất phải là một ĐIỂM của đường PR (hoặc 0.5/1.0)")
+                        "the best threshold must be a point of the PR curve, or 0.5 or 1.0")
 
     def test_best_f1_equals_max_f1_over_curve_points(self):
         curve = pr_curve_points(self.y, self.proba)
@@ -361,14 +347,14 @@ class TestPRThresholds(unittest.TestCase):
                                               precision_target=0.3)
         self.assertTrue(tuned["min_precision"]["target_met"])
         self.assertGreaterEqual(tuned["min_precision"]["precision"], 0.3 - 1e-9)
-        # Và ngưỡng theo PR phải không tệ hơn mốc 0.5 về F1.
+        # The PR-based threshold must not be worse than the 0.5 reference on F1.
         self.assertGreaterEqual(tuned["best_f1"]["f1"] + 1e-9, tuned["fixed_0.5"]["f1"])
 
     def test_two_implementations_agree_on_best_f1(self):
-        """Ứng viên đường PR là ĐIỂM THẬT của đường cong ⇒ không kém bản lưới lượng tử.
+        """Candidates taken from the curve are real curve points, so they cannot lose to the grid.
 
-        Lưới lượng tử (1001 điểm) có thể BỎ SÓT đúng giá trị xác suất đạt F1 cao nhất, nên F1 của bản
-        trên đường PR phải ≥ bản lưới (và chênh không đáng kể).
+        A 1001-point quantile grid can miss the probability that maximises F1, so the on-curve result must be
+        at least as good, with only a negligible gap.
         """
         on_curve = tune_thresholds_from_pr_curve(self.y, self.proba, cost_fn=C.COST_FN,
                                                  cost_fp=C.COST_FP, precision_target=0.3)
@@ -376,21 +362,20 @@ class TestPRThresholds(unittest.TestCase):
                                   precision_target=0.3)
         self.assertGreaterEqual(on_curve["best_f1"]["f1"] + 1e-9, on_grid["best_f1"]["f1"])
         self.assertLessEqual(on_curve["best_f1"]["f1"] - on_grid["best_f1"]["f1"], 0.02)
-        # `min_precision` hai bản phải cùng thoả/không thoả mục tiêu precision.
+        # Both variants must agree on whether the precision target is met.
         self.assertEqual(on_curve["min_precision"]["target_met"],
                          on_grid["min_precision"]["target_met"])
 
 
-
 class TestNoLeakageInCatalog(unittest.TestCase):
-    """Yêu cầu #2 (phần chống rò rỉ): resampling chỉ trên fold-train; ngưỡng chọn trên OOF."""
+    """Requirement 2, leakage part: resample fold-train only and choose thresholds from out-of-fold data."""
 
     n_samples = 2000
     n_splits = 3
 
     def _evaluate(self, key: str):
-        from imbalance_lab.data import make_imbalanced_dataset, stratified_holdout_split
-        from imbalance_lab.techniques import evaluate_technique
+        from labs.imbalance_lab.data import make_imbalanced_dataset, stratified_holdout_split
+        from labs.imbalance_lab.techniques import evaluate_technique
 
         X, y = make_imbalanced_dataset(n_samples=self.n_samples, random_state=C.SEED)
         split = stratified_holdout_split(X, y, seed=C.SEED)
@@ -409,11 +394,11 @@ class TestNoLeakageInCatalog(unittest.TestCase):
                 global_pct = 100.0 * float((split["y_train"] == 1).mean())
                 for row in item["resample_rows"]:
                     self.assertAlmostEqual(row["val_pos_pct"], global_pct, delta=0.3,
-                                           msg="fold-validation bị đổi phân phối nhãn")
+                                           msg="the fold-validation label distribution changed")
                     self.assertLess(row["train_ir_after"], row["train_ir_before"])
 
     def test_thresholds_are_recomputed_from_oof_only(self):
-        """Ngưỡng đã dùng phải bằng ĐÚNG giá trị suy lại từ xác suất out-of-fold (không từ test)."""
+        """The thresholds in use must equal those recomputed from the out-of-fold probabilities."""
         split, item = self._evaluate("ros")
         recomputed = tune_thresholds_from_pr_curve(item["oof_y"], item["oof_proba"],
                                                    cost_fn=C.COST_FN, cost_fp=C.COST_FP,
@@ -421,30 +406,30 @@ class TestNoLeakageInCatalog(unittest.TestCase):
         for mode, value in item["thresholds"].items():
             with self.subTest(mode=mode):
                 self.assertAlmostEqual(value, float(recomputed[mode]["threshold"]), places=12)
-        # OOF là của train_pool, KHÔNG phải test:
+        # The out-of-fold data belongs to train_pool, not to test.
         self.assertEqual(len(item["oof_proba"]), len(split["y_train"]))
         self.assertAlmostEqual(float(np.mean(item["oof_y"])),
                                float(np.mean(split["y_train"])), places=12)
 
     def test_test_set_is_untouched_and_scored_at_all_modes(self):
         split, item = self._evaluate("smote")
-        self.assertTrue(item["checks"]["test_nguyên_vẹn"])
+        self.assertTrue(item["checks"]["test_untouched"])
         modes = sorted(row["threshold_mode"] for row in item["rows"])
         self.assertEqual(modes, sorted({"best_f1", "best_cost", "min_precision", "fixed_0.5"}))
         for row in item["rows"]:
             self.assertEqual(row["n_test"], len(split["y_test"]))
 
     def test_cleaning_technique_reports_nearly_unchanged_ratio(self):
-        """Tomek Links là làm sạch biên: IR fold-train gần như không đổi (phát hiện phủ định)."""
+        """Tomek links only clean the border, so the fold-train imbalance ratio hardly moves."""
         _split, item = self._evaluate("tomek")
         for row in item["resample_rows"]:
             self.assertLess(abs(row["train_ir_after"] - row["train_ir_before"]), 2.0)
 
 
 class TestCatalogRunSmoke(unittest.TestCase):
-    """Chạy end-to-end cỡ nhỏ + ghi artifact tạm: bảo đảm báo cáo sinh được và không rò rỉ."""
+    """Run a small end-to-end catalogue into a temporary directory and check the artifacts."""
 
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm để chạy danh mục")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required to run the catalogue")
     def test_small_run_writes_artifacts_and_passes_leak_checks(self):
         with tempfile.TemporaryDirectory() as td:
             original = C.ARTIFACTS_DIR
@@ -462,19 +447,19 @@ class TestCatalogRunSmoke(unittest.TestCase):
             self.assertEqual(set(statuses.values()), {"ok"}, statuses)
             for name in ("techniques.md", "techniques.csv", "techniques.json", "techniques.log",
                          "techniques_by_fold.csv"):
-                self.assertTrue((pathlib.Path(td) / name).exists(), f"thiếu artifact {name}")
+                self.assertTrue((pathlib.Path(td) / name).exists(), f"missing artifact {name}")
             markdown = (pathlib.Path(td) / "techniques.md").read_text(encoding="utf-8")
-            for expected in ("yêu cầu #2", "Kiểm chứng chống rò rỉ", "PASS", "Kết luận"):
+            for expected in ("leak-free comparison", "Data leakage checks", "PASS", "Conclusions"):
                 self.assertIn(expected, markdown)
             csv_rows = (pathlib.Path(td) / "techniques.csv").read_text(
                 encoding="utf-8").strip().splitlines()
             self.assertEqual(len(csv_rows) - 1, 4 * len(statuses))
 
-    @unittest.skipUnless(HAS_LIGHTGBM, "Cần lightgbm để chạy danh mục")
+    @unittest.skipUnless(HAS_LIGHTGBM, "lightgbm is required to run the catalogue")
     def test_markdown_renders_for_every_technique(self):
         result = run(n_samples=1200, n_splits=2, techniques=["smote", "adasyn", "focal_loss"],
                      write=False, quick=True)
         text = _markdown(result)
         for key in ("smote", "adasyn", "focal_loss"):
             self.assertIn(key, text)
-        self.assertIn("Ngưỡng chọn trên xác suất out-of-fold", text)
+        self.assertIn("Thresholds from out-of-fold probabilities", text)

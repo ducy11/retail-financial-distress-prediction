@@ -1,14 +1,8 @@
-"""Kiểm thử KernelSHAP tự cài đặt (`forecasting/explain.py`).
+"""Verify the self-implemented KernelSHAP in `forecasting/explain.py`.
 
-Chạy: python -m unittest tests.test_explain -v
-
-Vì sao cần: đồ án phải tự cài KernelSHAP (môi trường không có gói `shap`), nên phải chứng minh
-cài đặt **đúng** chứ không chỉ "chạy được":
-1. Với hàm giá trị TUYẾN TÍNH, giá trị Shapley có công thức giải tích φ_j = w_j(x_j − E[x_j]) —
-   KernelSHAP phải khôi phục đúng (sai số nhỏ).
-2. Tính chất **efficiency**: Σφ + E[f] = f(x).
-3. Trọng số Shapley kernel π(S) tỉ lệ nghịch với số liên minh cùng kích thước và đối xứng.
-4. Xếp hạng feature của SHAP phải tương quan dương với permutation importance (đối chiếu độc lập).
+The environment has no `shap` package, so the implementation must be shown correct rather than merely
+runnable: it must recover the analytic Shapley values of a linear function, satisfy the efficiency
+identity, and rank features in agreement with permutation importance.
 """
 from __future__ import annotations
 
@@ -28,19 +22,19 @@ from forecasting.explain import (coalition_weight, kernel_shap_matrix, kernel_sh
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 
-def setUpModule() -> None:  # noqa: D103 - hook của unittest
+def setUpModule() -> None:  # noqa: D103 - unittest hook
     quiet_library_warnings()
 
 
 class TestCoalitionWeights(unittest.TestCase):
-    """Trọng số Shapley kernel: công thức π(S) = (M−1)/[C(M,|S|)·|S|·(M−|S|)]."""
+    """Shapley kernel weights follow pi(S) = (M - 1) / (C(M, |S|) * |S| * (M - |S|))."""
 
     def test_matches_formula_and_is_symmetric(self):
         n_features = 6
         for size in (1, 2, 3, 4, 5):
             expected = (n_features - 1) / (math.comb(n_features, size) * size * (n_features - size))
             self.assertAlmostEqual(coalition_weight(n_features, size), expected, places=12)
-        # Đối xứng |S| ↔ M−|S| (đặc trưng của Shapley kernel)
+        # Symmetry between |S| and M - |S|, a defining property of the Shapley kernel.
         self.assertAlmostEqual(coalition_weight(n_features, 1),
                                coalition_weight(n_features, n_features - 1), places=12)
 
@@ -60,7 +54,7 @@ class TestCoalitionWeights(unittest.TestCase):
 
 
 class TestKernelShapCorrectness(unittest.TestCase):
-    """KernelSHAP phải khôi phục đúng giá trị Shapley của hàm tuyến tính (ground truth giải tích)."""
+    """KernelSHAP must recover the Shapley values of a linear function, whose analytic form is known."""
 
     def setUp(self):
         rng = np.random.default_rng(1)
@@ -79,7 +73,7 @@ class TestKernelShapCorrectness(unittest.TestCase):
         result = kernel_shap_values(self.predict, self.background, self.x, n_coalitions=600,
                                     rng=np.random.default_rng(7))
         self.assertAlmostEqual(result["base_value"], base, places=6)
-        # Sai số tuyệt đối trung bình phải nhỏ so với thang giá trị của φ (|φ| ~ 3)
+        # The mean absolute error must be small on the scale of phi, which reaches about 3.
         self.assertLess(float(np.mean(np.abs(result["phi"] - exact))), 0.1)
 
     def test_efficiency_holds_exactly(self):
@@ -100,11 +94,11 @@ class TestKernelShapCorrectness(unittest.TestCase):
     def test_zero_weight_feature_gets_zero_contribution(self):
         result = kernel_shap_values(self.predict, self.background, self.x, n_coalitions=400,
                                     rng=np.random.default_rng(11))
-        self.assertLess(abs(result["phi"][4]), 0.05)      # feature có w = 0
+        self.assertLess(abs(result["phi"][4]), 0.05)      # the feature with weight zero
 
 
 class TestRankAgreement(unittest.TestCase):
-    """Đối chiếu SHAP với permutation importance: phải đo được mức đồng thuận."""
+    """Compare SHAP rankings with permutation importance, which must yield a measurable agreement."""
 
     def test_identical_rankings_give_spearman_one(self):
         a = np.array([3.0, 2.0, 1.0, 0.5, 0.1])
@@ -115,7 +109,7 @@ class TestRankAgreement(unittest.TestCase):
 
     def test_reversed_rankings_give_negative_spearman(self):
         a = np.array([3.0, 2.0, 1.0, 0.5, 0.1])
-        result = rank_agreement(a, -a, top=2)          # top-2 của a là {0,1}; của −a là {3,4}
+        result = rank_agreement(a, -a, top=2)          # top-2 of a is {0, 1}, of -a it is {3, 4}
         self.assertAlmostEqual(result["spearman"], -1.0, places=6)
         self.assertAlmostEqual(result["top_overlap"], 0.0, places=6)
 
@@ -124,7 +118,7 @@ class TestRankAgreement(unittest.TestCase):
 
 
 class TestMeanAbsShap(unittest.TestCase):
-    """mean |φ| — độ quan trọng toàn cục."""
+    """Global importance measured as the mean absolute contribution."""
 
     def test_averages_absolute_contributions(self):
         phi = np.array([[1.0, -3.0], [3.0, 1.0]])

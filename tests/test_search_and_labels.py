@@ -1,10 +1,8 @@
-"""Kiểm thử tìm kiếm siêu tham số (`forecasting/search.py`) và các định nghĩa nhãn mới.
+"""Verify hyperparameter search in `forecasting/search.py` and the alternative label rules.
 
-Chạy: python -m unittest tests.test_search_and_labels -v
-
-Vì sao cần: mục 9.5–9.6 của báo cáo dựa vào hai thứ này — (a) sổ thực nghiệm/sampling của random
-search, và (b) hai định nghĩa nhãn công khai (Altman Z'' và forward-4Q). Nếu công thức nhãn sai thì
-toàn bộ phần kiểm chứng độ nhạy (RQ4) sai theo.
+Report sections 9.5 and 9.6 rest on these: the random-search sampling and its experiment ledger, plus the
+two public label definitions, Altman Z'' and the forward four-quarter stress rule. A wrong label formula
+would invalidate the whole label-sensitivity analysis.
 """
 from __future__ import annotations
 
@@ -26,17 +24,17 @@ from forecasting.search import (SEARCH_SPACES, compare_with_grid, random_search,
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 
-def setUpModule() -> None:  # noqa: D103 - hook của unittest
+def setUpModule() -> None:  # noqa: D103 - unittest hook
     quiet_library_warnings()
 
 
 def row(**values) -> dict:
-    """Dòng dữ liệu VND dạng chuỗi (như trong retail-expanded)."""
+    """A VND data row with string values, matching the retail-expanded layout."""
     return {f"{key}_vnd": None if value is None else str(int(value)) for key, value in values.items()}
 
 
 class TestAltmanZ(unittest.TestCase):
-    """Altman Z'' phải tính đúng công thức và trả None khi thiếu thành phần."""
+    """Altman Z'' must follow the formula and return None when a component is missing."""
 
     def test_formula_matches_manual_computation(self):
         record = row(total_assets=1000, current_assets=400, current_liabilities=250,
@@ -71,7 +69,7 @@ class TestAltmanZ(unittest.TestCase):
 
 
 class TestForwardLabel(unittest.TestCase):
-    """Nhãn 'distress trong 4 quý tới' phải nhìn ĐÚNG cửa sổ tương lai và xử lý đuôi chuỗi."""
+    """The forward distress rule must look at the correct future window and handle a short tail."""
 
     @staticmethod
     def _series(n: int, bad_from: int | None = None) -> list:
@@ -85,22 +83,22 @@ class TestForwardLabel(unittest.TestCase):
 
     def test_fires_when_a_future_quarter_is_bad(self):
         rows = self._series(12, bad_from=6)
-        label, info = label_forward_stress(rows, 3)          # cửa sổ 4..7, quý 6 đã xấu
+        label, info = label_forward_stress(rows, 3)          # window 4 to 7, with quarter 6 already bad
         self.assertEqual(label, 1)
         self.assertTrue(any(text.startswith("q+") for text in info))
 
     def test_does_not_fire_and_reports_observed_quarters(self):
         clean = self._series(20, bad_from=15)
-        label, _ = label_forward_stress(clean, 3)            # cửa sổ 4..7 còn sạch
+        label, _ = label_forward_stress(clean, 3)            # window 4 to 7 is still clean
         self.assertEqual(label, 0)
-        _, info = label_forward_stress(self._series(6), 3)   # chỉ còn 2 quý phía sau idx=3
+        _, info = label_forward_stress(self._series(6), 3)   # only two quarters follow index 3
         self.assertIn("observed_quarters=2", info)
 
     def test_horizon_is_documented(self):
         self.assertEqual(FORWARD_HORIZON_QUARTERS, 4)
-        rows = self._series(12, bad_from=8)     # quý index 8 trở đi mới xấu
-        self.assertEqual(label_forward_stress(rows, 3, horizon=4)[0], 0)   # cửa sổ 4..7 ⇒ sạch
-        self.assertEqual(label_forward_stress(rows, 4, horizon=4)[0], 1)   # cửa sổ 5..8 ⇒ có quý 8
+        rows = self._series(12, bad_from=8)     # quarters from index 8 onward are bad
+        self.assertEqual(label_forward_stress(rows, 3, horizon=4)[0], 0)   # window 4 to 7 is clean
+        self.assertEqual(label_forward_stress(rows, 4, horizon=4)[0], 1)   # window 5 to 8 has the bad one
 
     def test_all_rules_have_description_and_are_callable(self):
         for name, meta in LABEL_RULES.items():
@@ -110,11 +108,11 @@ class TestForwardLabel(unittest.TestCase):
         self.assertIn("forward_4q", LABEL_RULES)
         self.assertEqual(label_by_rule("stress_signals", row(net_income=-5), [], 0)[0], 1)
         with self.assertRaises(KeyError):
-            label_by_rule("khong-ton-tai", {}, [], 0)
+            label_by_rule("not-a-rule", {}, [], 0)
 
 
 class TestSearchSampling(unittest.TestCase):
-    """Lấy mẫu cấu hình: đúng kiểu, đúng biên, log-uniform cho tham số scale."""
+    """Configuration sampling: correct types, correct bounds and log-uniform scale parameters."""
 
     def test_sampled_values_respect_bounds(self):
         rng = np.random.default_rng(0)
@@ -139,11 +137,11 @@ class TestSearchSampling(unittest.TestCase):
 
     def test_invalid_space_raises(self):
         with self.assertRaises(ValueError):
-            sample_params({"x": ("khong-ton-tai", 1)}, np.random.default_rng(0))
+            sample_params({"x": ("not-a-kind", 1)}, np.random.default_rng(0))
 
 
 class TestRandomSearchAndLedger(unittest.TestCase):
-    """Random search phải chạy được trên dữ liệu nhỏ và ghi sổ đúng số dòng."""
+    """Random search must run on small data and write one ledger row per trial."""
 
     def setUp(self):
         rng = np.random.default_rng(0)
@@ -163,7 +161,7 @@ class TestRandomSearchAndLedger(unittest.TestCase):
 
     def test_unknown_model_raises(self):
         with self.assertRaises(KeyError):
-            random_search("khong-ton-tai", self.X, self.y, self.groups, n_trials=1)
+            random_search("not-a-model", self.X, self.y, self.groups, n_trials=1)
 
     def test_ledger_rows_match_trials(self):
         result = random_search("logistic", self.X, self.y, self.groups, n_trials=4, seed=2,
@@ -173,7 +171,7 @@ class TestRandomSearchAndLedger(unittest.TestCase):
             written = write_ledger(path, result["trials"])
             self.assertEqual(written, len(result["trials"]))
             lines = path.read_text(encoding="utf-8").strip().splitlines()
-            self.assertEqual(len(lines), written + 1)          # + dòng header
+            self.assertEqual(len(lines), written + 1)          # plus the header row
             self.assertIn("cv_average_precision", lines[0])
 
     def test_compare_with_grid_reports_delta(self):
@@ -182,10 +180,12 @@ class TestRandomSearchAndLedger(unittest.TestCase):
         comparison = compare_with_grid(result, 0.9)
         self.assertAlmostEqual(comparison["delta_vs_grid"],
                                result["best"]["cv_average_precision"] - 0.9, places=9)
-class TestAltmanRuleBaseline(unittest.TestCase):
-    """Baseline QUY TẮC Altman Z'' (mục 6.1 của báo cáo) — không học tham số từ dữ liệu."""
 
-    #: Bảng cân đối "khoẻ" (đơn vị VND, chỉ cần đúng tỷ lệ).
+
+class TestAltmanRuleBaseline(unittest.TestCase):
+    """The Altman Z'' rule baseline from report section 6.1, which fits no parameters."""
+
+    #: A healthy balance sheet in VND; only the ratios matter.
     HEALTHY = {"total_assets_vnd": "1000", "current_assets_vnd": "600",
                "current_liabilities_vnd": "200", "retained_earnings_vnd": "400",
                "operating_income_vnd": "150", "stockholders_equity_vnd": "700"}
@@ -202,7 +202,7 @@ class TestAltmanRuleBaseline(unittest.TestCase):
         self.assertAlmostEqual(self._prob({}), 0.5, places=9)
 
     def test_rule_baseline_has_no_fitted_parameter(self):
-        """Không có tham số học ⇒ đổi thứ tự mẫu không đổi kết quả (khác mọi baseline fit)."""
+        """With no fitted parameters, reordering the samples leaves the result unchanged."""
         rows = [self.HEALTHY, {}, {**self.HEALTHY, "current_liabilities_vnd": "900"}]
         forward = [self._prob(row) for row in rows]
         backward = [self._prob(row) for row in reversed(rows)][::-1]

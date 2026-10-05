@@ -1,16 +1,8 @@
-"""Tiền xử lý chịu ĐUÔI NẶNG: winsorize (clip) + lựa chọn scaler — luôn fit TRÊN TRAIN.
+"""Heavy-tail preprocessing that always fits on train.
 
-Vì sao cần: `scripts/eda.py` đo được 6/14 tỷ số có |skew| > 1 và `debt_to_equity` có skew −14,9,
-**30,6%** giá trị nằm ngoài khoảng IQR. `StandardScaler` lấy mean/std nên chính các giá trị cực trị
-này quyết định tỉ lệ scale ⇒ mô hình tuyến tính bị kéo lệch. Ở đây bổ sung:
-
-- `Winsorizer` — clip theo IQR (mặc định 1,5·IQR) hoặc theo phân vị (P1–P99); **ngưỡng học từ train**
-  (đặt trong `Pipeline` nên không rò rỉ sang validation/test).
-- `make_scaler` — `standard` | `robust` (median/IQR) | `power` (Yeo-Johnson) | `quantile` (xếp hạng)
-  | `none`.
-
-Cả hai đều là transformer sklearn hợp lệ ⇒ dùng được trong `Pipeline`, trong `GridSearchCV`
-(`winsorize__method`, `scale__*`) và trong cross-validation theo nhóm công ty.
+Provides `Winsorizer`, which clips by IQR or percentile using thresholds learned from train, and
+`make_scaler` for standard, robust, power, quantile or no scaling. Both are sklearn transformers, so they
+run inside `Pipeline` and in cross-validation without leaking validation or test statistics.
 """
 from __future__ import annotations
 
@@ -21,28 +13,28 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import (PowerTransformer, QuantileTransformer, RobustScaler,
                                    StandardScaler)
 
-#: Các chế độ winsorize được hỗ trợ (kèm mô tả để báo cáo đọc được).
+#: Supported winsorize modes (with descriptions so reports stay readable).
 WINSOR_METHODS: Dict[str, str] = {
-    "none": "không clip (giữ nguyên, để đối chứng)",
-    "iqr": "clip ngoài [Q1 − 1,5·IQR, Q3 + 1,5·IQR] (ngưỡng học từ train)",
-    "p1p99": "clip ngoài [P1, P99] (ngưỡng học từ train)",
+    "none": "no clipping (keep as-is, for control runs)",
+    "iqr": "clip outside [Q1 - 1.5*IQR, Q3 + 1.5*IQR] (thresholds learned from train)",
+    "p1p99": "clip outside [P1, P99] (thresholds learned from train)",
 }
 
-#: Các scaler được hỗ trợ.
+#: Supported scalers.
 SCALER_KINDS: Dict[str, str] = {
-    "none": "không scale (mô hình cây)",
-    "standard": "StandardScaler (mean/std — nhạy với outlier)",
-    "robust": "RobustScaler (median/IQR — chịu đuôi nặng)",
-    "power": "PowerTransformer (Yeo-Johnson — giảm lệch)",
-    "quantile": "QuantileTransformer (xếp hạng về phân phối chuẩn)",
+    "none": "no scaling (tree models)",
+    "standard": "StandardScaler (mean/std - sensitive to outliers)",
+    "robust": "RobustScaler (median/IQR - heavy-tail friendly)",
+    "power": "PowerTransformer (Yeo-Johnson - reduces skew)",
+    "quantile": "QuantileTransformer (rank to normal distribution)",
 }
 
 
 class Winsorizer(BaseEstimator, TransformerMixin):
-    """Clip giá trị ngoài ngưỡng học từ TRAIN (chống đuôi nặng trước khi scale).
+    """Clip values outside thresholds learned from train, taming heavy tails before scaling.
 
-    `method="iqr"` dùng [Q1 − k·IQR, Q3 + k·IQR]; `method="p1p99"` dùng phân vị; `method="none"`
-    là transformer rỗng (giữ nguyên) để pipeline/grid dùng chung một đường.
+    `method="iqr"` uses [Q1 - k*IQR, Q3 + k*IQR]; `method="p1p99"` uses percentiles;
+    `method="none"` is an empty transformer (pass-through) so pipelines/grids share one path.
     """
 
     def __init__(self, method: str = "iqr", iqr_factor: float = 1.5,
@@ -53,9 +45,9 @@ class Winsorizer(BaseEstimator, TransformerMixin):
         self.upper_pct = upper_pct
 
     def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "Winsorizer":
-        """Học cận dưới/cận trên cho TỪNG cột từ chính `X` truyền vào (chỉ được là train)."""
+        """Learn per-column lower/upper bounds from the given `X` (which must be train only)."""
         if self.method not in WINSOR_METHODS:
-            raise ValueError(f"method không hợp lệ: {self.method!r}; có {sorted(WINSOR_METHODS)}")
+            raise ValueError(f"Invalid method: {self.method!r}; have {sorted(WINSOR_METHODS)}")
         arr = np.asarray(X, dtype=float)
         n_features = arr.shape[1]
         lower = np.full(n_features, -np.inf)
@@ -82,12 +74,12 @@ class Winsorizer(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X: np.ndarray) -> np.ndarray:
-        """Áp cùng ngưỡng đã học từ train (NaN giữ nguyên cho `SimpleImputer` xử lý sau)."""
+        """Apply the same train-learned bounds (NaN passes through for `SimpleImputer` later)."""
         arr = np.asarray(X, dtype=float)
         return np.clip(arr, self.lower_, self.upper_)
 
     def clip_share(self, X: np.ndarray) -> float:
-        """Tỉ lệ giá trị bị clip trên một tập bất kỳ (để báo cáo mức can thiệp thực tế)."""
+        """Share of values clipped on any set (reports how much was actually touched)."""
         arr = np.asarray(X, dtype=float)
         finite = np.isfinite(arr)
         touched = finite & ((arr < self.lower_) | (arr > self.upper_))
@@ -95,9 +87,9 @@ class Winsorizer(BaseEstimator, TransformerMixin):
 
 
 def make_scaler(kind: str, random_seed: int = 0) -> Any:
-    """Trả transformer scale theo tên (`kind` ∈ `SCALER_KINDS`); `none` ⇒ `"passthrough"`."""
+    """Return the scaler transformer by name (`kind` in `SCALER_KINDS`); `none` means `"passthrough"`."""
     if kind not in SCALER_KINDS:
-        raise ValueError(f"scaler không hợp lệ: {kind!r}; có {sorted(SCALER_KINDS)}")
+        raise ValueError(f"Invalid scaler: {kind!r}; have {sorted(SCALER_KINDS)}")
     if kind == "none":
         return "passthrough"
     if kind == "standard":

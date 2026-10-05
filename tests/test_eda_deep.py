@@ -1,11 +1,8 @@
-"""Kiểm thử EDA chuyên sâu (`forecasting/eda.py`): thống kê nhãn, chất lượng feature, quan hệ, drift.
+"""Verify the deep EDA in `forecasting/eda.py`: label statistics, feature quality and drift.
 
-Chạy: python -m unittest discover -s tests -v
-       (riêng: python -m unittest tests.test_eda_deep -v)
-
-Vì sao cần: các chỉ số trong `reports/results/eda_deep.md` được dùng để QUYẾT ĐỊNH (loại feature,
-thêm cờ missing, chọn giao thức đánh giá). Nếu công thức entropy/IR/KS/PSI sai thì kết luận sai,
-nên mọi hàm đều được kiểm thử trên dữ liệu dựng tay có đáp án biết trước, cộng 1 test chạy thật.
+The metrics in `reports/results/eda_deep.md` drive the decisions about which features to keep, whether to add
+missingness flags and which evaluation protocol to use, so each formula is checked against hand-built data
+with known answers, plus one run over the real prepared data.
 """
 from __future__ import annotations
 
@@ -25,13 +22,13 @@ from forecasting import eda  # noqa: E402
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 
-def setUpModule() -> None:  # noqa: D103 - hook của unittest
+def setUpModule() -> None:  # noqa: D103 - unittest hook
     quiet_library_warnings()
 
 
 def make_sample(sample_id: str, ticker: str, target_end: str, label: int,
                 periods=(), available_on: str = "2020-06-01") -> dict:
-    """Sample tối thiểu đúng cấu trúc prepared (chỉ các khoá mà EDA đọc)."""
+    """A minimal sample holding only the keys the EDA reads."""
     return {
         "sample_id": sample_id,
         "ticker": ticker,
@@ -47,7 +44,7 @@ def make_sample(sample_id: str, ticker: str, target_end: str, label: int,
 
 
 class TestDistributionStatistics(unittest.TestCase):
-    """Entropy, Gini, Imbalance Ratio, BH-FDR — nền của mọi kết luận về nhãn."""
+    """Entropy, Gini, imbalance ratio and BH-FDR, the basis of every label conclusion."""
 
     def test_balanced_binary_has_entropy_one_bit(self):
         result = eda.distribution_of([1, 1, 0, 0])
@@ -60,13 +57,13 @@ class TestDistributionStatistics(unittest.TestCase):
         result = eda.distribution_of([1, 1, 1, 1])
         self.assertEqual(result["entropy_bits"], 0.0)
         self.assertEqual(result["gini"], 0.0)
-        self.assertIsNone(result["imbalance_ratio"])           # inf → None khi ghi JSON
+        self.assertIsNone(result["imbalance_ratio"])           # infinity becomes None for JSON
         self.assertTrue(math.isinf(eda.imbalance_ratio([4, 0])))
         self.assertEqual(result["level"], "severely_imbalanced")
         self.assertAlmostEqual(result["majority_baseline_accuracy_pct"], 100.0, places=6)
 
     def test_moderate_imbalance_is_slightly_imbalanced(self):
-        result = eda.distribution_of([1, 1, 1, 0])            # 75/25 ⇒ thiểu số 25% < 40%
+        result = eda.distribution_of([1, 1, 1, 0])            # 75/25, so the minority share is 25 percent
         self.assertEqual(result["level"], "slightly_imbalanced")
         self.assertAlmostEqual(result["imbalance_ratio"], 3.0, places=6)
         expected = -(0.75 * math.log2(0.75) + 0.25 * math.log2(0.25))
@@ -99,7 +96,7 @@ class TestDistributionStatistics(unittest.TestCase):
 
 
 class TestLabelDeepDive(unittest.TestCase):
-    """Nhãn ở cấp thực thể: chuỗi trạng thái, công ty đơn lớp, P(1|1)."""
+    """Entity-level labels: state runs, single-class companies and the P(1|1) transition."""
 
     def setUp(self):
         self.samples = {
@@ -134,7 +131,7 @@ class TestLabelDeepDive(unittest.TestCase):
     def test_transitions_are_counted_chronologically(self):
         result = eda.label_deep_dive(self.samples)
         counts = result["transitions"]["counts"]
-        # AAA: (1,1) ⇒ 1→1; BBB: (1,0),(0,1) ⇒ 1→0 và 0→1
+        # AAA gives 1 to 1; BBB gives 1 to 0 and 0 to 1.
         self.assertEqual(counts, {"0->0": 0, "0->1": 1, "1->0": 1, "1->1": 1})
         self.assertAlmostEqual(result["transitions"]["p_one_given_one"], 0.5, places=6)
         self.assertAlmostEqual(result["transitions"]["p_one_given_zero"], 1.0, places=6)
@@ -142,13 +139,13 @@ class TestLabelDeepDive(unittest.TestCase):
 
 
 class TestFeatureQuality(unittest.TestCase):
-    """Phát hiện cột hằng/gần hằng, thiếu nhiều, đuôi nặng, outlier IQR."""
+    """Detection of constant, near-constant, heavily missing and heavy-tailed columns."""
 
     def setUp(self):
         constant = np.full(20, 5.0)
-        missing = np.array([float(i) for i in range(1, 15)] + [np.nan] * 6)         # 30% thiếu
-        near_constant = np.array([0.0] * 19 + [100.0])                              # 95% một giá trị
-        outlier = np.array([float(i) for i in range(1, 19)] + [10000.0, 20000.0])   # 10% outlier
+        missing = np.array([float(i) for i in range(1, 15)] + [np.nan] * 6)         # 30% missing
+        near_constant = np.array([0.0] * 19 + [100.0])                              # 95% one value
+        outlier = np.array([float(i) for i in range(1, 19)] + [10000.0, 20000.0])   # 10% outliers
         self.X = np.column_stack([constant, missing, near_constant, outlier])
         self.names = ["c_const", "c_missing", "c_near", "c_outlier"]
 
@@ -168,7 +165,7 @@ class TestFeatureQuality(unittest.TestCase):
 
     def test_iqr_outlier_is_detected(self):
         stats = {r["feature"]: r for r in eda.feature_statistics(self.X, self.names)}
-        self.assertEqual(stats["c_outlier"]["iqr_outlier_n"], 2)          # 10000 và 20000
+        self.assertEqual(stats["c_outlier"]["iqr_outlier_n"], 2)          # 10000 and 20000
         self.assertAlmostEqual(stats["c_outlier"]["iqr_outlier_pct"], 10.0, places=6)
 
     def test_quality_flags_lists_expected_features(self):
@@ -180,12 +177,12 @@ class TestFeatureQuality(unittest.TestCase):
 
 
 class TestTargetAssociation(unittest.TestCase):
-    """Liên hệ feature ↔ nhãn: xếp hạng, hướng, lift, feature không dùng được."""
+    """Feature and label association: ranking, direction, lift and unusable features."""
 
     def setUp(self):
         rng = np.random.default_rng(0)
         self.y = np.array([0, 1] * 60)
-        signal = self.y * 5.0 + rng.normal(0, 0.5, size=120)      # tách lớp rất mạnh
+        signal = self.y * 5.0 + rng.normal(0, 0.5, size=120)      # very strong class separation
         noise = rng.normal(0, 1.0, size=120)
         constant = np.zeros(120)
         self.X = np.column_stack([signal, noise, constant])
@@ -196,7 +193,7 @@ class TestTargetAssociation(unittest.TestCase):
         top = result["ranked_by_effect"][0]
         self.assertEqual(top["feature"], "signal")
         self.assertGreater(top["auc"], 0.95)
-        self.assertEqual(top["direction"], "giá trị cao ⇒ nhãn 1")
+        self.assertEqual(top["direction"], "high value => label 1")
         self.assertAlmostEqual(top["effect_rank_biserial"], top["auc"] * 2 - 1, places=4)
 
     def test_constant_feature_has_no_auc_and_is_counted(self):
@@ -213,7 +210,7 @@ class TestTargetAssociation(unittest.TestCase):
 
 
 class TestCorrelationAndDrift(unittest.TestCase):
-    """Đa cộng tuyến, số chiều hiệu dụng, dịch chuyển phân phối train → test."""
+    """Collinearity, effective dimensionality and train-to-test distribution shift."""
 
     def setUp(self):
         rng = np.random.default_rng(1)
@@ -260,13 +257,13 @@ class TestCorrelationAndDrift(unittest.TestCase):
 
 
 class TestMissingnessAndLeakage(unittest.TestCase):
-    """Missingness mang thông tin nhãn, đồng-thiếu, dòng trùng, chồng lấn lịch sử."""
+    """Missingness that hints at the label, co-missingness, duplicate rows and history overlap."""
 
     def test_mnar_feature_is_flagged_first(self):
         rng = np.random.default_rng(4)
         labels = np.array([0] * 60 + [1] * 60)
         mnar = rng.normal(0.0, 1.0, 120)
-        mnar[labels == 1] = np.nan                     # thiếu đúng bằng lớp dương
+        mnar[labels == 1] = np.nan                     # missing exactly on the positive class
         control = rng.normal(0.0, 1.0, 120)
         X = np.column_stack([mnar, control])
         split = {"train": X[:60], "validation": X[60:80], "test": X[80:]}
@@ -321,16 +318,16 @@ class TestMissingnessAndLeakage(unittest.TestCase):
 
 
 class TestEndToEnd(unittest.TestCase):
-    """Chạy thật trên `data/prepared` — bỏ qua nếu dữ liệu chưa được tạo."""
+    """Run against `data/prepared`, skipped while the dataset has not been generated."""
 
     def test_run_writes_artifacts_and_is_json_serialisable(self):
         if not (ROOT / "data" / "prepared" / "train.json").exists():
-            self.skipTest("Chưa có data/prepared (chạy `python -m forecasting.data` trước).")
+            self.skipTest("data/prepared is missing; run `python -m forecasting.data` first.")
         with tempfile.TemporaryDirectory() as tmp:
             out, figs = pathlib.Path(tmp) / "results", pathlib.Path(tmp) / "figures"
             summary = eda.run(write=True, out_dir=out, fig_dir=figs)
             payload = json.loads((out / "eda_deep.json").read_text(encoding="utf-8"))
-            self.assertTrue((out / "eda_deep.md").read_text(encoding="utf-8").startswith("# EDA"))
+            self.assertTrue((out / "eda_deep.md").read_text(encoding="utf-8").startswith("# Deep EDA"))
             self.assertEqual(payload["scope"]["n_features"], len(payload["scope"]["feature_names"]))
             self.assertEqual(payload["label"]["overall"]["n"],
                              sum(payload["scope"]["n_samples"].values()))

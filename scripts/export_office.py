@@ -1,16 +1,8 @@
-"""Xuất Word (.docx) và Slide (.pptx) từ báo cáo markdown, không cần thêm phụ thuộc nặng.
+"""Export the markdown report to Word documents and slide decks without heavy dependencies.
 
-- Word: dùng `python-docx` (đã có trong môi trường) để dựng tiêu đề, bảng, hình, code block.
-- Slide: tự ghi OOXML tối giản bằng `zipfile` (máy không có `python-pptx` vẫn xuất được .pptx).
-
-Lệnh: python -m scripts.export_office
-      → docs/BAO-CAO.docx                  (BÁO CÁO HOÀN CHỈNH: 11 mục + 3 phụ lục, kèm bảng & hình)
-        docs/BAO-CAO-slide.pptx            (slide tự động 14 mục, khớp artifact)
-        docs/BAO-CAO-slide-bao-ve.pptx     (deck bảo vệ 11 slide)
-        docs/BAO-CAO-slide-bao-ve.docx     (cùng nội dung deck bảo vệ, dạng Word để DỰNG SLIDE)
-        docs/bo-tai-lieu-bao-ve.docx       (bộ tài liệu bảo vệ: factsheet + dàn 11 slide + 10 Q&A)
-        docs/BAO-CAO-phan-bien.docx        (báo cáo kỹ thuật & giải trình phản biện 10 chương)
-        docs/script-slide-bao-ve.docx      (kịch bản thuyết trình 12 slide + Q&A — bản Word để cầm đọc)
+Word uses `python-docx` for headings, tables, figures and code blocks, while slides are written as
+minimal OOXML through `zipfile`, so .pptx output works even without python-pptx. Run with
+`python -m scripts.export_office`; every output lands in `docs/` next to the source markdown.
 """
 from __future__ import annotations
 
@@ -23,7 +15,7 @@ from typing import Any, Dict, List, Tuple
 
 from forecasting.config import DOCS_DIR, ensure_utf8_stdio
 
-#: Các pattern markdown cần xử lý.
+#: Markdown patterns handled by the parser.
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
 _CODE = re.compile(r"`([^`]+)`")
 _IMG = re.compile(r"!\[(.*?)\]\((.+?)\)")
@@ -32,21 +24,21 @@ _TABLE_ROW = re.compile(r"^\|(.+)\|$")
 _SEP_ROW = re.compile(r"^\|[\s:\-|]+\|$")
 _BULLET = re.compile(r"^[-*]\s+(.*)$")
 _NUMBERED = re.compile(r"^\d+\.\s+(.*)$")
-#: Khối trích dẫn (`> lời thoại`) — dùng trong `docs/script-slide-bao-ve.md` và báo cáo phản biện.
+#: Block quote lines, used for speaker notes and the rebuttal report.
 _QUOTE = re.compile(r"^>\s?(.*)$")
-#: Đường kẻ ngang markdown (`---`) — bỏ khi xuất Word (tránh in ra chuỗi "---").
+#: Markdown horizontal rules, dropped on export so the literal dashes never print.
 _RULE = re.compile(r"^[-*_]{3,}$")
 
 
 def _clean(text: str) -> str:
-    """Bỏ ký hiệu markdown khi không cần định dạng (ví dụ trong ô bảng)."""
+    """Strip markdown markers where formatting is not needed, such as inside table cells."""
     text = _BOLD.sub(r"\1", text)
     text = _CODE.sub(r"\1", text)
     return text.replace("\\|", "|").strip()
 
 
 def _add_runs(par, text: str) -> None:
-    """Thêm run vào paragraph, tôn trọng `**bold**` và `` `code` ``."""
+    """Append runs to a paragraph, honouring bold markers and inline code."""
     for token in re.split(r"(\*\*.+?\*\*|`[^`]+`)", text):
         if not token:
             continue
@@ -60,7 +52,7 @@ def _add_runs(par, text: str) -> None:
 
 
 def _parse_table(lines: List[str]) -> List[List[str]]:
-    """Đọc khối bảng markdown thành list các hàng (bỏ dòng phân cách)."""
+    """Parse a markdown table block into rows, skipping the separator line."""
     rows: List[List[str]] = []
     for line in lines:
         if _SEP_ROW.match(line):
@@ -71,7 +63,7 @@ def _parse_table(lines: List[str]) -> List[List[str]]:
 
 
 def _md_blocks(md: str) -> List[Tuple[str, Any]]:
-    """Tách markdown thành block: heading / paragraph / bullet / numbered / table / image / code."""
+    """Split markdown into blocks: heading, paragraph, bullet, numbered, table, image and code."""
     blocks: List[Tuple[str, Any]] = []
     lines = md.splitlines()
     i = 0
@@ -109,7 +101,7 @@ def _md_blocks(md: str) -> List[Tuple[str, Any]]:
         elif _NUMBERED.match(line):
             blocks.append(("numbered", _clean(_NUMBERED.match(line).group(1))))
         elif _RULE.match(line.strip()):
-            pass  # đường kẻ ngang markdown: không xuất ra Word
+            pass  # Markdown horizontal rules are not exported to Word.
         elif line.strip():
             blocks.append(("paragraph", line.strip()))
         i += 1
@@ -117,7 +109,7 @@ def _md_blocks(md: str) -> List[Tuple[str, Any]]:
 
 
 def build_docx(md_path: Path, out_path: Path) -> Dict[str, Any]:
-    """Dựng file .docx từ báo cáo markdown (kèm bảng và hình)."""
+    """Build a .docx file from the markdown report, including tables and figures."""
     from docx import Document
     from docx.shared import Inches, Pt
 
@@ -137,7 +129,7 @@ def build_docx(md_path: Path, out_path: Path) -> Dict[str, Any]:
             _add_runs(doc.add_paragraph(), payload)
             counts["paragraph"] += 1
         elif kind == "quote":
-            # Lời thoại / trích dẫn: giữ nguyên định dạng đậm, thụt lề nhẹ cho dễ đọc khi in.
+            # Quotes keep inline bold and get a small indent so they read well in print.
             par = doc.add_paragraph()
             par.paragraph_format.left_indent = Inches(0.3)
             _add_runs(par, payload)
@@ -173,7 +165,7 @@ def build_docx(md_path: Path, out_path: Path) -> Dict[str, Any]:
             image_path = (md_path.parent / rel).resolve()
             if image_path.exists():
                 doc.add_picture(str(image_path), width=Inches(6.0))
-                doc.paragraphs[-1].alignment = 1  # căn giữa
+                doc.paragraphs[-1].alignment = 1  # centre the picture
                 counts["image"] += 1
             else:
                 doc.add_paragraph(f"[Thiếu hình: {rel} ({alt})]")
@@ -184,16 +176,14 @@ def build_docx(md_path: Path, out_path: Path) -> Dict[str, Any]:
     return counts
 
 
-# ---------------------------------------------------------------------------
-# PPTX: tự ghi OOXML tối giản (không cần python-pptx)
-# ---------------------------------------------------------------------------
+# PPTX output: minimal OOXML written directly, so python-pptx is not required.
 _NS = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
        'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"')
 
 EMU_PER_INCH = 914400
-SLIDE_W = 12192000   # 13,333 inch
-SLIDE_H = 6858000    # 7,5 inch
+SLIDE_W = 12192000   # 13.333 inch
+SLIDE_H = 6858000    # 7.5 inch
 
 _SPTREE_EMPTY = (
     '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
@@ -311,13 +301,13 @@ APP_PROPS = (
 
 
 def _esc(text: str) -> str:
-    """Escape XML cho nội dung text."""
+    """Escape XML special characters in text content."""
     return (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace('"', "&quot;"))
 
 
 def _png_size(path: Path) -> Tuple[int, int]:
-    """Đọc kích thước ảnh PNG từ header IHDR (không cần thư viện ảnh)."""
+    """Read PNG dimensions from the IHDR header without an image library."""
     with open(path, "rb") as f:
         head = f.read(24)
     if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n":
@@ -330,7 +320,7 @@ def _png_size(path: Path) -> Tuple[int, int]:
 def _text_shape(shape_id: int, name: str, x: int, y: int, cx: int, cy: int,
                 paragraphs: List[str], size: int = 1800, bold: bool = False,
                 bullet: bool = False) -> str:
-    """Một shape text (title hoặc body) cho slide."""
+    """One text shape, used as the title or body of a slide."""
     runs = []
     for text in paragraphs:
         ppr = f'<a:pPr marL="{228600 if bullet else 0}" indent="{-228600 if bullet else 0}">' \
@@ -349,7 +339,7 @@ def _text_shape(shape_id: int, name: str, x: int, y: int, cx: int, cy: int,
 
 
 def _pic_shape(shape_id: int, rel_id: str, name: str, x: int, y: int, cx: int, cy: int) -> str:
-    """Shape ảnh (p:pic) cho slide."""
+    """Picture shape for a slide."""
     return (
         f'<p:pic><p:nvPicPr><p:cNvPr id="{shape_id}" name="{_esc(name)}"/><p:cNvPicPr/>'
         '<p:nvPr/></p:nvPicPr>'
@@ -360,7 +350,7 @@ def _pic_shape(shape_id: int, rel_id: str, name: str, x: int, y: int, cx: int, c
 
 
 def _parse_slides(md_path: Path) -> List[Dict[str, Any]]:
-    """Tách `docs/slide.md` thành list slide {title, bullets, image}."""
+    """Split the slide markdown into records of title, bullets and image."""
     slides: List[Dict[str, Any]] = []
     current: Dict[str, Any] | None = None
     for line in md_path.read_text(encoding="utf-8").splitlines():
@@ -376,7 +366,7 @@ def _parse_slides(md_path: Path) -> List[Dict[str, Any]]:
 
 
 def _rels_xml(entries: List[Tuple[str, str, str]]) -> str:
-    """Sinh XML relationships từ danh sách (id, type, target)."""
+    """Render the relationships XML from a list of id, type and target triples."""
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             + "".join(f'<Relationship Id="{i}" Type="{t}" Target="{target}"/>'
@@ -385,10 +375,10 @@ def _rels_xml(entries: List[Tuple[str, str, str]]) -> str:
 
 
 def build_pptx(md_path: Path, out_path: Path) -> int:
-    """Dựng .pptx 16:9 từ `slide.md` (tiêu đề + bullet + hình), ghi OOXML bằng zipfile."""
+    """Build a 16:9 .pptx from the slide markdown, writing the OOXML through zipfile."""
     slides = _parse_slides(md_path)
     if not slides:
-        raise ValueError(f"Không tìm thấy slide nào trong {md_path}")
+        raise ValueError(f"No slides found in {md_path}")
     n = len(slides)
 
     content_types = CONTENT_TYPES.format(slides="".join(
@@ -458,24 +448,24 @@ def build_pptx(md_path: Path, out_path: Path) -> int:
 
 
 def _replace_locked(tmp: Path, target: Path) -> bool:
-    """Thay file đích bằng file tạm (atomic). Nếu file đích ĐANG MỞ (Word/PowerPoint) thì giữ file cũ.
+    """Move the temporary file onto the target atomically, keeping the old file if it is locked.
 
-    Vì sao cần: trên Windows, ghi đè một `.docx`/`.pptx` đang mở sẽ ném `PermissionError` và làm
-    hỏng cả bước xuất (kể cả các file khác chưa kịp xuất). Ở đây ta ghi ra `*.tmp` rồi `os.replace`
-    — nếu bị khoá thì in cảnh báo rõ ràng (kèm cách sửa) và GIỮ NGUYÊN file cũ thay vì crash.
+    On Windows, overwriting an open `.docx` or `.pptx` raises `PermissionError` and would abort the
+    whole export. Writing to `*.tmp` and calling `os.replace` turns that case into a clear warning while
+    the previous file stays intact.
     """
     try:
         os.replace(tmp, target)
         return True
     except PermissionError:
         tmp.unlink(missing_ok=True)
-        print(f"⚠ BỎ QUA {target.name}: file đang được mở (Word/PowerPoint) nên không ghi đè được. "
-              f"Hãy ĐÓNG file rồi chạy lại `python -m scripts.export_office`.")
+        print(f"⚠ SKIPPED {target.name}: the file is open in Word or PowerPoint, so it cannot be "
+              f"overwritten. Close it and rerun `python -m scripts.export_office`.")
         return False
 
 
 def run() -> Dict[str, Any]:
-    """Xuất `docs/BAO-CAO.md` → .docx, `docs/slide.md` và `docs/slide-bao-ve.md` → .pptx."""
+    """Export the report markdown to .docx and the slide markdown files to .pptx."""
     ensure_utf8_stdio()
     out: Dict[str, Any] = {}
     report_md, slides_md = DOCS_DIR / "BAO-CAO.md", DOCS_DIR / "slide.md"
@@ -484,18 +474,18 @@ def run() -> Dict[str, Any]:
         counts = build_docx(report_md, tmp)
         out["docx"] = {"path": str(DOCS_DIR / "BAO-CAO.docx"), **counts}
         if _replace_locked(tmp, DOCS_DIR / "BAO-CAO.docx"):
-            print(f"Word: docs/BAO-CAO.docx — {counts['heading']} tiêu đề, {counts['table']} bảng, "
-                  f"{counts['image']} hình" + (f", thiếu {counts['missing_image']} hình"
-                                               if counts["missing_image"] else ""))
+            print(f"Word: docs/BAO-CAO.docx — {counts['heading']} headings, {counts['table']} tables, "
+                  f"{counts['image']} figures" + (f", {counts['missing_image']} figures missing"
+                                                  if counts["missing_image"] else ""))
     else:
-        print("Chưa có docs/BAO-CAO.md — chạy `python -m scripts.make_report` trước.")
+        print("docs/BAO-CAO.md is missing; run `python -m scripts.make_report` first.")
     if slides_md.exists():
         tmp = DOCS_DIR / "BAO-CAO-slide.pptx.tmp"
         n = build_pptx(slides_md, tmp)
         out["pptx"] = {"path": str(DOCS_DIR / "BAO-CAO-slide.pptx"), "slides": n}
         if _replace_locked(tmp, DOCS_DIR / "BAO-CAO-slide.pptx"):
             print(f"Slide: docs/BAO-CAO-slide.pptx — {n} slide")
-    # Dàn slide BẢO VỆ (viết tay, 11 slide, có lời thoại trong file .md) — nếu có thì xuất thêm.
+    # Hand-written defense deck with speaker notes; exported when the markdown is present.
     defense_md = DOCS_DIR / "slide-bao-ve.md"
     if defense_md.exists():
         try:
@@ -504,19 +494,19 @@ def run() -> Dict[str, Any]:
             out["pptx_defense"] = {"path": str(DOCS_DIR / "BAO-CAO-slide-bao-ve.pptx"),
                                    "slides": n_defense}
             if _replace_locked(tmp, DOCS_DIR / "BAO-CAO-slide-bao-ve.pptx"):
-                print(f"Slide bảo vệ: docs/BAO-CAO-slide-bao-ve.pptx — {n_defense} slide")
-        except Exception as exc:  # noqa: BLE001 - không để bước phụ làm hỏng cả bước xuất
-            print(f"Bỏ qua slide bảo vệ: {exc}")
-    # Bản WORD của (a) dàn slide bảo vệ và (b) bộ tài liệu bảo vệ: để đọc/duyệt và DỰNG SLIDE trực tiếp
-    # (Word giữ được tiêu đề/bảng/bullet/lời thoại; mở được bằng mọi máy, không cần PowerPoint).
+                print(f"Defense deck: docs/BAO-CAO-slide-bao-ve.pptx — {n_defense} slides")
+        except Exception as exc:  # noqa: BLE001 - an optional step must not break the export
+            print(f"Skipping the defense deck: {exc}")
+    # Word copies of the defense deck and its supporting pack, so they can be reviewed on any machine
+    # and used to build slides without PowerPoint.
     for md_name, docx_name, what in (("slide-bao-ve.md", "BAO-CAO-slide-bao-ve.docx",
-                                       "dàn slide bảo vệ"),
+                                       "defense slide deck"),
                                       ("bo-tai-lieu-bao-ve.md", "bo-tai-lieu-bao-ve.docx",
-                                       "bộ tài liệu bảo vệ (factsheet + dàn slide + Q&A)"),
+                                       "defense pack (factsheet, slide outline and Q&A)"),
                                       ("BAO-CAO-phan-bien.md", "BAO-CAO-phan-bien.docx",
-                                       "báo cáo kỹ thuật & giải trình phản biện 10 chương"),
+                                       "technical report and 10-chapter rebuttal"),
                                       ("script-slide-bao-ve.md", "script-slide-bao-ve.docx",
-                                       "kịch bản thuyết trình 12 slide (script slide)")):
+                                       "12-slide presentation script")):
         src_md = DOCS_DIR / md_name
         if not src_md.exists():
             continue
@@ -525,18 +515,19 @@ def run() -> Dict[str, Any]:
             counts = build_docx(src_md, tmp)
             out[docx_name] = {"path": str(DOCS_DIR / docx_name), **counts}
             if _replace_locked(tmp, DOCS_DIR / docx_name):
-                print(f"Word ({what}): docs/{docx_name} — {counts['heading']} tiêu đề, "
-                      f"{counts['table']} bảng, {counts['image']} hình"
-                      + (f", thiếu {counts['missing_image']} hình" if counts["missing_image"] else ""))
-        except Exception as exc:  # noqa: BLE001 - bước phụ
-            print(f"Bỏ qua {docx_name}: {exc}")
+                print(f"Word ({what}): docs/{docx_name} — {counts['heading']} headings, "
+                      f"{counts['table']} tables, {counts['image']} figures"
+                      + (f", {counts['missing_image']} figures missing" if counts["missing_image"] else ""))
+        except Exception as exc:  # noqa: BLE001 - optional step
+            print(f"Skipping {docx_name}: {exc}")
     return out
 
 
 def main(argv=None) -> int:
+    """Command-line entry point for `scripts.export_office`."""
     ensure_utf8_stdio()
     _ = argv
-    print("=== Xuất Word / Slide ===")
+    print("=== Export Word and slides ===")
     run()
     return 0
 

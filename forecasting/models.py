@@ -1,27 +1,8 @@
-"""Mô hình dự báo distress.
+"""Distress forecasting models, covering four scikit-learn families.
 
-Mô tả ĐÚNG như code thực thi (tránh docstring sai so với hành vi):
-- Split đã được chia theo thời gian trong từng công ty (`forecasting.data`, có dải purge),
-  nhưng ở tầng model ta fit **một pipeline pooled** trên toàn bộ train. Validation/test vẫn
-  chứa chính các công ty trong train → đây là đánh giá **in-domain**.
-- Đánh giá khả năng tổng quát hoá sang công ty CHƯA TỪNG THẤY nằm ở `forecasting.validation`
-  (GroupKFold / Leave-One-Company-Out) và baseline `ticker_prior` ở `forecasting.baselines`.
-
-Model registry (4 họ chạy được offline, thuần scikit-learn — khác nhau về CƠ CHẾ học):
-- `logistic` — tuyến tính (log-odds của 47 feature đã scale);
-- `random_forest` — bagging cây quyết định;
-- `hist_gradient_boosting` — boosting cây;
-- `mlp` — mạng nơ-ron nhiều lớp (`MLPClassifier`): họ PHI TUYẾN **không dựa trên cây**, nên bổ sung
-  một giả thuyết khác hẳn (mặt quyết định trơn) và bắt buộc phải scale.
-
-Đồ án **chỉ dùng 4 họ mô hình này** (không dùng `xgboost`/`lightgbm`): mọi script, báo cáo và slide đều
-lấy danh sách từ `MODEL_REGISTRY`/`HYPERPARAMS` dưới đây nên chỉ cần sửa ở MỘT chỗ là toàn repo nhất quán.
-
-Pipeline chuẩn: [`Winsorizer`] → `SimpleImputer(median)` → [`scaler`] → estimator, trong đó scaler
-mặc định là `StandardScaler` cho mô hình tuyến tính và `none` cho mô hình cây — có thể đổi sang
-`RobustScaler`/`PowerTransformer`/`QuantileTransformer` qua tham số `scaler` (xem
-`forecasting/preprocessing.py` và thí nghiệm `scripts/experiment_preprocessing.py`).
-Toàn bộ hyperparameter nằm trong `HYPERPARAMS` để báo cáo/tuning dùng lại một nguồn duy nhất.
+The model layer fits one pooled pipeline on all of train, so validation and test measure in-domain
+performance, while generalization to unseen companies lives in `forecasting.validation`. Every script
+and report reads the model list and hyperparameters from this module.
 """
 from __future__ import annotations
 
@@ -38,22 +19,19 @@ from sklearn.preprocessing import StandardScaler
 from runtime_warnings import quiet_library_warnings
 from .preprocessing import Winsorizer, make_scaler
 
-# Mỗi lần fit `LogisticRegression` in ra `OptimizeWarning: Unknown solver options: iprint`
-# (scikit-learn 1.6 → scipy 1.18, không ảnh hưởng kết quả). Lọc ngay khi import để log huấn luyện
-# và output test không bị nhiễu; chi tiết ở `runtime_warnings.py`.
+# Filter the known scikit-learn 1.6 to scipy 1.18 `iprint` warning plus two matplotlib/pyparsing
+# warnings, so training logs and test output stay clean. See runtime_warnings.py.
 quiet_library_warnings()
 
 from .config import RANDOM_SEED
 
-#: Hyperparameter của từng mô hình (nguồn duy nhất; tuning ghi đè qua `params`).
+#: Hyperparameters per model (single source of truth; tuning overrides via `params`).
 HYPERPARAMS: Dict[str, Dict[str, Any]] = {
     "logistic": {"max_iter": 2000, "C": 0.1},
     "random_forest": {"n_estimators": 300, "max_depth": 6, "min_samples_leaf": 2,
                       "class_weight": "balanced_subsample", "n_jobs": 1},
     "hist_gradient_boosting": {"max_iter": 300, "learning_rate": 0.05, "max_depth": 3,
                                "l2_regularization": 1.0, "class_weight": "balanced"},
-    # MLPClassifier KHÔNG có `class_weight` ⇒ mất cân bằng lớp xử lý bằng ngưỡng/cost-sensitive
-    # (mục 9.4 của báo cáo), không nhồi trọng số giả vào mô hình.
     "mlp": {"hidden_layer_sizes": 32, "alpha": 1e-3, "learning_rate_init": 1e-3,
             "max_iter": 3000, "early_stopping": True, "n_iter_no_change": 30},
 }
@@ -65,37 +43,37 @@ MODEL_REGISTRY = {
     "mlp": MLPClassifier,
 }
 
-#: Thứ tự thử nghiệm mặc định — đúng 4 họ mô hình của đồ án (tuyến tính → bagging → boosting → MLP).
+#: Default trial order - exactly the 4 model families of the project (linear -> bagging -> boosting -> MLP).
 DEFAULT_MODEL_ORDER = ["logistic", "random_forest", "hist_gradient_boosting", "mlp"]
 
-#: Mô hình cần scale (dựa trên độ dốc/khoảng cách: logistic và MLP).
+#: Models that need scaling (gradient/distance based: logistic and MLP).
 NEEDS_SCALING = {"logistic", "mlp"}
 
-#: Scaler mặc định theo họ mô hình: tuyến tính & MLP cần scale, mô hình cây không cần.
+#: Default scaler per model family: linear models and MLP need scaling, tree models do not.
 DEFAULT_SCALER = {"logistic": "standard", "mlp": "standard"}
 
 
 def make_model(name: str, scaler: str | None = None, winsorize: str = "none", **overrides: Any):
-    """Tạo pipeline `[winsorize] → impute → [scale] → model`.
+    """Build a winsorize, impute, optional scale, model pipeline.
 
-    `overrides` ghi đè hyperparameter trong `HYPERPARAMS` (dùng cho tuning).
-    `scaler=None` ⇒ dùng `DEFAULT_SCALER` (standard cho logistic, none cho mô hình cây);
-    `scaler="robust"` / `"power"` / `"quantile"` / `"none"` để thí nghiệm tiền xử lý.
-    `winsorize="iqr"` / `"p1p99"` để clip đuôi nặng **học ngưỡng từ train**.
+    `overrides` replace hyperparameters in `HYPERPARAMS`, used for tuning. `scaler=None` falls back to
+    `DEFAULT_SCALER` (standard for logistic and MLP, none for tree models); pass `robust`, `power`,
+    `quantile` or `none` for preprocessing experiments. `winsorize="iqr"` or `"p1p99"` clips heavy
+    tails using thresholds learned from train.
     """
     if name not in MODEL_REGISTRY:
-        raise KeyError(f"Model chưa đăng ký: {name!r}; có {sorted(MODEL_REGISTRY)}")
+        raise KeyError(f"Unregistered model: {name!r}; have {sorted(MODEL_REGISTRY)}")
     params = {**HYPERPARAMS[name], **overrides, "random_state": RANDOM_SEED}
     imputer = SimpleImputer(strategy="median")
     if name == "logistic":
         estimator = LogisticRegression(**params)
     elif name == "random_forest":
-        # random_state áp cho cả rừng; n_jobs=1 để output ổn định giữa các máy
+        # random_state seeds the forest too; n_jobs=1 keeps output stable across machines
         estimator = RandomForestClassifier(**params)
     elif name == "mlp":
-        # Họ phi tuyến KHÔNG dựa trên cây; `early_stopping` chống overfit trên 212 mẫu train.
+        # Non-tree non-linear family; `early_stopping` guards overfitting on 212 train rows.
         estimator = MLPClassifier(**params)
-    else:  # hist_gradient_boosting — họ boosting duy nhất được dùng trong đồ án
+    else:  # hist_gradient_boosting - the only boosting family used in the project
         estimator = HistGradientBoostingClassifier(**params)
 
     steps: list[tuple[str, Any]] = []
@@ -111,5 +89,5 @@ def make_model(name: str, scaler: str | None = None, winsorize: str = "none", **
 
 
 def predict_proba(model, X: np.ndarray) -> np.ndarray:
-    """Xác suất lớp 1 (distress) từ pipeline đã fit."""
+    """Class-1 (distress) probability from a fitted pipeline."""
     return model.predict_proba(X)[:, 1]

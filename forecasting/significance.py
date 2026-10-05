@@ -1,15 +1,8 @@
-"""Kiểm định ý nghĩa thống kê khi so sánh các hệ thống dự báo trên CÙNG một tập test.
+"""Statistical significance tests for comparing forecasting systems on the same test set.
 
-Vì sao cần: test chỉ có 64 mẫu nên chênh lệch AUROC 0,983 (mô hình) vs 0,986 (`ticker_prior`) là
-**không thể kết luận bằng mắt**. Ở đây cài hai kiểm định chuẩn của tài liệu:
-
-1. `delong_test` — DeLong et al. (1988): so hai đường ROC **tương quan** (cùng mẫu) bằng thống kê z
-   từ ma trận hiệp phương sai của placement values. Không cần bootstrap.
-2. `paired_bootstrap` — bootstrap theo cặp (resample mẫu, giữ nguyên cặp dự đoán) cho **ΔAP** (và
-   ΔAUROC) kèm khoảng tin cậy 95% và p-value hai phía.
-
-Cả hai đều kiểm chứng được: AUROC tính trong module phải khớp `sklearn.roc_auc_score`, và hai hệ
-thống giống hệt nhau phải cho p = 1.
+With only 64 test samples, small AUROC gaps cannot be judged by eye, so `delong_test` compares two
+correlated ROC curves and `paired_bootstrap` gives a confidence interval and p-value for the delta in
+average precision and AUROC. Two identical systems must yield p = 1.
 """
 from __future__ import annotations
 
@@ -21,7 +14,7 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 
 
 def _placement_values(y: np.ndarray, prob: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
-    """Placement values V10 (mẫu dương) và V01 (mẫu âm) — nền tảng của DeLong."""
+    """Placement values V10 (positive samples) and V01 (negative samples) - the basis of DeLong."""
     positive, negative = prob[y == 1], prob[y == 0]
     v10 = np.array([np.mean((p > negative) + 0.5 * (p == negative)) for p in positive])
     v01 = np.array([np.mean((p < positive) + 0.5 * (p == positive)) for p in negative])
@@ -30,13 +23,13 @@ def _placement_values(y: np.ndarray, prob: np.ndarray) -> Tuple[np.ndarray, np.n
 
 def delong_test(y_true: Sequence[int], prob_a: Sequence[float], prob_b: Sequence[float]
                 ) -> Dict[str, Any]:
-    """DeLong: so AUROC của hai hệ thống tương quan; trả AUC, z, p-value hai phía và đối chiếu sklearn."""
+    """DeLong: compare the AUROC of two correlated systems; return AUC, z, two-sided p-value and a sklearn check."""
     y = np.asarray(y_true, dtype=int)
     a, b = np.asarray(prob_a, dtype=float), np.asarray(prob_b, dtype=float)
     n_pos, n_neg = int((y == 1).sum()), int((y == 0).sum())
     if n_pos < 2 or n_neg < 2:
         return {"auc_a": None, "auc_b": None, "delta": None, "z": None, "p_value": None,
-                "reason": "cần ≥ 2 mẫu mỗi lớp để tính phương sai"}
+                "reason": "need >= 2 samples per class to estimate the variance"}
 
     v10_a, v01_a, auc_a = _placement_values(y, a)
     v10_b, v01_b, auc_b = _placement_values(y, b)
@@ -50,7 +43,7 @@ def delong_test(y_true: Sequence[int], prob_a: Sequence[float], prob_b: Sequence
             "auc_matches_sklearn": bool(abs(auc_a - sklearn_a) < 1e-9 and abs(auc_b - sklearn_b) < 1e-9)}
     if variance <= 0:
         return {**base, "z": None, "p_value": None,
-                "reason": "hai hệ thống cho điểm giống nhau (phương sai hiệu = 0)"}
+                "reason": "both systems give identical scores (variance of the difference = 0)"}
     z = float((auc_a - auc_b) / np.sqrt(variance))
     return {**base, "z": z, "p_value": float(2 * (1 - sps.norm.cdf(abs(z)))),
             "std_err": float(np.sqrt(variance))}
@@ -59,10 +52,10 @@ def delong_test(y_true: Sequence[int], prob_a: Sequence[float], prob_b: Sequence
 def paired_bootstrap(y_true: Sequence[int], prob_a: Sequence[float], prob_b: Sequence[float],
                      metric: str = "average_precision", n_boot: int = 2000,
                      seed: int = 42) -> Dict[str, Any]:
-    """Bootstrap theo cặp cho Δmetric = metric(a) − metric(b): CI 95% + p-value hai phía.
+    """Paired bootstrap for delta metric = metric(a) - metric(b): 95% CI + two-sided p-value.
 
-    Resample **theo lớp** (stratified) để mỗi vòng luôn có cả hai lớp — với n = 64 mẫu, resample
-    thuần có thể sinh vòng chỉ có một lớp và làm metric không xác định.
+    Resampling is stratified by class so every round keeps both classes; with n = 64 samples a plain
+    resample can produce a round with a single class and an undefined metric.
     """
     y = np.asarray(y_true, dtype=int)
     a, b = np.asarray(prob_a, dtype=float), np.asarray(prob_b, dtype=float)
@@ -88,7 +81,7 @@ def paired_bootstrap(y_true: Sequence[int], prob_a: Sequence[float], prob_b: Seq
 def compare_systems(y_true: Sequence[int], systems: Dict[str, Sequence[float]],
                     n_boot: int = 2000, baseline: Optional[str] = None,
                     seed: int = 42) -> Dict[str, Any]:
-    """Bảng so sánh mọi cặp hệ thống: DeLong (AUROC) + paired bootstrap (AP và AUROC)."""
+    """Comparison table across all system pairs: DeLong (AUROC) + paired bootstrap (AP and AUROC)."""
     y = np.asarray(y_true, dtype=int)
     names = list(systems)
     metrics = {name: {"auroc": float(roc_auc_score(y, prob)) if len(set(y.tolist())) > 1 else None,

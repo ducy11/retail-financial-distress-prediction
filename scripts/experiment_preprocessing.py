@@ -1,21 +1,8 @@
-"""Thí nghiệm tiền xử lý trên DỮ LIỆU THẬT: winsorize × scaler × họ mô hình.
+"""Compare preprocessing variants on the real data: winsorization crossed with scalers and models.
 
-Lệnh: python -m scripts.experiment_preprocessing [--quick] [--no-write] [--no-figures]
-
-Vì sao cần: `reports/results/eda.md` đo 6/14 tỷ số có |skew| > 1 và `debt_to_equity` có **30,6%**
-giá trị ngoài khoảng IQR, nhưng pipeline chính vẫn chỉ dùng `StandardScaler` (mean/std — chính là
-đại lượng bị outlier chi phối). Thí nghiệm này trả lời bằng số:
-
-1. **Winsorize (clip theo IQR hoặc P1–P99, ngưỡng học từ train)** có cải thiện AP/AUROC không?
-2. **Scaler chịu đuôi nặng** (`RobustScaler`, `PowerTransformer`) tốt hơn `StandardScaler` bao nhiêu?
-3. Với mô hình cây (bất biến với scale) thì can thiệp nào còn tác dụng?
-
-Hai giao thức đánh giá (không dùng test để chọn cấu hình):
-- **In-domain**: fit train → đo validation (AP/AUROC/F1 tốt nhất).
-- **Cross-company**: `GroupKFold(4)` trên train+validation, gộp xác suất out-of-fold (AP/AUROC) —
-  câu hỏi thật của đồ án vì nhãn gần như là thuộc tính công ty.
-
-Ghi ra `reports/results/preprocessing_experiment.{json,md}` + 1 hình.
+Fits each variant on train and scores validation plus cross-company out-of-fold probabilities under
+GroupKFold, so the heavy-tailed ratios are judged by numbers instead of intuition. Test is never used for
+configuration selection. Writes `reports/results/preprocessing_experiment.{json,md}` and one figure.
 """
 from __future__ import annotations
 
@@ -39,17 +26,17 @@ from forecasting.evaluation import best_f1_point, evaluate_proba
 from forecasting.features import build_feature_matrix, extract_labels
 from forecasting.models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model
 
-#: Cấu hình tham chiếu = pipeline chính hiện tại (logistic + StandardScaler, không winsorize).
+#: Reference configuration matching the current pipeline: logistic, StandardScaler, no winsorization.
 REFERENCE = {"model": "logistic", "scaler": "standard", "winsorize": "none"}
 
-#: Kích thước lưới cho mô hình cây / mô hình tuyến tính.
+#: Variant grid: tree models get fewer scalers than linear models.
 TREE_SCALERS: Tuple[str, ...] = ("none", "robust")
 LINEAR_SCALERS: Tuple[str, ...] = ("none", "standard", "robust", "power")
 WINSORIZERS: Tuple[str, ...] = ("none", "iqr", "p1p99")
 
 
 def _variants(models: Sequence[str], quick: bool = False) -> List[Dict[str, str]]:
-    """Sinh danh sách cấu hình (model × scaler × winsorize) — tuyến tính thử nhiều scaler hơn."""
+    """Build the model, scaler and winsorize variants, giving linear models the wider scaler grid."""
     winsorizers = ("none", "iqr") if quick else WINSORIZERS
     out: List[Dict[str, str]] = []
     for name in models:
@@ -65,7 +52,7 @@ def _variants(models: Sequence[str], quick: bool = False) -> List[Dict[str, str]
 def _cross_company_oof(model_name: str, scaler: str, winsorize: str,
                        samples: List[Dict[str, Any]], n_splits: int = 4,
                        min_test: int = 4) -> Dict[str, Any]:
-    """AP/AUROC out-of-fold khi giữ TRỌN công ty ra khỏi fold-train (chống rò rỉ thực thể)."""
+    """Out-of-fold AP and AUROC while holding whole companies out of every fold-train split."""
     groups = np.asarray([s[GROUP_KEY] for s in samples])
     X, y = build_feature_matrix(samples), extract_labels(samples)
     n_splits = max(2, min(n_splits, len(set(groups.tolist()))))
@@ -86,7 +73,7 @@ def _cross_company_oof(model_name: str, scaler: str, winsorize: str,
 
 def evaluate_variant(variant: Dict[str, str], splits: Dict[str, List[Dict[str, Any]]]
                      ) -> Dict[str, Any]:
-    """Fit một cấu hình trên train, đo validation + cross-company OOF (mọi thứ fit trên train)."""
+    """Fit one variant on train and measure validation plus cross-company metrics, all fitted on train."""
     train, validation = splits["train"], splits["validation"]
     X_tr, y_tr = build_feature_matrix(train), extract_labels(train)
     X_va, y_va = build_feature_matrix(validation), extract_labels(validation)
@@ -121,7 +108,7 @@ def _reference_row(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any] | None:
 
 def fig_preprocessing(rows: Sequence[Dict[str, Any]], reference: Dict[str, Any] | None, path: Path,
                       top: int = 12) -> None:
-    """Hình — ΔAP (validation và cross-company) so với cấu hình pipeline chính."""
+    """Figure: delta AP on validation and cross-company against the main pipeline configuration."""
     if not reference:
         return
     base_val = reference.get("val_average_precision") or 0.0
@@ -146,18 +133,18 @@ def fig_preprocessing(rows: Sequence[Dict[str, Any]], reference: Dict[str, Any] 
 
 
 def _chosen_model() -> str | None:
-    """Tên mô hình đã được `forecasting.train` chốt (đọc `reports/results/summary.json`)."""
+    """Name of the model selected by `forecasting.train`, read from `reports/results/summary.json`."""
     path = RESULTS_DIR / "summary.json"
     if not path.exists():
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8")).get("best_model")
-    except (OSError, json.JSONDecodeError):  # pragma: no cover - file hỏng
+    except (OSError, json.JSONDecodeError):  # pragma: no cover - corrupt summary file
         return None
 
 
 def conclusions(rows: Sequence[Dict[str, Any]], reference: Dict[str, Any] | None) -> List[str]:
-    """Nhận xét tự động: can thiệp nào giúp, bao nhiêu, và cảnh báo về diễn giải."""
+    """Automatic reading: which intervention helps, by how much, and how to interpret it."""
     lines: List[str] = []
     if not reference:
         return lines
@@ -196,8 +183,7 @@ def conclusions(rows: Sequence[Dict[str, Any]], reference: Dict[str, Any] | None
                if np.mean(deltas) > 0.5 else
                "thay đổi nhỏ ⇒ chưa đủ căn cứ đổi mặc định, nhưng vẫn nên giữ biến thể này trong "
                "ablation vì nó giảm phương sai của hệ số tuyến tính."))
-    # Kết luận cho ĐÚNG mô hình được chốt: tránh việc báo cáo khuyến nghị "đưa winsorize vào
-    # pipeline chính" trong khi pipeline chính (theo `forecasting/models.py`) vẫn không winsorize.
+    # Judge the selected model itself, so the report never recommends a change the pipeline does not make.
     chosen = _chosen_model()
     if chosen:
         variants = {r["winsorize"]: r for r in rows if r["model"] == chosen and r["scaler"] == "none"}
@@ -232,7 +218,7 @@ def conclusions(rows: Sequence[Dict[str, Any]], reference: Dict[str, Any] | None
 
 def run(write: bool = True, quick: bool = False, out_dir: Path | None = None,
         fig_dir: Path | None = None, figures: bool = True) -> Dict[str, Any]:
-    """Chạy thí nghiệm tiền xử lý, ghi `reports/results/preprocessing_experiment.{json,md}`."""
+    """Run the preprocessing experiment and write `preprocessing_experiment.{json,md}`."""
     ensure_dirs()
     ensure_utf8_stdio()
     out = Path(out_dir) if out_dir else RESULTS_DIR
@@ -269,14 +255,14 @@ def run(write: bool = True, quick: bool = False, out_dir: Path | None = None,
                                                          encoding="utf-8")
     best = max(rows, key=lambda r: r.get("oof_average_precision") or 0.0)
     base = (reference or {}).get("oof_average_precision")
-    print(f"Tiền xử lý: {len(rows)} cấu hình; tốt nhất cross-company = {best['model']}/"
+    print(f"Preprocessing: {len(rows)} variants; best cross-company = {best['model']}/"
           f"{best['scaler']}/{best['winsorize']} (AP {best.get('oof_average_precision'):.4f}); "
-          f"tham chiếu AP = {base:.4f}" if base else "tham chiếu: không có")
+          f"reference AP = {base:.4f}" if base else "reference: not available")
     return summary
 
 
 def markdown_preprocessing(summary: Dict[str, Any]) -> str:
-    """Sinh `reports/results/preprocessing_experiment.md` (mọi số đọc từ JSON)."""
+    """Render `reports/results/preprocessing_experiment.md` from the JSON payload."""
     rows = summary["rows"]
     protocol = summary["protocol"]
     ranked = sorted(rows, key=lambda r: -((r.get("oof_average_precision") or 0.0)))
@@ -314,14 +300,14 @@ def markdown_preprocessing(summary: Dict[str, Any]) -> str:
 
 
 def main(argv=None) -> int:
-    """CLI: `python -m scripts.experiment_preprocessing [--quick] [--no-write] [--no-figures]`."""
+    """Command-line entry point for `scripts.experiment_preprocessing`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--quick", action="store_true", help="Lưới rút gọn (nhanh hơn).")
+    parser.add_argument("--quick", action="store_true", help="Reduced grid, faster to run.")
     parser.add_argument("--no-write", action="store_true")
     parser.add_argument("--no-figures", action="store_true")
     args = parser.parse_args(argv)
-    print("=== Thí nghiệm tiền xử lý: winsorize × scaler (dữ liệu thật) ===")
+    print("=== Preprocessing experiment: winsorization x scaler on the real data ===")
     run(write=not args.no_write, quick=args.quick, figures=not args.no_figures)
     return 0
 

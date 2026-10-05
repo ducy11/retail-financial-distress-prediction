@@ -1,22 +1,7 @@
-"""Kiểm chứng độ nhạy của KẾT LUẬN theo định nghĩa NHÃN — 4 định nghĩa, số liệu thật (RQ4).
+"""Check that conclusions hold across four public label definitions rather than a single one.
 
-Lệnh: python -m scripts.label_sensitivity [--no-write]
-
-Vì sao: nhãn gốc `is_distressed` không tái tạo được (khớp tối đa 74,7% — `analysis.json::label_audit`).
-Nếu kết luận chỉ đúng với một định nghĩa nhãn thì đồ án không đứng vững. Script chạy CÙNG một quy
-trình trên **4 định nghĩa nhãn công khai** (`forecasting/labels.py::LABEL_RULES`):
-
-1. `original` — nhãn gốc trong `data/prepared` (không tái tạo được, dùng làm mốc);
-2. `stress_signals` — ≥1 trong 6 tín hiệu căng thẳng của quý target;
-3. `altman_z` — Altman Z''-score < 1,1 (công thức 1968/2000, dùng đúng 16 chỉ tiêu của đồ án);
-4. `forward_4q` — có ≥1 quý trong **4 quý TỚI** chạm ngưỡng tín hiệu (sự kiện sắp xảy ra).
-
-Mỗi định nghĩa được đo: IR/cân bằng lớp, mức khớp nhãn gốc, và hai chỉ số quyết định — in-domain
-(test) và cross-company OOF (GroupKFold) của mô hình so với baseline `ticker_prior`. Kết luận chỉ
-được coi là ỔN ĐỊNH nếu nó xuất hiện ở ≥2 định nghĩa.
-
-Ghi ra `reports/results/label_sensitivity.{json,md}`. Mô hình cố định (Random Forest, cấu hình mặc
-định trong `HYPERPARAMS`) để mọi định nghĩa được so sánh công bằng; test không dùng để chọn cấu hình.
+Runs the same protocol on the original labels plus a stress-signal rule, the Altman Z'' rule and a
+forward event rule, reporting class balance, agreement and in-domain and cross-company metrics.
 """
 from __future__ import annotations
 
@@ -43,7 +28,7 @@ MODEL_NAME = "random_forest"
 
 
 def _samples_for_rule(file: Path, rule: str, min_signals: int) -> List[Dict[str, Any]]:
-    """Sample cho một định nghĩa nhãn: lịch sử = quý TRƯỚC target (không chứa dữ liệu quý target)."""
+    """Samples for one label definition, with history limited to quarters before the target quarter."""
     from scripts.relabel import _compact_row, _read_json
 
     doc = _read_json(file)
@@ -70,7 +55,7 @@ def _samples_for_rule(file: Path, rule: str, min_signals: int) -> List[Dict[str,
 
 
 def _ticker_prior(train: List[Dict[str, Any]], test: List[Dict[str, Any]]) -> np.ndarray:
-    """Baseline "nhớ mặt công ty": tỉ lệ nhãn 1 của chính công ty trong train."""
+    """Company-memorising baseline: each company's own positive rate in train."""
     prior: Dict[str, float] = {}
     for ticker in sorted({str(s["ticker"]) for s in train}):
         labels = [int(s[TARGET]) for s in train if str(s["ticker"]) == ticker]
@@ -80,7 +65,7 @@ def _ticker_prior(train: List[Dict[str, Any]], test: List[Dict[str, Any]]) -> np
 
 
 def evaluate_rule(rule: str, min_signals: int = STRESS_MIN_SIGNALS) -> Dict[str, Any]:
-    """Dựng split theo một định nghĩa nhãn rồi đo in-domain + cross-company + mức khớp nhãn gốc."""
+    """Rebuild the split for one label definition and measure in-domain, cross-company and agreement."""
     per_ticker = {file.stem.split("-")[0]: _samples_for_rule(file, rule, min_signals)
                   for file in list_indicator_files()}
     train, val, test, purged = split_policy(per_ticker)
@@ -140,7 +125,7 @@ def evaluate_rule(rule: str, min_signals: int = STRESS_MIN_SIGNALS) -> Dict[str,
 
 
 def conclusions(rows: List[Dict[str, Any]]) -> List[str]:
-    """Kết luận tự động: định nghĩa nhãn nào ủng hộ luận điểm trung tâm của đồ án."""
+    """Automatic conclusions: which label definitions support the project's central claim."""
     lines: List[str] = []
     reproduced = [r for r in rows if r["rule"] != "original"]
     if not reproduced:
@@ -173,7 +158,7 @@ def conclusions(rows: List[Dict[str, Any]]) -> List[str]:
 
 
 def markdown_label_sensitivity(summary: Dict[str, Any]) -> str:
-    """Sinh `reports/results/label_sensitivity.md` (mọi số đọc từ JSON)."""
+    """Render `reports/results/label_sensitivity.md` from the JSON payload."""
     rows = summary["rows"]
     lines = ["# Kiểm chứng độ nhạy của kết luận theo ĐỊNH NGHĨA NHÃN (RQ4)", "",
              f"- Mô hình cố định: **{summary['model']}** (cấu hình mặc định); mọi định nghĩa dùng cùng "
@@ -211,7 +196,7 @@ def markdown_label_sensitivity(summary: Dict[str, Any]) -> str:
 
 def run(write: bool = True, rules: List[str] | None = None,
         min_signals: int = STRESS_MIN_SIGNALS, out_dir: Path | None = None) -> Dict[str, Any]:
-    """Chạy kiểm chứng trên nhiều định nghĩa nhãn, ghi `label_sensitivity.{json,md}`."""
+    """Run the check across label definitions and write `label_sensitivity.{json,md}`."""
     import json
 
     ensure_dirs()
@@ -221,7 +206,7 @@ def run(write: bool = True, rules: List[str] | None = None,
     rows: List[Dict[str, Any]] = []
 
     if rules is None or "original" in rules:
-        # Mốc: nhãn gốc, đo trên chính split có sẵn (không dựng lại để tránh sai lệch).
+        # Original labels are measured on the existing split, never rebuilt, to avoid drift.
         from forecasting.significance import compare_systems
         from forecasting.validation import grouped_cv
 
@@ -276,22 +261,22 @@ def run(write: bool = True, rules: List[str] | None = None,
     reproduced = [r for r in rows if r["rule"] != "original"]
     stable = [r for r in reproduced
               if (r["in_domain"].get("delta_auroc_model_minus_prior") or 0.0) <= 0.01]
-    print(f"Nhãn: {len(rows)} định nghĩa; luận điểm 'mô hình không vượt ticker-prior' đúng ở "
-          f"{len(stable)}/{len(reproduced)} định nghĩa tái lập được")
+    print(f"Labels: {len(rows)} definitions; the claim 'the model does not beat ticker_prior' holds in "
+          f"{len(stable)}/{len(reproduced)} reproducible definitions")
     return summary
 
 
 def main(argv=None) -> int:
-    """CLI: `python -m scripts.label_sensitivity [--rules a,b] [--min-signals N] [--no-write]`."""
+    """Command-line entry point for `scripts.label_sensitivity`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rules", default="",
-                        help="Danh sách định nghĩa nhãn (mặc định: original + mọi định nghĩa tái lập được).")
+                        help="Label definitions to run (default: original plus every reproducible one).")
     parser.add_argument("--min-signals", type=int, default=STRESS_MIN_SIGNALS)
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
     rules = [r for r in args.rules.split(",") if r] or None
-    print("=== Kiểm chứng độ nhạy theo định nghĩa nhãn (RQ4) ===")
+    print("=== Sensitivity of the conclusions to the label definition (RQ4) ===")
     run(write=not args.no_write, rules=rules, min_signals=args.min_signals)
     return 0
 

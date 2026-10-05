@@ -1,15 +1,8 @@
-"""Kiểm định ý nghĩa thống kê: mô hình có THẬT SỰ hơn baseline trên test hay không?
+"""Test whether the frozen model genuinely beats the baselines on the test split.
 
-Lệnh: python -m scripts.significance [--n-boot 2000] [--no-write]
-
-So trên **cùng 64 mẫu test** (test KHÔNG dùng để chọn mô hình/ngưỡng; chỉ để báo cáo và so sánh):
-- `model[<tên>]` — mô hình đã chốt (`reports/models/best.joblib`);
-- `ticker_prior` — baseline "nhớ mặt công ty" (tỉ lệ nhãn trung bình theo công ty trong train);
-- `single_feature[debt_to_assets_latest]` — logistic một đặc trưng (đối chứng tối thiểu);
-- `dummy_most_frequent` — lớp đa số.
-
-Phép kiểm định: **DeLong (1988)** cho ΔAUROC + **paired bootstrap** cho ΔAP (CI 95% + p-value).
-Đây là căn cứ trả lời câu hỏi khó nhất của đồ án: *"AUROC 0,98 có chứng minh năng lực dự báo?"*
+Compares the trained model, `ticker_prior`, the single-feature logistic reference and the majority
+dummy on the same 64 test samples, using DeLong (1988) for delta AUROC and a paired bootstrap for delta
+average precision. Test is used for reporting only; run with `python -m scripts.significance`.
 """
 from __future__ import annotations
 
@@ -31,7 +24,7 @@ from forecasting.significance import compare_systems
 
 
 def _ticker_prior_probabilities(train, test) -> np.ndarray:
-    """Xác suất = tỉ lệ nhãn 1 của chính công ty trong TRAIN (baseline không dùng feature)."""
+    """Probability equals the company's own positive rate in train, using no features."""
     prior: Dict[str, float] = {}
     for ticker in sorted({str(s["ticker"]) for s in train}):
         labels = [int(s[TARGET]) for s in train if str(s["ticker"]) == ticker]
@@ -41,7 +34,7 @@ def _ticker_prior_probabilities(train, test) -> np.ndarray:
 
 
 def collect_systems() -> Dict[str, Any]:
-    """Xác suất test của mọi hệ thống cần so sánh (mọi thứ học từ TRAIN)."""
+    """Test probabilities for every system under comparison, each fitted on train only."""
     import joblib
 
     from forecasting.config import MODELS_DIR
@@ -56,7 +49,7 @@ def collect_systems() -> Dict[str, Any]:
         f"model[{artifact['name']}]": predict_proba(artifact["model"], X_test)}
     systems["ticker_prior"] = _ticker_prior_probabilities(train, test)
     single, index = fit_single_feature(train, y_train)
-    # `fit_single_feature` chỉ dùng MỘT cột ⇒ phải truyền đúng cột đó (không truyền cả 47).
+    # `fit_single_feature` uses a single column, so pass only that column instead of all 47.
     systems[f"single_feature[{feature_names()[index]}]"] = predict_proba(single, X_test[:, [index]])
     systems["dummy_most_frequent"] = predict_proba(fit_dummy(train, y_train), X_test)
     return {"systems": systems, "y_test": y_test, "feature_used": feature_names()[index],
@@ -64,7 +57,7 @@ def collect_systems() -> Dict[str, Any]:
 
 
 def _fmt(value: Any) -> str:
-    """Định dạng số gọn cho thông báo/log (None → '—')."""
+    """Compact number formatting for messages and logs; None renders as a dash."""
     if value is None:
         return "—"
     try:
@@ -74,7 +67,7 @@ def _fmt(value: Any) -> str:
 
 
 def run(write: bool = True, n_boot: int = 2000, out_dir: Path | None = None) -> Dict[str, Any]:
-    """Chạy kiểm định, ghi `reports/results/significance.{json,md}`."""
+    """Run the tests and write `reports/results/significance.{json,md}`."""
     ensure_dirs()
     ensure_utf8_stdio()
     out = Path(out_dir) if out_dir else RESULTS_DIR
@@ -117,13 +110,13 @@ def run(write: bool = True, n_boot: int = 2000, out_dir: Path | None = None) -> 
             json.dumps(result, ensure_ascii=False, indent=2, default=float) + "\n", encoding="utf-8")
         (out / "significance.md").write_text(markdown_significance(result), encoding="utf-8")
     p_value = (central or {}).get("delong_auroc", {}).get("p_value")
-    print(f"Kiểm định: {len(result['systems'])} hệ thống, {len(result['pairs'])} cặp so sánh; "
-          f"ΔAUROC (DeLong) vs ticker_prior: p = {_fmt(p_value)}")
+    print(f"Significance: {len(result['systems'])} systems, {len(result['pairs'])} pairs; "
+          f"delta AUROC (DeLong) vs ticker_prior: p = {_fmt(p_value)}")
     return result
 
 
 def markdown_significance(result: Dict[str, Any]) -> str:
-    """Sinh `reports/results/significance.md` (mọi số đọc từ JSON)."""
+    """Render `reports/results/significance.md` from the JSON payload."""
     model_key = result.get("model_key", "model")
     lines = ["# Kiểm định ý nghĩa thống kê trên test (DeLong + paired bootstrap)", "",
              f"- Tập so sánh: **{result['n_samples']} mẫu test** ({result['n_positive']} dương); mọi hệ "
@@ -162,13 +155,13 @@ def markdown_significance(result: Dict[str, Any]) -> str:
 
 
 def main(argv=None) -> int:
-    """CLI: `python -m scripts.significance [--n-boot N] [--no-write]`."""
+    """Command-line entry point for `scripts.significance`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-boot", type=int, default=2000)
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args(argv)
-    print("=== Kiểm định ý nghĩa thống kê (DeLong + paired bootstrap) ===")
+    print("=== Statistical significance tests (DeLong + paired bootstrap) ===")
     run(write=not args.no_write, n_boot=args.n_boot)
     return 0
 

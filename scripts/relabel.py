@@ -1,17 +1,8 @@
-"""Sinh split theo NHÃN QUY TẮC tái lập được + so sánh kết luận giữa hai định nghĩa nhãn.
+"""Build a reproducible rule-labelled split and compare conclusions across label definitions.
 
-Vì nhãn gốc không tái tạo được (xem `docs/dinh-nghia-nhan.md`), script này:
-1. Dựng lại sample từ `data/retail-expanded` với nhãn tính bằng công thức công khai
-   (`forecasting.labels`, tính trên quý target → không rò rỉ vào feature).
-2. Áp đúng chính sách split như bản gốc (`forecasting.data.split_policy`) và ghi vào
-   `data/prepared-rule/` (kèm manifest ghi rõ công thức + SHA-256).
-3. So sánh kết luận giữa hai định nghĩa nhãn: mô hình (3 họ) + baseline ticker-prior, cả
-   in-domain lẫn cross-company (GroupKFold) → `reports/results/relabel.{json,md}`.
-
-Nhãn gốc vẫn là bộ dữ liệu chính (kết quả trong `reports/` mặc định dùng nhãn gốc); đây là
-kiểm chứng độ nhạy: kết luận KHÔNG được phụ thuộc vào định nghĩa nhãn.
-
-Lệnh: python -m scripts.relabel [--min-signals 1]
+Rebuilds samples from `data/retail-expanded` with `forecasting.labels`, applies the original split
+policy into `data/prepared-rule/`, and compares in-domain and cross-company conclusions between the
+original labels and the rule labels.
 """
 from __future__ import annotations
 
@@ -60,7 +51,7 @@ def _sha256(path: Path) -> str:
 
 
 def _compact_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Nén row retail-expanded về dạng history row của prepared (giống forecasting.data)."""
+    """Compress a retail-expanded row into the prepared history-row shape used by `forecasting.data`."""
     from forecasting.data import CANONICAL_VND_FIELDS
 
     out: Dict[str, Any] = {}
@@ -76,7 +67,7 @@ def _compact_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_samples(file: Path, min_signals: int) -> Tuple[str, List[Dict[str, Any]]]:
-    """Sample có nhãn quy tắc; lịch sử = các quý đã công bố TRƯỚC quý target (không rò rỉ)."""
+    """Rule-labelled samples whose history holds only quarters published before the target quarter."""
     doc = _read_json(file)
     ticker, rows = doc["ticker"], doc["rows"]
     samples: List[Dict[str, Any]] = []
@@ -102,7 +93,7 @@ def build_samples(file: Path, min_signals: int) -> Tuple[str, List[Dict[str, Any
 
 
 def _compare_models(min_signals: int, quick: bool) -> Dict[str, Any]:
-    """So sánh mô hình + baseline ticker-prior trên nhãn quy tắc (in-domain & cross-company)."""
+    """Compare models and the ticker-prior baseline on rule labels, in-domain and cross-company."""
     tr = load_prepared("train", RULE_DIR)
     va = load_prepared("validation", RULE_DIR)
     te = load_prepared("test", RULE_DIR)
@@ -128,7 +119,7 @@ def _compare_models(min_signals: int, quick: bool) -> Dict[str, Any]:
                      "val": _block(evaluate_proba(y_va, predict_proba(model, X_va))),
                      "test": _block(evaluate_proba(y_te, predict_proba(model, X_te)))})
 
-    # baseline ticker-prior: không học feature, chỉ dùng tỷ lệ nhãn của công ty trong train
+    # Ticker-prior baseline: no features, only each company's positive rate in train.
     p_va = np.asarray([prior.get(s["ticker"], 0.5) for s in va])
     p_te = np.asarray([prior.get(s["ticker"], 0.5) for s in te])
     rows.append({"system": "baseline[ticker_prior]", "source": "baseline",
@@ -149,7 +140,7 @@ def _compare_models(min_signals: int, quick: bool) -> Dict[str, Any]:
 
 
 def _markdown_relabel(manifest: Dict[str, Any], comparison: Dict[str, Any]) -> str:
-    """Bảng markdown cho kiểm chứng độ nhạy theo định nghĩa nhãn."""
+    """Markdown tables for the label-definition sensitivity check."""
     lines = ["# Nhãn tái lập được + kiểm chứng độ nhạy của kết luận", "",
              "## 1. Công thức nhãn thay thế", "",
              f"`is_distressed_rule = 1` nếu quý target có ≥ **{manifest['min_signals']}** tín hiệu "
@@ -178,7 +169,7 @@ def _markdown_relabel(manifest: Dict[str, Any], comparison: Dict[str, Any]) -> s
 
 
 def run(min_signals: int = STRESS_MIN_SIGNALS, quick: bool = False) -> Dict[str, Any]:
-    """Sinh `data/prepared-rule` và so sánh kết luận giữa hai định nghĩa nhãn."""
+    """Write `data/prepared-rule` and compare conclusions between the two label definitions."""
     from forecasting.data import list_indicator_files, sha256
 
     all_samples: Dict[str, List[Dict[str, Any]]] = {}
@@ -228,9 +219,9 @@ def run(min_signals: int = STRESS_MIN_SIGNALS, quick: bool = False) -> Dict[str,
     (RESULTS / "relabel.md").write_text(_markdown_relabel(manifest, comparison), encoding="utf-8")
 
     logistic = next((r for r in comparison["in_domain"] if r["system"] == "model[logistic]"), None)
-    print(f"Relabel: khớp nhãn gốc {agreement:.1%}; split ở {RULE_DIR.name}/; "
+    print(f"Relabel: agreement with the original labels {agreement:.1%}; split in {RULE_DIR.name}/; "
           f"test AUROC (logistic) = {logistic['test']['auroc']:.3f}; "
-          f"baseline ticker-prior test AUROC = "
+          f"ticker-prior test AUROC = "
           f"{next(r['test']['auroc'] for r in comparison['in_domain'] if r['source'] == 'baseline'):.3f}")
     return {"manifest": manifest, "comparison": comparison}
 
@@ -239,9 +230,9 @@ def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--min-signals", type=int, default=STRESS_MIN_SIGNALS,
-                        help="Số tín hiệu tối thiểu để gán nhãn 1.")
+                        help="Minimum number of active signals required to set the label to 1.")
     args = parser.parse_args(argv)
-    print("=== Nhãn quy tắc tái lập được + so sánh định nghĩa nhãn ===")
+    print("=== Reproducible rule labels and label-definition comparison ===")
     run(min_signals=args.min_signals)
     return 0
 

@@ -1,16 +1,8 @@
-"""Baseline đối chứng — không được thiếu khi báo cáo metric.
+"""Control baselines required when reporting metrics.
 
-Bốn baseline theo thứ tự mạnh dần:
-1. `dummy_most_frequent` — luôn dự đoán lớp đa số (thước đo "không học gì").
-2. `ticker_prior` — xác suất = tỷ lệ distress trung bình của CHÍNH công ty đó trong train.
-   Baseline mạnh nhất, cần thiết vì nhãn có thể gần như là thuộc tính của công ty: nếu mô
-   hình không vượt được baseline này thì nó chỉ đang "nhớ mặt công ty".
-3. `single_feature[debt_to_assets_latest]` — logistic trên 1 feature duy nhất.
-4. `rule[altman_z_double_prime<1.1]` — **quy tắc tài chính công khai (Altman 1968/2000)**, KHÔNG
-   học tham số từ dữ liệu: điểm Z'' của quý mới nhất đã công bố đổi qua sigmoid. Đây là baseline
-   truyền thống mà mọi báo cáo dự báo kiệt quệ phải có để so (xem §6.1 của báo cáo).
-
-Lệnh: python -m forecasting.baselines  → ghi reports/results/baselines.json
+Runs four references from weakest to strongest: majority-class dummy, `ticker_prior` using the same
+company's train distress rate, a single-feature logistic model, and the public Altman Z'' rule. A model
+that cannot beat `ticker_prior` is only recognizing the company. Writes `results/baselines.json`.
 """
 from __future__ import annotations
 
@@ -33,15 +25,15 @@ from .features import build_feature_matrix, extract_labels, feature_names
 from .labels import ALTMAN_DISTRESS_BELOW, altman_z_double_prime
 from .models import DEFAULT_MODEL_ORDER, make_model, predict_proba
 
-#: Feature đơn lẻ dùng cho baseline "1 chỉ tiêu".
+#: Single feature used for the "1 indicator" baseline.
 SINGLE_FEATURE = "debt_to_assets_latest"
 
-#: Độ dốc sigmoid đổi Z'' → xác suất "thô" (để tính AUROC/AP cùng thang 0..1, KHÔNG học tham số).
+#: Sigmoid slope turning Z'' into a raw probability (for AUROC/AP on the same 0..1 scale; no fitted parameters).
 ALTMAN_SLOPE = 0.5
 
 
 def ticker_prior(samples: List[Dict[str, Any]], labels: np.ndarray) -> Dict[str, float]:
-    """Tỷ lệ distress theo công ty, ước lượng trên train (không dùng val/test)."""
+    """Distress rate per company, estimated on train (never uses val/test)."""
     buckets: Dict[str, List[int]] = {}
     for s, y in zip(samples, labels):
         buckets.setdefault(s[GROUP_KEY], []).append(int(y))
@@ -50,20 +42,20 @@ def ticker_prior(samples: List[Dict[str, Any]], labels: np.ndarray) -> Dict[str,
 
 def predict_ticker_prior(samples: List[Dict[str, Any]], prior: Dict[str, float],
                          default: float = 0.5) -> np.ndarray:
-    """Xác suất dự đoán = tỷ lệ distress của công ty đó trong train."""
+    """Predicted probability = that company's distress rate in train."""
     return np.asarray([prior.get(s[GROUP_KEY], default) for s in samples], dtype=float)
 
 
 def altman_z_probability(samples: List[Dict[str, Any]]) -> np.ndarray:
-    """Điểm Altman Z'' (quý mới nhất ĐÃ CÔNG BỐ) → xác suất rủi ro — quy tắc công khai.
+    """Altman Z''-score of the latest published quarter mapped to a risk probability by a public rule.
 
-    Vì sao: mọi báo cáo dự báo kiệt quệ đều phải so với ngưỡng cổ điển Altman (1968/2000).
-    Ở đây KHÔNG học tham số: Z'' → sigmoid((Z'' − ngưỡng)/độ dốc) nên đây là baseline thật sự
-    "không dùng dữ liệu".
+    Every distress-forecasting report must compare against the classic Altman threshold (1968, 2000).
+    Nothing is learned here: Z'' is passed through sigmoid((Z'' - threshold) / slope), so this is a
+    data-free baseline.
 
-    Dùng đúng cửa sổ như `forecasting.features`: `history[-1]` là quý mới nhất có
-    `available_on ≤ as_of` ⇒ KHÔNG lộ dữ liệu của quý target. Thiếu thành phần ⇒ 0,5 (trung tính,
-    không thổi phồng metric).
+    Uses the same window as `forecasting.features`: `history[-1]` is the latest quarter with
+    `available_on <= as_of`, so the target quarter's data never leaks. Missing components -> 0.5
+    (neutral, no metric inflation).
     """
     out: List[float] = []
     for sample in samples:
@@ -74,7 +66,7 @@ def altman_z_probability(samples: List[Dict[str, Any]]) -> np.ndarray:
 
 
 def fit_dummy(samples: List[Dict[str, Any]], labels: np.ndarray):
-    """DummyClassifier(most_frequent) — cận dưới của mọi mô hình."""
+    """DummyClassifier(most_frequent) - the lower bound of every model."""
     model = Pipeline([
         ("impute", SimpleImputer(strategy="median")),
         ("model", DummyClassifier(strategy="most_frequent")),
@@ -85,10 +77,10 @@ def fit_dummy(samples: List[Dict[str, Any]], labels: np.ndarray):
 
 def fit_single_feature(train_samples: List[Dict[str, Any]], labels: np.ndarray,
                        name: str = SINGLE_FEATURE) -> Tuple[Any, int]:
-    """Logistic trên 1 feature (impute + scale); trả (model, chỉ số cột)."""
+    """Logistic on 1 feature (impute + scale); returns (model, column index)."""
     names = feature_names()
     if name not in names:
-        raise KeyError(f"Không có feature {name!r}; ví dụ hợp lệ: {names[:5]}")
+        raise KeyError(f"Feature {name!r} does not exist; valid examples: {names[:5]}")
     j = names.index(name)
     model = Pipeline([
         ("impute", SimpleImputer(strategy="median")),
@@ -100,7 +92,7 @@ def fit_single_feature(train_samples: List[Dict[str, Any]], labels: np.ndarray,
 
 
 def _metric_block(y: np.ndarray, proba: np.ndarray, threshold: float = 0.5) -> Dict[str, Any]:
-    """Block metric gọn cho bảng so sánh (tại threshold 0.5 + AUROC/AP/Brier)."""
+    """Compact metric block for the comparison table (at threshold 0.5 + AUROC/AP/Brier)."""
     full = evaluate_proba(y, proba)
     at = next((b for b in full["by_threshold"] if abs(b["threshold"] - threshold) < 1e-9), None)
     if at is None:
@@ -120,7 +112,7 @@ def _metric_block(y: np.ndarray, proba: np.ndarray, threshold: float = 0.5) -> D
 
 
 def run() -> Dict[str, Any]:
-    """Đánh giá baseline + mô hình tham chiếu trên validation và test."""
+    """Evaluate baselines + reference models on validation and test."""
     ensure_dirs()
     train_s = load_prepared("train")
     val_s = load_prepared("validation")
@@ -138,7 +130,7 @@ def run() -> Dict[str, Any]:
         ("ticker_prior", predict_ticker_prior(val_s, prior), predict_ticker_prior(test_s, prior)),
         (f"single_feature[{SINGLE_FEATURE}]",
          predict_proba(single, X_va[:, [j]]), predict_proba(single, X_te[:, [j]])),
-        # Baseline QUY TẮC (không học tham số): Altman Z'' của quý mới nhất đã công bố.
+        # RULE baseline (learns no parameters): Altman Z'' of the latest published quarter.
         ("rule[altman_z_double_prime<1.1]",
          altman_z_probability(val_s), altman_z_probability(test_s)),
     ]
@@ -155,19 +147,19 @@ def run() -> Dict[str, Any]:
     (RESULTS_DIR / "baselines.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
 
-    print(f"  {'hệ thống':34s} {'AUROC':>6s} {'AP':>6s} {'F1':>6s} {'macroF1':>8s} {'Acc':>6s}")
+    print(f"  {'system':34s} {'AUROC':>6s} {'AP':>6s} {'F1':>6s} {'macroF1':>8s} {'Acc':>6s}")
     for r in rows:
         t = r["test"]
         print(f"  {r['baseline']:34s} {t['auroc']:6.3f} {t['average_precision']:6.3f} "
               f"{t['at_0.5']['f1']:6.3f} {t['at_0.5']['macro_f1']:8.3f} {t['at_0.5']['accuracy']:6.3f}")
-    print("  (bảng in trên TEST, threshold 0.5)")
+    print("  (table above is on TEST, threshold 0.5)")
     return out
 
 
 def main(argv=None) -> int:
     ensure_utf8_stdio()
     _ = argv
-    print("=== Baseline đối chứng (fit trên train → đánh giá val/test) ===")
+    print("=== Control baselines (fit on train -> score val/test) ===")
     run()
     return 0
 

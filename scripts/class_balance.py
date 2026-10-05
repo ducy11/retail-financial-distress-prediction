@@ -1,28 +1,7 @@
-"""Đo MẤT CÂN BẰNG LỚP (class imbalance) của nhãn mục tiêu `is_distressed`.
+"""Measure label imbalance in the `is_distressed` target.
 
-Lệnh: python -m scripts.class_balance [--no-write]
-
-Nhãn nằm ở `data/prepared/{train,validation,test,purged}.json` (khoá `is_distressed`, xem
-`forecasting/config.py::TARGET`; lớp dương = 1 = suy giảm tài chính). Các file .csv trong repo
-**không** chứa nhãn huấn luyện: `data/samples/*.csv` là mẫu định dạng BCTC, còn
-`reports/results/test_predictions.csv` chỉ có `actual` của riêng tập test.
-
-Vì sao cần script riêng: đồ án **không dùng pandas** (`requirements.txt` ghi rõ "không bao gồm
-pandas"), nên thay `value_counts()` và `value_counts(normalize=True) * 100` bằng đếm thuần Python.
-Script trả lời 3 câu cho từng tập, cho toàn bộ corpus và cho TỪNG CÔNG TY (nơi nhãn gần như là
-thuộc tính của thực thể nên mất cân bằng "thật" nằm ở đây):
-1. số mẫu tuyệt đối mỗi lớp,
-2. tỉ lệ % mỗi lớp,
-3. tỉ số mất cân bằng IR = mẫu đa số / mẫu thiểu số,
-kèm độ chính xác của đường cơ sở "đoán lớp đa số" (để thấy vì sao Accuracy không dùng được).
-
-Phân loại mức mất cân bằng (ngưỡng của yêu cầu kiểm tra):
-- `balanced`: lớp thiểu số ≥ 40% (tức ~60/40 trở xuống);
-- `slightly_imbalanced`: 20% ≤ lớp thiểu số < 40%;
-- `severely_imbalanced`: lớp thiểu số < 20% (tức từ 80/20 trở lên).
-
-Kết quả: in ra màn hình + ghi `reports/results/class_balance.{json,md}` (số liệu đọc từ
-`data/prepared/*` — không nhập tay).
+Counts classes with plain Python instead of pandas `value_counts` and reports per split, the whole
+corpus, each company and the rule labels, grading each level as balanced or imbalanced.
 """
 from __future__ import annotations
 
@@ -39,13 +18,13 @@ from forecasting.models import HYPERPARAMS
 SPLITS = ("train", "validation", "test", "purged")
 RULE_DIR = Path("data/prepared-rule")
 
-#: Ngưỡng phân loại mức mất cân bằng (tỉ lệ % của lớp THIỂU SỐ).
+#: Imbalance-level thresholds, expressed as the minority class share in percent.
 BALANCED_MIN_MINORITY_PCT = 40.0
 SEVERE_MAX_MINORITY_PCT = 20.0
 
 
 def imbalance_summary(labels: Sequence[int]) -> Dict[str, Any]:
-    """Thống kê mất cân bằng của một dãy nhãn 0/1 — tương đương value_counts + normalize."""
+    """Imbalance statistics for a 0/1 label sequence, matching value_counts plus normalize."""
     n = len(labels)
     positive = sum(1 for v in labels if int(v) == 1)
     negative = n - positive
@@ -77,7 +56,7 @@ def imbalance_summary(labels: Sequence[int]) -> Dict[str, Any]:
 
 
 def _markdown(out: Dict[str, Any]) -> str:
-    """Bảng Markdown: theo tập, toàn corpus, theo công ty, nhãn quy tắc + phần đọc kết quả."""
+    """Markdown tables per split, corpus-wide, per company and for rule labels, plus the reading."""
     per_split, per_ticker = out["per_split"], out["per_ticker"]
     overall = out["overall"]
     lines = ["# Mất cân bằng lớp của nhãn `is_distressed` (sinh tự động)", "",
@@ -149,7 +128,7 @@ def _level_vi(level: str) -> str:
 
 
 def run(write: bool = True) -> Dict[str, Any]:
-    """Tính thống kê mất cân bằng cho từng tập, toàn corpus, từng công ty + nhãn quy tắc."""
+    """Compute imbalance statistics per split, corpus-wide, per company and for rule labels."""
     ensure_utf8_stdio()
     splits = {name: load_prepared(name) for name in SPLITS}
     per_split = {name: imbalance_summary(_labels(arr)) for name, arr in splits.items()}
@@ -194,7 +173,7 @@ def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-write", action="store_true",
-                        help="Chỉ in, không ghi reports/results/class_balance.*")
+                        help="Print only; do not write reports/results/class_balance.*")
     args = parser.parse_args(argv)
     run(write=not args.no_write)
     return 0

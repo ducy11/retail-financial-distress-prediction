@@ -1,13 +1,8 @@
-"""Kiểm thử kiểm định ý nghĩa thống kê (`forecasting/significance.py`).
+"""Verify the significance tests in `forecasting/significance.py`.
 
-Chạy: python -m unittest tests.test_significance -v
-
-Vì sao cần: kết luận "mô hình không hơn `ticker_prior`" của đồ án dựa vào hai kiểm định này; nếu
-cài sai thì kết luận trung thực nhất của bài bị sai. Vì thế kiểm thử:
-1. AUROC cài trong module phải trùng `sklearn.roc_auc_score` (đối chiếu nội bộ DeLong).
-2. Hai hệ thống giống nhau ⇒ không có khác biệt (p = 1 hoặc phương sai 0).
-3. Một hệ thống tách lớp rõ ràng hơn ⇒ p nhỏ và CI của ΔAP không chứa 0.
-4. Bootstrap theo lớp không bao giờ sinh vòng thiếu lớp (đếm qua `n_boot` chạy được).
+The conclusion that the model does not beat `ticker_prior` rests on these tests, so the module checks that
+its AUROC matches `sklearn`, that identical systems show no difference, and that a clearly better system
+yields a small p-value with an interval excluding zero.
 """
 from __future__ import annotations
 
@@ -25,12 +20,12 @@ from forecasting.significance import compare_systems, delong_test, paired_bootst
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 
-def setUpModule() -> None:  # noqa: D103 - hook của unittest
+def setUpModule() -> None:  # noqa: D103 - unittest hook
     quiet_library_warnings()
 
 
 def make_systems(seed: int = 0):
-    """Hai hệ thống: `good` tách lớp tốt, `weak` gần như ngẫu nhiên, cùng nhãn."""
+    """Two systems sharing one label vector: a class-separating one and a near-random one."""
     rng = np.random.default_rng(seed)
     y = np.array([0] * 40 + [1] * 24)
     good = np.clip(0.5 + 0.35 * (y - 0.5) * 2 + rng.normal(0, 0.08, y.size), 0, 1)
@@ -39,7 +34,7 @@ def make_systems(seed: int = 0):
 
 
 class TestDelong(unittest.TestCase):
-    """DeLong (1988): AUROC và phương sai hiệu của hai đường ROC tương quan."""
+    """DeLong (1988): AUROC and the variance of the difference between two correlated ROC curves."""
 
     def test_auc_matches_sklearn(self):
         y, good, weak = make_systems(1)
@@ -68,13 +63,13 @@ class TestDelong(unittest.TestCase):
 
 
 class TestPairedBootstrap(unittest.TestCase):
-    """Bootstrap theo cặp cho ΔAP/ΔAUROC: CI 95% + p-value hai phía."""
+    """Paired bootstrap for the delta in average precision and AUROC, with a 95% interval and p-value."""
 
     def test_delta_and_direction(self):
         y, good, weak = make_systems(4)
         result = paired_bootstrap(y, good, weak, "average_precision", n_boot=400, seed=7)
         self.assertGreater(result["delta"], 0.0)
-        self.assertGreater(result["ci95_lower"], 0.0)        # CI không chứa 0
+        self.assertGreater(result["ci95_lower"], 0.0)        # the interval excludes zero
         self.assertLess(result["p_value"], 0.05)
         self.assertTrue(result["significant_5pct"])
 
@@ -95,7 +90,7 @@ class TestPairedBootstrap(unittest.TestCase):
 
 
 class TestCompareSystems(unittest.TestCase):
-    """Bảng so sánh mọi cặp: AUROC/AP từng hệ thống + DeLong + bootstrap cho từng cặp."""
+    """Comparison table: per-system AUROC and AP plus DeLong and bootstrap results for every pair."""
 
     def test_reports_all_pairs_and_metrics(self):
         y, good, weak = make_systems(7)
@@ -103,7 +98,7 @@ class TestCompareSystems(unittest.TestCase):
                                      "prior": np.full(y.size, y.mean())},
                                  n_boot=100, baseline="prior", seed=3)
         self.assertEqual(result["n_samples"], y.size)
-        self.assertEqual(len(result["pairs"]), 3)            # C(3,2) = 3
+        self.assertEqual(len(result["pairs"]), 3)            # C(3, 2) pairs
         self.assertGreater(result["systems"]["good"]["auroc"], result["systems"]["weak"]["auroc"])
         self.assertEqual(len(result["pairs_vs_baseline"]), 2)
         for pair in result["pairs"]:

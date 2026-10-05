@@ -1,18 +1,8 @@
-"""Tìm kiếm siêu tham số bằng RANDOM SEARCH + **sổ thực nghiệm** (thay Optuna khi môi trường thiếu).
+"""Hyperparameter search by random search plus an experiment ledger, standing in for Optuna.
 
-Vì sao: mục 3 của phiếu chấm yêu cầu "tối ưu siêu tham số bài bản (Optuna/GridSearchCV) **có lưu vết
-thực nghiệm**". Môi trường đồ án **không có `optuna`** (không cài thêm được), nên ở đây:
-
-1. `random_search` — lấy mẫu ngẫu nhiên có kiểm soát (log-uniform cho tham số scale như `learning_rate`,
-   `C`; rời rạc cho `max_depth`, `num_leaves`…), đánh giá bằng **StratifiedGroupKFold** (giữ trọn công ty
-   ngoài fold-train), mục tiêu **AP** (không phụ thuộc ngưỡng) — cùng giao thức với `forecasting.tuning`.
-2. `write_ledger` — ghi **mọi trial** ra `reports/results/runs.csv` (run_id, model, params, seed, cv_ap,
-   độ lệch chuẩn, thời gian, trạng thái) ⇒ tra cứu lại bất kỳ thí nghiệm nào, không phụ thuộc log văn bản.
-3. `compare_with_grid` — so kết quả random search với `tuning.json` (GridSearchCV) trên cùng thước đo
-   để biết tìm kiếm rộng hơn có đáng chi phí không.
-
-Nếu môi trường có Optuna: chỉ cần thay `sample_params` bằng `trial.suggest_*` — không gian ở đây cố ý
-mô tả dạng dữ liệu (`SEARCH_SPACES`) để chuyển đổi máy móc được.
+`random_search` samples configurations and scores them with StratifiedGroupKFold average precision,
+`write_ledger` records every trial to `results/runs.csv`, and `compare_with_grid` contrasts the result
+with the GridSearchCV run in `forecasting.tuning`. Swap `sample_params` for Optuna suggests if needed.
 """
 from __future__ import annotations
 
@@ -30,7 +20,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 from .config import RANDOM_SEED
 from .models import HYPERPARAMS, MODEL_REGISTRY, make_model
 
-#: Không gian tìm kiếm mặc định: tên tham số → ("loguniform"|"int"|"float"|"choice", tham số...).
+#: Default search spaces: parameter name -> ("loguniform"|"int"|"float"|"choice", args...).
 SEARCH_SPACES: Dict[str, Dict[str, Tuple[Any, ...]]] = {
     "logistic": {
         "C": ("loguniform", 1e-3, 10.0),
@@ -59,7 +49,7 @@ SEARCH_SPACES: Dict[str, Dict[str, Tuple[Any, ...]]] = {
 
 
 def sample_params(space: Mapping[str, Tuple[Any, ...]], rng: np.random.Generator) -> Dict[str, Any]:
-    """Lấy mẫu một cấu hình từ không gian tìm kiếm (log-uniform cho tham số scale)."""
+    """Sample one configuration from the search space (log-uniform for scale parameters)."""
     params: Dict[str, Any] = {}
     for name, spec in space.items():
         kind = spec[0]
@@ -73,13 +63,13 @@ def sample_params(space: Mapping[str, Tuple[Any, ...]], rng: np.random.Generator
         elif kind == "choice":
             options = list(spec[1])
             params[name] = options[int(rng.integers(0, len(options)))]
-        else:  # pragma: no cover - cấu hình sai
-            raise ValueError(f"kiểu không gian không hợp lệ: {kind!r}")
+        else:  # pragma: no cover - bad space config
+            raise ValueError(f"invalid space kind: {kind!r}")
     return params
 
 
 def _safe_key(params: Mapping[str, Any]) -> str:
-    """Khoá so trùng cấu hình (để không đánh giá lại cùng một điểm)."""
+    """Deduplication key for a configuration (so the same point is not scored twice)."""
     normalized = {k: (None if v is None else round(float(v), 6) if isinstance(v, float) else v)
                   for k, v in sorted(params.items())}
     return json.dumps(normalized, sort_keys=True, default=str)
@@ -87,7 +77,7 @@ def _safe_key(params: Mapping[str, Any]) -> str:
 
 def cross_company_ap(model_name: str, params: Mapping[str, Any], X: np.ndarray, y: np.ndarray,
                      groups: np.ndarray, n_splits: int = 4, winsorize: str = "none") -> Dict[str, Any]:
-    """AP out-of-fold khi giữ TRỌN công ty ra khỏi fold-train (cùng giao thức với `tuning`)."""
+    """Out-of-fold AP when holding the WHOLE company out of the fold-train (same protocol as `tuning`)."""
     n_splits = max(2, min(n_splits, len(set(groups.tolist()))))
     splitter = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
     scores: List[float] = []
@@ -111,9 +101,9 @@ def random_search(model_name: str, X: np.ndarray, y: np.ndarray, groups: np.ndar
                   n_trials: int = 40, seed: int = RANDOM_SEED, n_splits: int = 4,
                   space: Optional[Mapping[str, Tuple[Any, ...]]] = None,
                   winsorize: str = "none") -> Dict[str, Any]:
-    """Random search cho một mô hình; trả mọi trial (kèm thời gian) + trial tốt nhất."""
+    """Random search for one model; return every trial (with timing) + the best trial."""
     if model_name not in MODEL_REGISTRY:
-        raise KeyError(f"Model chưa đăng ký: {model_name!r}")
+        raise KeyError(f"Unregistered model: {model_name!r}")
     space = space or SEARCH_SPACES.get(model_name) or {}
     rng = np.random.default_rng(seed)
     trials: List[Dict[str, Any]] = []
@@ -121,7 +111,7 @@ def random_search(model_name: str, X: np.ndarray, y: np.ndarray, groups: np.ndar
     for index in range(n_trials):
         params = sample_params(space, rng)
         key = _safe_key(params)
-        if key in seen:                      # bỏ trùng: mỗi trial phải là một điểm mới
+        if key in seen:                      # skip duplicates: each trial must be a new point
             continue
         seen.add(key)
         started = time.perf_counter()
@@ -129,7 +119,7 @@ def random_search(model_name: str, X: np.ndarray, y: np.ndarray, groups: np.ndar
             metrics = cross_company_ap(model_name, params, X, y, groups, n_splits=n_splits,
                                        winsorize=winsorize)
             status = "ok"
-        except Exception as exc:  # pragma: no cover - cấu hình không fit được
+        except Exception as exc:  # pragma: no cover - configuration that cannot be fitted
             metrics, status = {"cv_average_precision": None}, f"failed: {type(exc).__name__}"
         trials.append({"run_id": f"{model_name}-{seed}-{index:03d}", "model": model_name,
                        "params": params, "seed": int(seed), "status": status,
@@ -142,7 +132,7 @@ def random_search(model_name: str, X: np.ndarray, y: np.ndarray, groups: np.ndar
 
 
 def write_ledger(path: Path, rows: Sequence[Dict[str, Any]]) -> int:
-    """Ghi sổ thực nghiệm ra CSV (một dòng = một trial) — tra cứu lại được sau này."""
+    """Write the experiment ledger to CSV (one row = one trial) - searchable later."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = ["run_id", "model", "params", "seed", "status", "cv_average_precision", "cv_ap_std",
               "cv_auroc", "n_folds", "seconds"]
@@ -156,7 +146,7 @@ def write_ledger(path: Path, rows: Sequence[Dict[str, Any]]) -> int:
 
 
 def compare_with_grid(search: Dict[str, Any], grid_best_cv_ap: Optional[float]) -> Dict[str, Any]:
-    """So random search với `GridSearchCV` (số liệu lấy từ `reports/results/tuning.json`)."""
+    """Compare random search against `GridSearchCV` (numbers come from `reports/results/tuning.json`)."""
     best = search.get("best") or {}
     best_cv = best.get("cv_average_precision")
     delta = (best_cv - grid_best_cv_ap) if (best_cv is not None and grid_best_cv_ap is not None) else None

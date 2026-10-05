@@ -1,14 +1,8 @@
-"""Tinh chỉnh hyperparameter bằng GridSearchCV chia theo CÔNG TY (StratifiedGroupKFold).
+"""Hyperparameter tuning with GridSearchCV split by company using StratifiedGroupKFold.
 
-Vì sao phải chia theo nhóm công ty: bộ test in-domain chứa đúng các công ty trong train, nên
-nếu tune bằng CV thường (trộn mọi quý của mọi công ty) thì điểm CV bị thổi phồng — mô hình chỉ
-cần nhận ra công ty. Ở đây mọi fold giữ TRỌN một số công ty ra ngoài.
-
-Cách chọn cấu hình: `refit="average_precision"` (AP) vì AP không phụ thuộc ngưỡng; sau khi chọn,
-cấu hình tốt nhất được đánh giá lại trên validation (độc lập với CV) để báo cáo.
-
-Lệnh: python -m forecasting.tuning [--quick] [--models logistic,random_forest]
-      → reports/results/tuning.json + reports/results/tuning.md
+Plain CV would mix all companies across folds and inflate the score, so every fold holds out a whole
+company. Selection refits on average precision, which is threshold-free, then re-scores the best config
+on validation. Writes `results/tuning.json` and `results/tuning.md`.
 """
 from __future__ import annotations
 
@@ -26,7 +20,7 @@ from .evaluation import evaluate_proba
 from .features import build_feature_matrix, extract_labels
 from .models import DEFAULT_MODEL_ORDER, MODEL_REGISTRY, make_model, predict_proba
 
-#: Lưới đầy đủ (20–40 cấu hình/mô hình tuỳ máy).
+#: Full grid (20-40 configs/model depending on the machine).
 GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "logistic": {"model__C": [0.01, 0.1, 1.0, 10.0],
                  "model__class_weight": [None, "balanced"]},
@@ -40,7 +34,7 @@ GRIDS: Dict[str, Dict[str, List[Any]]] = {
             "model__alpha": [1e-4, 1e-3, 1e-2]},
 }
 
-#: Lưới rút gọn cho máy yếu (--quick).
+#: Reduced grid for weak machines (--quick).
 QUICK_GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "logistic": {"model__C": [0.1, 1.0]},
     "random_forest": {"model__max_depth": [3, 6], "model__min_samples_leaf": [2]},
@@ -48,13 +42,13 @@ QUICK_GRIDS: Dict[str, Dict[str, List[Any]]] = {
     "mlp": {"model__alpha": [1e-3]},
 }
 
-#: Hai metric chấm điểm CV: AUROC (xếp hạng) và AP (quan trọng khi lớp dương là lớp cần bắt).
+#: Two CV scoring metrics: AUROC (ranking) and AP (what matters when the positive class is the target).
 SCORING = {"auroc": "roc_auc", "average_precision": "average_precision"}
 
 
 def tune_one(name: str, X: np.ndarray, y: np.ndarray, groups: np.ndarray,
              quick: bool = False, n_splits: int = 4) -> Dict[str, Any]:
-    """GridSearchCV cho một mô hình; trả dict gồm bảng kết quả CV và cấu hình tốt nhất."""
+    """GridSearchCV for one model; returns a dict with the CV result table and the best config."""
     grid = QUICK_GRIDS[name] if quick else GRIDS[name]
     cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
     search = GridSearchCV(make_model(name), grid, scoring=SCORING,
@@ -72,8 +66,8 @@ def tune_one(name: str, X: np.ndarray, y: np.ndarray, groups: np.ndarray,
         })
     rows.sort(key=lambda r: -r["cv_average_precision"])
 
-    # Điểm của cấu hình MẶC ĐỊNH (trong models.HYPERPARAMS) trên cùng splitter: để chứng minh
-    # tuning cải thiện thật hay không, chứ không chỉ "đã chạy GridSearch".
+    # Score the default config (from models.HYPERPARAMS) on the same splitter, showing whether tuning
+    # actually improves anything rather than just reporting that GridSearch ran.
     default_scores = cross_val_score(make_model(name), X, y, groups=groups, cv=cv,
                                      scoring="average_precision", n_jobs=1)
     best = search.best_params_
@@ -92,7 +86,7 @@ def tune_one(name: str, X: np.ndarray, y: np.ndarray, groups: np.ndarray,
 
 def run(models: List[str] | None = None, quick: bool = False,
         n_splits: int = 4) -> Dict[str, Any]:
-    """Tinh chỉnh các mô hình trên train bằng CV chia theo công ty, xác nhận lại trên validation."""
+    """Tune models on train with company-split CV, then confirm on validation."""
     ensure_dirs()
     names = [m for m in (models or DEFAULT_MODEL_ORDER) if m in MODEL_REGISTRY]
     train_s, val_s = load_prepared("train"), load_prepared("validation")
@@ -112,7 +106,7 @@ def run(models: List[str] | None = None, quick: bool = False,
             "best_f1": val_metrics["best_f1"],
             "at_0.5": next(b for b in val_metrics["by_threshold"] if b["threshold"] == 0.5),
         }
-        # Cấu hình mặc định đánh giá cùng ngưỡng để so sánh công bằng
+        # Score the default config at the same threshold for a fair comparison
         base = make_model(name)
         base.fit(X, y)
         base_metrics = evaluate_proba(y_val, predict_proba(base, X_val))
@@ -124,34 +118,34 @@ def run(models: List[str] | None = None, quick: bool = False,
         results.append(item)
         print(f"  {name:24s} best={item['best_params']} "
               f"CV-AP={item['best_cv_average_precision']:.3f} "
-              f"(mặc định {item['default_cv_reference']['mean_average_precision']:.3f}) "
+              f"(default {item['default_cv_reference']['mean_average_precision']:.3f}) "
               f"val AP={item['validation']['average_precision']:.3f}")
 
-    out = {"cv": "StratifiedGroupKFold theo ticker",
+    out = {"cv": "StratifiedGroupKFold by ticker",
            "refit_metric": "average_precision",
            "quick": quick, "results": results}
     (RESULTS_DIR / "tuning.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
 
-    lines = ["# Tinh chỉnh hyperparameter (CV chia theo công ty)", ""]
-    lines.append("| Mô hình | Cấu hình tốt nhất | CV-AP | CV-AUROC | Val-AP | Val-AUROC | Val-F1* |")
+    lines = ["# Hyperparameter tuning (CV split by company)", ""]
+    lines.append("| Model | Best config | CV-AP | CV-AUROC | Val-AP | Val-AUROC | Val-F1* |")
     lines.append("|---|---|---:|---:|---:|---:|---:|")
     for r in results:
         v = r["validation"]
         lines.append(f"| {r['model']} | `{r['best_params']}` | {r['best_cv_average_precision']:.3f} | "
                      f"{r['best_cv_auroc']:.3f} | {v['average_precision']:.3f} | {v['auroc']:.3f} | "
                      f"{(v['best_f1'] or {}).get('f1', float('nan')):.3f} |")
-    lines += ["", "*(F1* = F1 tốt nhất trên validation; AP = average precision.)*", ""]
+    lines += ["", "*(F1* = best F1 on validation; AP = average precision.)*", ""]
     for r in results:
-        lines.append(f"## {r['model']} — {r['n_candidates']} cấu hình")
+        lines.append(f"## {r['model']} - {r['n_candidates']} configs")
         lines.append("")
-        lines.append("| # | Cấu hình | CV-AP | CV-AUROC |")
+        lines.append("| # | Config | CV-AP | CV-AUROC |")
         lines.append("|---:|---|---:|---:|")
         for i, row in enumerate(r["table"][:12], start=1):
             lines.append(f"| {i} | `{row['params']}` | {row['cv_average_precision']:.3f} | "
                          f"{(row['cv_auroc'] if row['cv_auroc'] is not None else float('nan')):.3f} |")
-        lines += ["", f"Mặc định: CV-AP = {r['default_cv_reference']['mean_average_precision']:.3f} "
-                      f"(chênh {r['best_cv_average_precision'] - r['default_cv_reference']['mean_average_precision']:+.3f})",
+        lines += ["", f"Default: CV-AP = {r['default_cv_reference']['mean_average_precision']:.3f} "
+                      f"(delta {r['best_cv_average_precision'] - r['default_cv_reference']['mean_average_precision']:+.3f})",
                   ""]
     (RESULTS_DIR / "tuning.md").write_text("\n".join(lines), encoding="utf-8")
     return out
@@ -160,10 +154,10 @@ def run(models: List[str] | None = None, quick: bool = False,
 def main(argv=None) -> int:
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--quick", action="store_true", help="Lưới rút gọn cho máy yếu.")
-    parser.add_argument("--models", default="", help="Danh sách mô hình, phân tách bằng dấu phẩy.")
+    parser.add_argument("--quick", action="store_true", help="Reduced grid for weak machines.")
+    parser.add_argument("--models", default="", help="Comma-separated list of models.")
     args = parser.parse_args(argv)
-    print("=== Tinh chỉnh hyperparameter (chia theo công ty) ===")
+    print("=== Hyperparameter tuning (split by company) ===")
     run(models=[m for m in args.models.split(",") if m], quick=args.quick)
     return 0
 

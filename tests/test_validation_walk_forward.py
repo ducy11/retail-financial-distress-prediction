@@ -1,8 +1,8 @@
-"""Test cho hai phép đo ở `forecasting.validation`: walk-forward theo THỜI GIAN và bootstrap CỤM.
+"""Verify walk-forward evaluation and the cluster bootstrap in `forecasting.validation`.
 
-Vì sao cần: mục 6.2 (CI theo cụm công ty) và 6.5 (walk-forward) của báo cáo dựa hoàn toàn vào hai
-hàm này — nếu chia fold sai (chồng lấn thời gian, dùng nhãn chưa công bố) hoặc nếu CI theo cụm bị
-tính như CI theo từng mẫu thì phần "tổng quát hoá theo thời gian / độ bất định" là vô nghĩa.
+Report sections 6.2 and 6.5 rest on these two functions. A fold split that overlaps in time or uses a
+not-yet-published label, or a cluster interval computed like a per-sample one, would make the
+time-generalisation and uncertainty numbers meaningless.
 """
 from __future__ import annotations
 
@@ -26,27 +26,27 @@ quiet_library_warnings()
 
 
 def _d(text: str) -> date:
-    """'YYYY-MM-DD' → date (dùng để so mốc trong test)."""
+    """Parse 'YYYY-MM-DD' into a date for comparing cutoffs in the tests."""
     year, month, day = (int(part) for part in text.split("-")[:3])
     return date(year, month, day)
 
 
 def _sample(ticker: str, end: str, available: str) -> dict:
-    """Mẫu tối thiểu đủ cho hai hàm cần test (không cần feature)."""
+    """Minimal sample for the two functions under test; no features are needed."""
     return {"sample_id": f"{ticker}-{end}", "ticker": ticker, "is_distressed": 1,
             "label_available_on": available,
             "request": {"target_period_end": end, "history": []}}
 
 
 def _toy_samples() -> list:
-    """12 mốc thời gian, nhãn công bố ngay sau kỳ (để test được purge)."""
+    """Twelve periods whose labels are published immediately, so purging can be exercised."""
     return [_sample("A", f"2020-{m:02d}-28", f"2020-{m:02d}-28") for m in range(1, 13)]
 
 
 class TestWalkForwardFolds(unittest.TestCase):
     def test_train_and_test_never_overlap(self):
         folds = walk_forward_folds(_toy_samples(), n_folds=3, purge_days=0, min_train=1)
-        self.assertTrue(folds, "phải sinh được fold")
+        self.assertTrue(folds, "folds must be produced")
         for fold in folds:
             self.assertFalse(set(fold["train_idx"]) & set(fold["test_idx"]))
 
@@ -68,17 +68,17 @@ class TestWalkForwardFolds(unittest.TestCase):
     def test_cuts_move_forward_in_time(self):
         folds = walk_forward_folds(_toy_samples(), n_folds=3, purge_days=0, min_train=1)
         cuts = [_d(fold["cut"]) for fold in folds]
-        self.assertEqual(cuts, sorted(cuts), "mốc cắt phải tăng dần theo fold")
+        self.assertEqual(cuts, sorted(cuts), "cutoffs must move forward across folds")
 
 
 class TestWalkForwardMetricsOnRealData(unittest.TestCase):
-    """Chạy trên prepared thật (train+validation) — bỏ qua nếu thiếu dữ liệu."""
+    """Run on the real prepared data, skipped when train and validation are missing."""
 
     def test_summary_covers_every_model(self):
         try:
             samples = load_prepared("train") + load_prepared("validation")
         except FileNotFoundError:  # pragma: no cover
-            self.skipTest("chưa có data/prepared — chạy `python -m forecasting.data`")
+            self.skipTest("data/prepared is missing; run `python -m forecasting.data`")
         result = walk_forward_metrics(["logistic", "mlp"], samples, n_folds=2,
                                       purge_days=60, min_train=40)
         self.assertEqual(sorted(result["summary"]), ["logistic", "mlp"])

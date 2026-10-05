@@ -1,18 +1,8 @@
-"""EDA cơ bản có nhận xét: tổng quan corpus + thống kê mô tả + phân phối + tương quan.
+"""Basic EDA with automatic commentary: corpus overview, descriptive statistics and correlation.
 
-Lệnh: python -m scripts.eda [--no-write] [--no-figures]
-
-Ghi ra:
-- `reports/results/eda_summary.json`, `reports/results/eda.md` (mọi số đọc từ đây, không nhập tay).
-- 9 hình ở `reports/figures/eda/`: 1 độ phủ, 2 cân bằng lớp, 3 nhãn theo công ty × quý, 4 boxplot,
-  5 chuỗi thời gian, 6 độ dài lịch sử, **7 phân phối 14 tỷ số, 8 tương quan giữa 14 tỷ số,
-  9 mức tách hai lớp của từng tỷ số**.
-
-Trả lời 3 câu hỏi của phần "Khám phá & hiểu dữ liệu" ở mức đủ dùng cho báo cáo:
-1. Mỗi biến phân bố thế nào, có giá trị dị biệt (ngoại lai) không? → `ratio_stats`,
-   `indicator_stats`, hình 7, và nhận xét tự động.
-2. Các lớp có lệch không (tính bằng %)? → bảng cân bằng lớp theo tập + nhận xét về thước đo.
-3. Biến nào tương quan với nhau và với nhãn? → hình 8–9, bảng cặp gần trùng thông tin.
+Writes `reports/results/eda_summary.json` and `reports/results/eda.md`, plus nine figures under
+`reports/figures/eda/` covering coverage, class balance, the label heatmap, boxplots, time series,
+history length, ratio distributions, correlation and class separation. Every number is read from the JSON.
 """
 from __future__ import annotations
 
@@ -37,36 +27,31 @@ from forecasting.eda import (correlation_analysis, feature_statistics, indicator
                              target_association)
 from forecasting.features import build_feature_matrix, extract_labels, feature_names
 
-#: Thư mục hình EDA.
+#: Directory holding the EDA figures.
 EDA_DIR = FIGURES_DIR / "eda"
 
-#: Chỉ tiêu vẽ boxplot (chọn các tỷ số có ý nghĩa phân biệt nhất trong kiểm chứng).
+#: Ratios plotted as boxplots, chosen as the most discriminative ones in validation.
 BOXPLOT_RATIOS = ["current_ratio_latest", "working_capital_to_assets", "net_margin_latest",
                   "debt_to_assets_latest", "inventory_to_sales_latest", "ocf_to_sales_latest"]
 
-#: Công ty minh hoạ cho biểu đồ chuỗi thời gian.
+#: Companies illustrated in the time-series figure.
 TIMESERIES_TICKERS = ["WMT", "HD", "ROST"]
 
-#: Ngưỡng dùng cho phần nhận xét của EDA cơ bản.
-STRONG_CORR = 0.80        #: |r| ≥ 0,80 ⇒ hai tỷ số gần như trùng thông tin ⇒ cân nhắc bỏ bớt.
-CORR_GAP_WARN = 0.30      #: chênh Pearson − Spearman lớn ⇒ tương quan bị ngoại lai chi phối.
-SKEW_WARN = 1.0           #: |skew| > 1 ⇒ lệch rõ rệt, nên xem lại trước khi chuẩn hoá.
-OUTLIER_WARN_PCT = 5.0    #: > 5% mẫu nằm ngoài [Q1 − 1,5·IQR, Q3 + 1,5·IQR].
-
-
-def _load(path: str):
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+#: Thresholds used by the automatic commentary.
+STRONG_CORR = 0.80        #: |r| >= 0.80 means two ratios nearly duplicate information.
+CORR_GAP_WARN = 0.30      #: A wide Pearson-to-Spearman gap signals outlier-driven correlation.
+SKEW_WARN = 1.0           #: |skew| above 1 is clearly skewed, so review before scaling.
+OUTLIER_WARN_PCT = 5.0    #: More than 5 percent of samples outside [Q1 - 1.5*IQR, Q3 + 1.5*IQR].
 
 
 def _load(path: Path) -> Any:
-    """Đọc JSON UTF-8."""
+    """Read a UTF-8 JSON file."""
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def _retail_rows() -> Dict[str, List[Dict[str, Any]]]:
-    """{ticker: rows} từ data/retail-expanded (chuỗi thời gian chỉ tiêu)."""
+    """Return {ticker: rows} from data/retail-expanded, the indicator time series."""
     root = Path(__file__).resolve().parents[1]
     out: Dict[str, List[Dict[str, Any]]] = {}
     for f in sorted((root / "data" / "retail-expanded").glob("*-16-indicators-vnd.json")):
@@ -83,7 +68,7 @@ def _vnd_fields(rows: List[Dict[str, Any]]) -> List[str]:
 
 
 def _label_shares(splits: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
-    """Tỷ lệ nhãn = 1 theo công ty (bản không vẽ hình — dùng khi `figures=False`)."""
+    """Positive-label share per company, used when `figures=False` and no heatmap is drawn."""
     by_ticker: Dict[str, List[int]] = defaultdict(list)
     for name, arr in splits.items():
         for sample in arr:
@@ -96,7 +81,7 @@ def _label_shares(splits: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
 
 def coverage_matrix(rows_by_ticker: Dict[str, List[Dict[str, Any]]]
                     ) -> Tuple[np.ndarray, List[str], List[str]]:
-    """Ma trận độ phủ (% quý có giá trị) theo [công ty × chỉ tiêu]."""
+    """Coverage matrix in percent of quarters with a value, indexed by company and indicator."""
     tickers = sorted(rows_by_ticker)
     fields = _vnd_fields([r for rows in rows_by_ticker.values() for r in rows])
     matrix = np.full((len(tickers), len(fields)), np.nan)
@@ -108,7 +93,7 @@ def coverage_matrix(rows_by_ticker: Dict[str, List[Dict[str, Any]]]
 
 
 def fig_coverage(matrix: np.ndarray, tickers: List[str], fields: List[str], path: Path) -> None:
-    """Hình 1 — heatmap độ phủ chỉ tiêu theo công ty (phát hiện chỉ tiêu gần như rỗng)."""
+    """First figure: indicator coverage heatmap per company, exposing near-empty indicators."""
     fig, ax = plt.subplots(figsize=(11, 4.4))
     im = ax.imshow(matrix, aspect="auto", cmap="RdYlGn", vmin=0, vmax=100)
     ax.set_xticks(range(len(fields)), [f.replace("_vnd", "") for f in fields],
@@ -117,7 +102,7 @@ def fig_coverage(matrix: np.ndarray, tickers: List[str], fields: List[str], path
     ax.set_title("Độ phủ chỉ tiêu theo công ty (% số quý có dữ liệu)")
     for i in range(len(tickers)):
         for j in range(len(fields)):
-            if matrix[i, j] < 60:  # chỉ chú thích các ô thiếu nhiều để hình không rối
+            if matrix[i, j] < 60:  # annotate only sparse cells to keep the figure readable
                 ax.text(j, i, f"{matrix[i, j]:.0f}", ha="center", va="center", fontsize=7, color="black")
     fig.colorbar(im, ax=ax, label="% quý có giá trị")
     fig.tight_layout()
@@ -126,7 +111,7 @@ def fig_coverage(matrix: np.ndarray, tickers: List[str], fields: List[str], path
 
 
 def fig_class_balance(splits: Dict[str, List[Dict[str, Any]]], path: Path) -> Dict[str, Any]:
-    """Hình 2 — cân bằng lớp theo từng split (kèm tỷ lệ)."""
+    """Second figure: class balance per split with the positive share annotated."""
     names = ["train", "validation", "test", "purged"]
     pos = [sum(s["is_distressed"] for s in splits[n]) for n in names]
     neg = [len(splits[n]) - p for n, p in zip(names, pos)]
@@ -149,11 +134,10 @@ def fig_class_balance(splits: Dict[str, List[Dict[str, Any]]], path: Path) -> Di
 
 
 def fig_label_heatmap(splits: Dict[str, List[Dict[str, Any]]], path: Path) -> Dict[str, Any]:
-    """Hình 3 — nhãn theo [công ty × kỳ target]: hình này phơi bày ngay bản chất nhãn.
+    """Third figure: labels by company and target period, which exposes the nature of the label.
 
-    Nếu nhãn là sự kiện của QUÝ thì mỗi hàng sẽ đốm xanh/đỏ rải rác; nếu nhãn gần như là thuộc
-    tính của CÔNG TY thì mỗi hàng gần như đồng màu — đây là kiểm chứng bắt buộc trước khi tin
-    vào AUROC in-domain.
+    Scattered colours along a row indicate quarter-level events, while a nearly uniform row means the
+    label is close to a company attribute. This check must pass before trusting in-domain AUROC.
     """
     samples = [s for n in ("train", "validation", "test", "purged") for s in splits[n]]
     periods = sorted({s["request"]["target_period_end"] for s in samples})
@@ -184,7 +168,7 @@ def fig_label_heatmap(splits: Dict[str, List[Dict[str, Any]]], path: Path) -> Di
 
 
 def fig_ratio_boxplots(splits: Dict[str, List[Dict[str, Any]]], path: Path) -> Dict[str, Any]:
-    """Hình 4 — boxplot 6 tỷ số theo nhãn: tỷ số nào TÁCH được hai lớp, tỷ số nào không?"""
+    """Fourth figure: boxplots of six ratios by label, showing which ones separate the classes."""
     samples = [s for n in ("train", "validation", "test", "purged") for s in splits[n]]
     names = feature_names()
     X = build_feature_matrix(samples)
@@ -214,7 +198,7 @@ def fig_ratio_boxplots(splits: Dict[str, List[Dict[str, Any]]], path: Path) -> D
 
 
 def fig_timeseries(rows_by_ticker: Dict[str, List[Dict[str, Any]]], path: Path) -> None:
-    """Hình 5 — chuỗi thời gian 4 chỉ tiêu của 3 công ty (kiểm tra tính liên tục/mùa vụ)."""
+    """Fifth figure: time series of four indicators for three companies, checking continuity."""
     picks = [t for t in TIMESERIES_TICKERS if t in rows_by_ticker]
     fields = ["revenue", "net_income", "operating_cash_flow", "inventory"]
     fig, axes = plt.subplots(2, 2, figsize=(12, 6.5))
@@ -241,7 +225,7 @@ def fig_timeseries(rows_by_ticker: Dict[str, List[Dict[str, Any]]], path: Path) 
 
 def history_length_stats(lengths: Sequence[int], min_quarters: int = MIN_HISTORY_QUARTERS
                          ) -> Dict[str, Any]:
-    """Thống kê độ dài lịch sử (tách khỏi phần vẽ hình để dùng được khi `figures=False`)."""
+    """History-length statistics, split from the figure so they work when `figures=False`."""
     lengths = list(lengths)
     n_short = sum(1 for h in lengths if h < min_quarters)
     return {"n_samples": len(lengths), "min": int(min(lengths)), "max": int(max(lengths)),
@@ -251,7 +235,7 @@ def history_length_stats(lengths: Sequence[int], min_quarters: int = MIN_HISTORY
 
 def fig_history_length(splits: Dict[str, List[Dict[str, Any]]], path: Path,
                        min_quarters: int = MIN_HISTORY_QUARTERS) -> Dict[str, Any]:
-    """Hình 6 — độ dài lịch sử: bao nhiêu mẫu quá non (YoY không tính được → phải impute)?"""
+    """Sixth figure: history length, showing how many samples are too short for year-on-year ratios."""
     lengths = [len(s["request"]["history"]) for n in ("train", "validation", "test", "purged")
                for s in splits[n]]
     stats = history_length_stats(lengths, min_quarters)
@@ -272,9 +256,9 @@ def fig_history_length(splits: Dict[str, List[Dict[str, Any]]], path: Path,
 
 def fig_ratio_distributions(X: np.ndarray, names: Sequence[str], path: Path,
                             outlier_pct: Optional[Dict[str, float]] = None) -> None:
-    """Hình 7 — histogram của 14 tỷ số: thấy ngay độ lệch, đuôi dài, chỗ dồn cục.
+    """Seventh figure: histograms of the 14 ratios, exposing skew, heavy tails and clustering.
 
-    Mỗi ô ghi thêm % ngoại lai theo IQR để người đọc biết tỷ số nào cần xử lý trước khi chuẩn hoá.
+    Each panel also prints the IQR outlier share so the reader knows which ratios need treatment first.
     """
     columns = 4
     rows = int(math.ceil(len(names) / columns))
@@ -299,7 +283,7 @@ def fig_ratio_distributions(X: np.ndarray, names: Sequence[str], path: Path,
 
 
 def fig_ratio_correlation(corr: np.ndarray, names: Sequence[str], path: Path) -> None:
-    """Hình 8 — heatmap tương quan Pearson giữa 14 tỷ số (chỉ ghi số khi |r| ≥ 0,5)."""
+    """Eighth figure: Pearson correlation heatmap of the 14 ratios, annotating only |r| above 0.5."""
     short = [str(n).replace("_latest", "") for n in names]
     fig, ax = plt.subplots(figsize=(9.5, 8))
     image = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
@@ -320,7 +304,7 @@ def fig_ratio_correlation(corr: np.ndarray, names: Sequence[str], path: Path) ->
 
 
 def fig_ratio_vs_label(ranked: Sequence[Dict[str, Any]], path: Path) -> None:
-    """Hình 9 — mức tách hai lớp của từng tỷ số: 2·AUC − 1 (đỏ = giá trị cao ⇒ dễ suy giảm)."""
+    """Ninth figure: class separation per ratio as 2*AUC - 1, red meaning a higher value signals distress."""
     rows = [r for r in ranked if r.get("auc") is not None]
     labels = [str(r["feature"]).replace("_latest", "") for r in rows][::-1]
     effects = [(r.get("effect_rank_biserial") or 0.0) for r in rows][::-1]
@@ -340,14 +324,14 @@ def basic_conclusions(ratio_stats: Sequence[Dict[str, Any]], indicator_stats: Se
                       balance: Dict[str, Any], label_info: Dict[str, Any],
                       correlation: Dict[str, Any],
                       association: Sequence[Dict[str, Any]]) -> List[str]:
-    """Nhận xét tự động cho EDA cơ bản — mỗi câu nêu số liệu + việc cần làm tiếp.
+    """Automatic commentary for the basic EDA, pairing each number with the next action.
 
-    Vì sao cần: bảng số và biểu đồ chỉ *cho thấy* dữ liệu; nhận xét mới *kết luận* được điều gì
-    ảnh hưởng tới bước sau (xử lý ngoại lai, chọn thước đo, bỏ bớt biến trùng, cảnh báo rò rỉ).
+    Tables and figures only display the data, while the commentary draws the conclusions that affect
+    later steps: outlier treatment, metric choice, dropping duplicated features and leakage warnings.
     """
     lines: List[str] = []
 
-    # (1) Phân phối & ngoại lai
+    # 1. Distribution and outliers.
     total_ratios = max(1, len(ratio_stats))
     if ratio_stats:
         skewed = [r for r in ratio_stats if r.get("skew") is not None and abs(r["skew"]) > SKEW_WARN]
@@ -371,7 +355,7 @@ def basic_conclusions(ratio_stats: Sequence[Dict[str, Any]], indicator_stats: Se
             + ". ⇒ Phần thiếu được `SimpleImputer(median)` xử lý **trong pipeline**; riêng các tỷ số "
               "dựa trên `receivables`/`short_term_investments` chỉ có nghĩa với một phần mẫu.")
 
-    # (2) Tỉ lệ lớp (theo %)
+    # 2. Class proportions in percent.
     totals = sum(int(v.get("total", 0)) for v in balance.values())
     positives = sum(int(v.get("distress", 0)) for v in balance.values())
     if totals:
@@ -394,7 +378,7 @@ def basic_conclusions(ratio_stats: Sequence[Dict[str, Any]], indicator_stats: Se
               "(GroupKFold/LOCO) và luôn so với baseline `ticker_prior`, nếu không AUROC in-domain sẽ "
               "bị thổi phồng.")
 
-    # (3) Tương quan giữa các biến
+    # 3. Correlation between variables.
     clusters = correlation.get("clusters_abs_ge_threshold", [])
     if correlation.get("feature_order"):
         lines.append(
@@ -418,7 +402,7 @@ def basic_conclusions(ratio_stats: Sequence[Dict[str, Any]], indicator_stats: Se
                 f"**Kiểm tra tương quan giả:** không cặp nào có Pearson lệch Spearman hơn "
                 f"{CORR_GAP_WARN:.2f} ⇒ các tương quan mạnh ở trên không bị ngoại lai chi phối.")
 
-    # (4) Tương quan với nhãn
+    # 4. Association with the label.
     top = [a for a in association if a.get("auc") is not None][:5]
     if top:
         lines.append(
@@ -441,18 +425,14 @@ def basic_conclusions(ratio_stats: Sequence[Dict[str, Any]], indicator_stats: Se
 
 def run(write: bool = True, out_dir: Optional[Path] = None, fig_dir: Optional[Path] = None,
         figures: bool = True) -> Dict[str, Any]:
-    """Sinh hình + bảng EDA cơ bản → `reports/figures/eda/` và `reports/results/eda.{json,md}`.
+    """Produce the EDA figures and tables into `reports/figures/eda/` and `reports/results/eda.*`.
 
-    Đây là phần "Mô tả & phân tích dữ liệu" của báo cáo: mọi con số lấy từ `eda_summary.json`
-    (không nhập tay). `out_dir`/`fig_dir` cho phép test ghi vào thư mục tạm.
-
-    Phạm vi tập dữ liệu (ghi rõ để tránh hiểu sai):
-    - Thống kê mô tả / phân phối / tương quan giữa các tỷ số: **toàn bộ 324 mẫu** (mô tả dữ liệu).
-    - Tương quan tỷ số ↔ nhãn: **train+validation** — không dùng test cho bất kỳ mô tả nào có thể
-      dẫn tới quyết định.
+    Every number comes from `eda_summary.json` rather than being typed in, and `out_dir` and `fig_dir`
+    let tests write to a temporary directory. Descriptive statistics and ratio correlations use all 324
+    samples, while ratio-to-label association uses train plus validation only.
     """
     ensure_dirs()
-    ensure_utf8_stdio()  # hàm này cũng được gọi từ test/notebook ⇒ không phụ thuộc CLI
+    ensure_utf8_stdio()  # also called from tests and notebooks, so the CLI is not required
     results_dir = Path(out_dir) if out_dir else RESULTS_DIR
     target_fig_dir = Path(fig_dir) if fig_dir else EDA_DIR
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -463,14 +443,14 @@ def run(write: bool = True, out_dir: Optional[Path] = None, fig_dir: Optional[Pa
     pooled = [sample for name in ("train", "validation", "test", "purged") for sample in splits[name]]
     analysis_samples = splits["train"] + splits["validation"]
 
-    # --- 1) Thống kê mô tả: 14 tỷ số (đơn vị so sánh được) và 16 chỉ tiêu tiền (nghìn tỷ VND) ---
+    # 1. Descriptive statistics for the 14 ratios and the 16 monetary indicators.
     X_ratio, ratio_names, _ = latest_ratio_matrix(pooled)
     ratio_stats = feature_statistics(X_ratio, ratio_names)
     X_indicator, indicator_names = indicator_value_matrix(rows_by_ticker)
     indicator_stats = feature_statistics(X_indicator, indicator_names)
     outlier_by_ratio = {str(r["feature"]): (r.get("iqr_outlier_pct") or 0.0) for r in ratio_stats}
 
-    # --- 2) Tương quan giữa các tỷ số + tương quan với nhãn (train+validation) ---
+    # 2. Ratio-to-ratio and ratio-to-label correlation on train plus validation.
     X_analysis, _, y_analysis = latest_ratio_matrix(analysis_samples)
     correlation = correlation_analysis(X_analysis, ratio_names, threshold=STRONG_CORR)
     association = target_association(X_analysis, y_analysis, ratio_names)
@@ -505,7 +485,7 @@ def run(write: bool = True, out_dir: Optional[Path] = None, fig_dir: Optional[Pa
     for path in sorted(target_fig_dir.glob("*.png")):
         try:
             figure_paths.append(str(path.relative_to(FIGURES_DIR.parent)))
-        except ValueError:  # fig_dir ngoài cây repo (test)
+        except ValueError:  # fig_dir outside the repo tree, as happens in tests
             figure_paths.append(str(path))
     summary: Dict[str, Any] = {
         "corpus": {
@@ -646,24 +626,24 @@ def run(write: bool = True, out_dir: Optional[Path] = None, fig_dir: Optional[Pa
     if write:
         (results_dir / "eda.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    print(f"EDA: {summary['corpus']['n_companies']} công ty / "
-          f"{summary['corpus']['n_quarters']} quý / {summary['corpus']['n_samples']} mẫu; "
-          f"{len(ratio_stats)} tỷ số mô tả, {correlation['n_pairs_abs_ge_threshold']} cặp tương quan mạnh; "
-          f"{len(conclusions)} nhận xét; hình ở {target_fig_dir.name}/; "
-          f"nhãn 1 toàn bộ ở {label_info['companies_all_one']}")
+    print(f"EDA: {summary['corpus']['n_companies']} companies / "
+          f"{summary['corpus']['n_quarters']} quarters / {summary['corpus']['n_samples']} samples; "
+          f"{len(ratio_stats)} ratios described, {correlation['n_pairs_abs_ge_threshold']} strong pairs; "
+          f"{len(conclusions)} conclusions; figures in {target_fig_dir.name}/; "
+          f"all-positive labels at {label_info['companies_all_one']}")
     return summary
 
 
 def main(argv=None) -> int:
-    """CLI: `python -m scripts.eda [--no-write] [--no-figures]`."""
+    """Command-line entry point for `scripts.eda`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-write", action="store_true",
-                        help="Chỉ in, không ghi reports/results/eda.{json,md}")
+                        help="Print only; do not write reports/results/eda.{json,md}")
     parser.add_argument("--no-figures", action="store_true",
-                        help="Bỏ vẽ hình (nhanh hơn, chỉ cần bảng số)")
+                        help="Skip figure rendering when only the tables are needed")
     args = parser.parse_args(argv)
-    print("=== EDA cơ bản: hình + bảng tổng quan + thống kê mô tả + tương quan ===")
+    print("=== Basic EDA: figures, overview tables, descriptive statistics and correlation ===")
     run(write=not args.no_write, figures=not args.no_figures)
     return 0
 

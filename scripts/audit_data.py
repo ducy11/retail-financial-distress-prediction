@@ -1,31 +1,8 @@
-"""Đối soát TOÀN BỘ bộ dữ liệu trong repo với SỐ LIỆU THẬT đã công bố trên SEC.
+"""Cross-check every dataset in the repository against the real numbers published by the SEC.
 
-Lệnh: python -m scripts.audit_data [--tickers WMT,HD] [--skip-sec] [--no-write]
-
-Vì sao cần: repo có nhiều "tập" do pipeline gốc sinh ra (`retail-expanded` 16 chỉ tiêu, bản cũ
-10 chỉ tiêu, `prepared`, `prepared-rule`, `manifest`, artifact trong `reports/`) và nhãn
-`is_distressed` KHÔNG tái tạo được từ chỉ tiêu đã công bố (`docs/dinh-nghia-nhan.md`). Script này
-trả lời câu hỏi "các con số trong các tập đó có đúng số liệu thật không" bằng cách truy từng giá
-trị VND về FACT XBRL trong snapshot SEC (`data/sec/raw/*-companyfacts.json`) rồi kiểm tra nhất
-quán nội bộ giữa các tập và với con số đã in trong báo cáo. Script CHỈ ĐỌC — không sửa dữ liệu;
-phát hiện được ghi vào `reports/results/data_audit.json`.
-
-Nhóm kiểm tra
-1. `sec_snapshots`   SHA-256 snapshot khớp sổ đăng ký; CIK/tên pháp nhân khớp companyfacts.
-2. `retail_expanded` Mỗi quý × 16 chỉ tiêu: fact (tag, start, end, accn) tồn tại THẬT trong
-                     companyfacts, `val` (USD) trùng khớp, giá trị VND đúng quy tắc của `method`
-                     (×25.000; luỹ kế trừ luỹ kế), `available_on` = ngày `filed` mới nhất, kỳ quý
-                     70–105 ngày, thứ tự quý liên tục.
-3. `legacy_10`       File 10 chỉ tiêu (bản cũ) trùng giá trị với bản 16 chỉ tiêu.
-4. `prepared`        4 tập khớp 100% `retail-expanded`, lịch sử không rò rỉ (`available_on` ≤
-                     `as_of`), chính sách 8 test / 4 validation / 2 purge tái lập được từ file
-                     nguồn, các tập rời nhau.
-5. `manifest`        counts, label_counts, split_sha256, source_sha256, test_ranges, mốc fit.
-6. `corpus`          quarter_count, phạm vi năm, tên pháp nhân, CIK/URL.
-7. `prepared_rule`   Nhãn quy tắc tái lập được (`forecasting.labels`) + khớp `relabel.json`/docs.
-8. `report_numbers`  Con số trong `eda_summary.json`, `analysis.json`, `test_evaluation.json`,
-                     `test_predictions.csv`, `baselines.json` khớp tính lại, kể cả xác suất do
-                     `reports/models/best.joblib` sinh ra.
+Traces each VND value back to an XBRL fact in the raw SEC snapshot and verifies internal consistency
+between the datasets and the figures printed in the report. The script is read-only and records findings
+in `reports/results/data_audit.json`; run with `python -m scripts.audit_data`.
 """
 from __future__ import annotations
 
@@ -49,9 +26,7 @@ from forecasting.data import (CANONICAL_VND_FIELDS, QUARTERS_TEST, QUARTERS_VALI
 from forecasting.features import RATIO_PARTS
 from forecasting.labels import label_row, signal_flags
 
-# ---------------------------------------------------------------------------
-# Đường dẫn + hằng số
-# ---------------------------------------------------------------------------
+# Paths and constants.
 RAW_DIR = DATA_DIR / "sec" / "raw"
 DOWNLOADS_FILE = DATA_DIR / "sec" / "downloads.json"
 CORPUS_FILE = RETAIL_DIR / "corpus.json"
@@ -60,8 +35,8 @@ SPLITS = ("train", "validation", "test", "purged")
 GROUPS = ("sec_snapshots", "retail_expanded", "legacy_10", "prepared", "manifest", "corpus",
           "prepared_rule", "report_numbers")
 
-#: Quy tắc suy giá trị VND từ provenance (khớp mô tả trong `scripts/prepare_sec.py`; đã đối
-#: chiếu trên toàn bộ fact của 8 công ty).
+#: Rules for deriving VND values from provenance, matching `scripts/prepare_sec.py` and already
+#: cross-checked against every fact of the eight companies.
 QUARTER_METHOD = "reported_quarter"
 FIRST_QUARTER_METHOD = "reported_first_quarter"
 INSTANT_METHOD = "instant"
@@ -70,20 +45,25 @@ ABSENT_METHOD = "absent"
 DURATION_METHODS = (QUARTER_METHOD, FIRST_QUARTER_METHOD)
 KNOWN_METHODS = DURATION_METHODS + (INSTANT_METHOD, YTD_METHOD, ABSENT_METHOD)
 
-#: Một quý tài chính 13 tuần → khoảng ngày hợp lệ (khớp thông điệp lọc trong corpus.json).
+#: A 13-week fiscal quarter maps to this day range, matching the filter message in corpus.json.
 MIN_QUARTER_DAYS, MAX_QUARTER_DAYS = 70, 105
 _SAMPLE_ID_RE = re.compile(r"^(?P<ticker>[A-Z]+)-(?P<fy>\d{4})Q(?P<q>[1-4])$")
 
-#: Cache companyfacts theo ticker (mỗi file ~5–8 MB).
+#: Companyfacts cache per ticker, each file roughly 5 to 8 MB.
 _SEC_DOCS: Dict[str, Dict[str, Any]] = {}
 
+#: A public clone ships neither `data/sec/raw/` (a ~130 MB snapshot, git-ignored) nor
+#: `reports/models/best.joblib` (a checkpoint, git-ignored). Check groups needing those sources are
+#: skipped and recorded in `stats` instead of failing, so the audit runs clean on CI and trimmed clones
+#: while still checking everything when the full data is present.
+_HAVE_RAW = bool(list(RAW_DIR.glob("*-companyfacts.json")))
+_HAVE_MODEL = (MODELS_DIR / "best.joblib").exists()
 
 
-# ---------------------------------------------------------------------------
-# Tiện ích
-# ---------------------------------------------------------------------------
+
+# Utilities.
 def _jsonable(value: Any) -> Any:
-    """Bảo đảm context lỗi ghi được ra JSON (chỉ giữ kiểu đơn giản)."""
+    """Coerce an error context into something JSON-serialisable, keeping only simple types."""
     if isinstance(value, dict):
         return {str(k): _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
@@ -118,7 +98,7 @@ def _quarter_days(row: Dict[str, Any]) -> int | None:
 
 
 def _close(x: Any, y: Any, tol: float = 1e-9) -> bool:
-    """So hai số (None/NaN được coi là khớp nhau)."""
+    """Compare two numbers, treating two missing values as equal."""
     if x is None or y is None:
         return x is None and y is None
     try:
@@ -131,7 +111,7 @@ def _close(x: Any, y: Any, tol: float = 1e-9) -> bool:
 
 
 def _compact_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Nén row retail-expanded về dạng history row của prepared (giống forecasting.data)."""
+    """Compress a retail-expanded row into the prepared history-row shape used by `forecasting.data`."""
     out: Dict[str, Any] = {}
     for key in ("fiscal_year", "fiscal_quarter", "period_start", "period_end",
                 "available_on", "currency"):
@@ -145,7 +125,7 @@ def _compact_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _vnd_fields(rows: Sequence[Dict[str, Any]]) -> List[str]:
-    """Tên chỉ tiêu có trong file (16 với bản chuẩn, 10 với bản cũ)."""
+    """Indicator names present in the file: 16 for the current layout, 10 for the legacy one."""
     keys = {k for row in rows for k in row if k.endswith(SUFFIX)}
     return sorted(k[: -len(SUFFIX)] for k in keys)
 
@@ -157,7 +137,7 @@ def _parse_sample_id(sample_id: str) -> Tuple[str, int, int] | None:
 
 
 def sec_doc(ticker: str) -> Dict[str, Any]:
-    """companyfacts của ticker (đọc 1 lần, cache); {} nếu thiếu file."""
+    """Cached companyfacts for a ticker, empty when the file is missing."""
     if ticker not in _SEC_DOCS:
         path = RAW_DIR / f"{ticker}-companyfacts.json"
         _SEC_DOCS[ticker] = _read_json(path) if path.exists() else {}
@@ -165,7 +145,7 @@ def sec_doc(ticker: str) -> Dict[str, Any]:
 
 
 def sec_fact_index(ticker: str) -> Dict[Tuple[str, Any, Any, Any], List[Dict[str, Any]]]:
-    """{(tag, start, end, accn): [fact, ...]} để tra fact thật trong companyfacts."""
+    """Index from tag, start, end and accession to facts, for looking up real companyfacts records."""
     index: Dict[Tuple[str, Any, Any, Any], List[Dict[str, Any]]] = {}
     for _taxonomy, tags in (sec_doc(ticker).get("facts") or {}).items():
         for tag, body in tags.items():
@@ -177,7 +157,7 @@ def sec_fact_index(ticker: str) -> Dict[Tuple[str, Any, Any, Any], List[Dict[str
 
 
 class Auditor:
-    """Thu lỗi theo nhóm kiểm tra + đếm số phép kiểm tra đã chạy."""
+    """Collect issues per check group and count how many checks ran."""
 
     def __init__(self) -> None:
         self.issues: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -185,20 +165,20 @@ class Auditor:
         self.checks = 0
 
     def check(self, ok: bool, group: str, message: str, **ctx: Any) -> bool:
-        """Ghi một phép kiểm tra; trả về `ok` để dùng tiếp trong luồng xử lý."""
+        """Record one check and return its boolean result for continued use in the caller."""
         self.checks += 1
         if not ok:
             self.issues[group].append({"message": message, **_jsonable(ctx)})
         return bool(ok)
 
     def eq(self, group: str, message: str, declared: Any, actual: Any, **ctx: Any) -> bool:
-        """So bằng tuyệt đối (giá trị khai báo vs giá trị tính lại)."""
+        """Compare exactly, declared value against recomputed value."""
         return self.check(declared == actual, group, message,
                           declared=declared, actual=actual, **ctx)
 
     def close(self, group: str, message: str, declared: Any, actual: Any,
               tol: float = 1e-9, **ctx: Any) -> bool:
-        """So gần đúng cho số thực (mặc định 1e-9)."""
+        """Compare floating-point values within a tolerance, 1e-9 by default."""
         return self.check(_close(declared, actual, tol), group, message,
                           declared=declared, actual=actual, **ctx)
 
@@ -215,7 +195,7 @@ class Auditor:
                 "issues": {g: self.issues[g] for g in GROUPS if self.issues.get(g)}}
 
     def markdown(self) -> str:
-        """Markdown ngắn: số phát hiện theo nhóm + số liệu đối chiếu + phát hiện chi tiết."""
+        """Render the short markdown report: issues per group, cross-check numbers and details."""
         lines = ["# Đối soát dữ liệu với SỐ LIỆU THẬT (SEC) — `scripts.audit_data`", "",
                  f"- Số phép kiểm tra: **{self.checks}**",
                  f"- Số phát hiện: **{self.n_issues()}**", "",
@@ -238,11 +218,9 @@ class Auditor:
         return "\n".join(lines) + "\n"
 
 
-# ---------------------------------------------------------------------------
-# Nhóm 1 — snapshot SEC thô (nguồn "số liệu thật")
-# ---------------------------------------------------------------------------
+# Group 1: raw SEC snapshots, the source of the real numbers.
 def check_sec_snapshots(a: Auditor, tickers: Sequence[str] | None = None) -> None:
-    """SHA-256 + CIK + tên pháp nhân của `data/sec/raw/*-companyfacts.json`."""
+    """SHA-256, CIK and legal name for each `data/sec/raw/*-companyfacts.json`."""
     registries: Dict[str, Dict[str, Any]] = {}
     if DOWNLOADS_FILE.exists():
         registries[DOWNLOADS_FILE.name] = _read_json(DOWNLOADS_FILE)
@@ -270,12 +248,10 @@ def check_sec_snapshots(a: Auditor, tickers: Sequence[str] | None = None) -> Non
                  meta.get("entity_name"), doc.get("entityName"))
 
 
-# ---------------------------------------------------------------------------
-# Nhóm 2/3 — retail-expanded: cấu trúc quý + provenance + giá trị VND
-# ---------------------------------------------------------------------------
+# Groups 2 and 3: retail-expanded quarter structure, provenance and VND values.
 def check_quarter_row(a: Auditor, ticker: str, at: int, row: Dict[str, Any],
                       prev: Dict[str, Any] | None, group: str) -> None:
-    """Kỳ 70–105 ngày, available_on sau khi quý kết thúc, thứ tự quý liên tục."""
+    """Periods span 70 to 105 days, `available_on` follows the period end and quarters are contiguous."""
     where = f"{ticker}-{row.get('fiscal_year')}Q{row.get('fiscal_quarter')}"
     a.eq(group, f"{where}: ticker trong row khác tên file", row.get("ticker"), ticker, at=at)
     a.eq(group, f"{where}: currency khác VND", row.get("currency"), "VND", at=at)
@@ -302,7 +278,7 @@ def check_quarter_row(a: Auditor, ticker: str, at: int, row: Dict[str, Any],
 
 def _expected_vnd(a: Auditor, where: str, field: str, method: str, facts: List[Dict[str, Any]],
                   row: Dict[str, Any], group: str) -> int | None:
-    """Giá trị VND suy từ fact THẬT theo `method`; ghi lỗi nếu kỳ/fact không khớp."""
+    """Derive the VND value from the real fact under `method` and flag any period or fact mismatch."""
     period_start, period_end = row.get("period_start"), row.get("period_end")
     if method == YTD_METHOD:
         if not a.check(len(facts) >= 2, group,
@@ -339,7 +315,7 @@ def _expected_vnd(a: Auditor, where: str, field: str, method: str, facts: List[D
 def check_quarter_provenance(a: Auditor, ticker: str, row: Dict[str, Any],
                              index: Dict[Tuple[str, Any, Any, Any], List[Dict[str, Any]]],
                              fields: Sequence[str], group: str) -> None:
-    """Mọi chỉ tiêu của quý phải truy được về fact thật + giá trị VND đúng."""
+    """Every indicator of the quarter must trace to a real fact and carry the correct VND value."""
     where = f"{ticker}-{row.get('fiscal_year')}Q{row.get('fiscal_quarter')}"
     sources = row.get("sources") or {}
     a.check(set(sources) == set(fields), group,
@@ -363,7 +339,7 @@ def check_quarter_provenance(a: Auditor, ticker: str, row: Dict[str, Any],
         if not a.check(bool(facts), group, f"{where}: {field} không có fact nào", field=field):
             continue
 
-        # (1) fact phải tồn tại THẬT trong companyfacts với `val` trùng khớp
+        # 1. The fact must exist in companyfacts with a matching value.
         for fact in facts:
             key = (fact.get("tag"), fact.get("start"), fact.get("end"), fact.get("accn"))
             hits = index.get(key)
@@ -377,13 +353,13 @@ def check_quarter_provenance(a: Auditor, ticker: str, row: Dict[str, Any],
                     sec_vals=sorted({h.get("val") for h in hits
                                      if isinstance(h.get("val"), int)})[:3])
 
-        # (2) giá trị VND phải đúng quy tắc của method (×25.000; luỹ kế trừ luỹ kế)
+        # 2. The VND value must follow the method rule, scaling or subtracting year-to-date figures.
         expected = _expected_vnd(a, where, field, method, facts, row, group)
         if expected is not None:
             a.eq(group, f"{where}: {field} VND khác số liệu thật trong companyfacts",
                  stored, expected, field=field)
 
-        # (3) available_on = ngày filed mới nhất; source_url chứa accession của fact đó
+        # 3. `available_on` is the latest filed date and `source_url` holds that accession.
         latest = max(facts, key=lambda f: (f.get("filed") or "", f.get("end") or ""))
         a.eq(group, f"{where}: available_on khác ngày filed của fact {field}",
              row.get("available_on"), latest.get("filed"), field=field)
@@ -394,7 +370,7 @@ def check_quarter_provenance(a: Auditor, ticker: str, row: Dict[str, Any],
 
 
 def check_retail_doc(a: Auditor, path: Path, group: str) -> Tuple[str | None, List[Dict[str, Any]]]:
-    """Kiểm tra một file `*-indicators-vnd.json` (bản chuẩn 16 hoặc bản cũ 10 chỉ tiêu)."""
+    """Check one `*-indicators-vnd.json` file, either the 16-indicator or the legacy 10 layout."""
     doc = _read_json(path)
     ticker = doc.get("ticker")
     rows = list(doc.get("rows") or [])
@@ -406,18 +382,20 @@ def check_retail_doc(a: Auditor, path: Path, group: str) -> Tuple[str | None, Li
     a.eq(group, f"{path.name}: indicator_count khác số chỉ tiêu có trong row",
          doc.get("indicator_count"), len(fields))
     index = sec_fact_index(str(ticker))
-    a.check(bool(index), group, f"{path.name}: không đọc được companyfacts của {ticker}")
+    if _HAVE_RAW:
+        a.check(bool(index), group, f"{path.name}: không đọc được companyfacts của {ticker}")
     prev: Dict[str, Any] | None = None
     for i, row in enumerate(rows):
         check_quarter_row(a, str(ticker), i, row, prev, group)
-        check_quarter_provenance(a, str(ticker), row, index, fields, group)
+        if _HAVE_RAW:
+            check_quarter_provenance(a, str(ticker), row, index, fields, group)
         prev = row
     return ticker, rows
 
 
 def check_retail_expanded(a: Auditor, tickers: Sequence[str] | None = None
                           ) -> Dict[str, List[Dict[str, Any]]]:
-    """Nhóm 2 (bản 16 chỉ tiêu) + nhóm 3 (bản cũ 10 chỉ tiêu phải trùng giá trị)."""
+    """Group 2 for the 16-indicator layout and group 3 for the legacy 10, which must match."""
     rows_by_ticker: Dict[str, List[Dict[str, Any]]] = {}
     legacy: Dict[str, List[Dict[str, Any]]] = {}
     for path in sorted(RETAIL_DIR.glob("*-16-indicators-vnd.json")):
@@ -452,11 +430,9 @@ def check_retail_expanded(a: Auditor, tickers: Sequence[str] | None = None
     return rows_by_ticker
 
 
-# ---------------------------------------------------------------------------
-# Nhóm 4 — prepared: 4 tập khớp retail-expanded + chính sách split
-# ---------------------------------------------------------------------------
+# Group 4: the four prepared splits must match retail-expanded and the split policy.
 def _expected_split_by_sample(rows_by_ticker: Dict[str, List[Dict[str, Any]]]) -> Dict[str, str]:
-    """Chính sách split của `forecasting.data.split_policy`, tính lại từ file nguồn."""
+    """Split policy of `forecasting.data.split_policy`, recomputed from the source files."""
     expected: Dict[str, str] = {}
     need = QUARTERS_TEST + QUARTERS_VALIDATION + 2
     for ticker, rows in rows_by_ticker.items():
@@ -477,7 +453,7 @@ def _expected_split_by_sample(rows_by_ticker: Dict[str, List[Dict[str, Any]]]) -
 
 def check_prepared_sample(a: Auditor, split: str, sample: Dict[str, Any],
                           rows_by_ticker: Dict[str, List[Dict[str, Any]]]) -> None:
-    """Một sample: khớp 100% retail-expanded, lịch sử đúng quý, không rò rỉ tương lai."""
+    """One sample: exact match with retail-expanded, correct history quarters and no future leakage."""
     sid = str(sample.get("sample_id"))
     ticker = sample.get("ticker")
     rows = rows_by_ticker.get(str(ticker))
@@ -550,7 +526,7 @@ def check_prepared_sample(a: Auditor, split: str, sample: Dict[str, Any],
 
 def check_prepared(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]]
                    ) -> Dict[str, List[Dict[str, Any]]]:
-    """Bốn tập phải rời nhau, phủ đủ cặp dự báo, đúng chính sách và khớp file nguồn."""
+    """The four splits must be disjoint, cover every forecast pair, follow the policy and match the data."""
     splits: Dict[str, List[Dict[str, Any]]] = {}
     for name in SPLITS:
         path = PREPARED_DIR / f"{name}.json"
@@ -588,11 +564,9 @@ def check_prepared(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]]
     return splits
 
 
-# ---------------------------------------------------------------------------
-# Nhóm 5 — manifest: con số tổng hợp + hash + mốc fit
-# ---------------------------------------------------------------------------
+# Group 5: manifest counts, hashes and the fit timestamps.
 def _max_published(samples: List[Dict[str, Any]]) -> str | None:
-    """Ngày công bố lớn nhất xuất hiện trong lịch sử của tập mẫu."""
+    """Latest publication date among the histories of the given samples."""
     days = [h.get("available_on") for s in samples
             for h in ((s.get("request") or {}).get("history") or [])]
     days = [d for d in days if d]
@@ -600,7 +574,7 @@ def _max_published(samples: List[Dict[str, Any]]) -> str | None:
 
 
 def _min_as_of(samples: List[Dict[str, Any]]) -> str | None:
-    """`as_of` nhỏ nhất của tập mẫu."""
+    """Earliest `as_of` across the given samples."""
     days = [(s.get("request") or {}).get("as_of") for s in samples]
     days = [d for d in days if d]
     return min(days) if days else None
@@ -608,7 +582,7 @@ def _min_as_of(samples: List[Dict[str, Any]]) -> str | None:
 
 def check_manifest(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]],
                    splits: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
-    """Counts / label_counts / split_sha256 / source_sha256 / test_ranges / mốc fit."""
+    """Counts, label counts, split and source hashes, test ranges and the fit timestamps."""
     if not a.check(MANIFEST_FILE.exists(), "manifest", "thiếu data/prepared/manifest.json"):
         return {}
     man = _read_json(MANIFEST_FILE)
@@ -683,11 +657,9 @@ def check_manifest(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]],
     return man
 
 
-# ---------------------------------------------------------------------------
-# Nhóm 6 — corpus.json: số quý, phạm vi năm, tên pháp nhân, CIK/URL
-# ---------------------------------------------------------------------------
+# Group 6: corpus.json quarter counts, year range, legal name and CIK or URL.
 def check_corpus(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]]) -> None:
-    """Mọi con số mô tả corpus phải khớp file dữ liệu thật + companyfacts."""
+    """Every corpus description must match the real data files and companyfacts."""
     if not a.check(CORPUS_FILE.exists(), "corpus", "thiếu data/retail-expanded/corpus.json"):
         return
     corpus = _read_json(CORPUS_FILE)
@@ -701,7 +673,6 @@ def check_corpus(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]]) ->
                        f"{ticker}: corpus.json có nhưng thiếu file 16 chỉ tiêu", ticker=ticker):
             continue
         assert rows is not None
-        doc = sec_doc(ticker)
         a.eq("corpus", f"{ticker}: tên file khai báo khác quy ước",
              meta.get("file"), f"{ticker}-16-indicators-vnd.json", ticker=ticker)
         a.eq("corpus", f"{ticker}: quarter_count khác số quý thật",
@@ -710,25 +681,28 @@ def check_corpus(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]]) ->
              meta.get("first_fiscal_year"), rows[0].get("fiscal_year"), ticker=ticker)
         a.eq("corpus", f"{ticker}: last_fiscal_year khác quý cuối thật",
              meta.get("last_fiscal_year"), rows[-1].get("fiscal_year"), ticker=ticker)
-        a.eq("corpus", f"{ticker}: tên công ty khác entityName thật của SEC",
-             meta.get("name"), doc.get("entityName"), ticker=ticker)
+        if _HAVE_RAW:
+            doc = sec_doc(ticker)
+            a.eq("corpus", f"{ticker}: tên công ty khác entityName thật của SEC",
+                 meta.get("name"), doc.get("entityName"), ticker=ticker)
 
     downloads = corpus.get("downloads") or {}
     a.check(set(downloads) >= set(companies), "corpus",
             "corpus.json → downloads thiếu công ty đang dùng",
             missing=sorted(set(companies) - set(downloads)))
-    for ticker, meta in downloads.items():
-        doc = sec_doc(ticker)
-        if not a.check(bool(doc), "corpus",
-                       f"{ticker}: không có snapshot companyfacts để đối chiếu", ticker=ticker):
-            continue
-        a.eq("corpus", f"{ticker}: CIK trong corpus khác companyfacts",
-             meta.get("cik"), doc.get("cik"), ticker=ticker)
-        a.eq("corpus", f"{ticker}: entity_name trong corpus khác companyfacts",
-             meta.get("entity_name"), doc.get("entityName"), ticker=ticker)
-        a.eq("corpus", f"{ticker}: URL companyfacts không khớp CIK", meta.get("url"),
-             f"https://data.sec.gov/api/xbrl/companyfacts/CIK{int(meta.get('cik') or 0):010d}.json",
-             ticker=ticker)
+    if _HAVE_RAW:
+        for ticker, meta in downloads.items():
+            doc = sec_doc(ticker)
+            if not a.check(bool(doc), "corpus",
+                           f"{ticker}: không có snapshot companyfacts để đối chiếu", ticker=ticker):
+                continue
+            a.eq("corpus", f"{ticker}: CIK trong corpus khác companyfacts",
+                 meta.get("cik"), doc.get("cik"), ticker=ticker)
+            a.eq("corpus", f"{ticker}: entity_name trong corpus khác companyfacts",
+                 meta.get("entity_name"), doc.get("entityName"), ticker=ticker)
+            a.eq("corpus", f"{ticker}: URL companyfacts không khớp CIK", meta.get("url"),
+                 f"https://data.sec.gov/api/xbrl/companyfacts/CIK{int(meta.get('cik') or 0):010d}.json",
+                 ticker=ticker)
 
     excluded = corpus.get("excluded") or {}
     a.check(bool(excluded) and all(str(v).strip() for v in excluded.values()), "corpus",
@@ -737,12 +711,10 @@ def check_corpus(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]]) ->
     a.stat("corpus_excluded", sorted(excluded))
 
 
-# ---------------------------------------------------------------------------
-# Nhóm 7 — prepared-rule: nhãn quy tắc có tái lập được từ dữ liệu thật?
-# ---------------------------------------------------------------------------
+# Group 7: the prepared-rule labels must be reproducible from the real data.
 def check_prepared_rule(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]],
                         splits: Dict[str, List[Dict[str, Any]]]) -> None:
-    """Nhãn `is_distressed_rule` phải tính lại được + khớp artifact và docs."""
+    """The `is_distressed_rule` label must be recomputable and match the artifacts and docs."""
     rule: Dict[str, List[Dict[str, Any]]] = {}
     for name in SPLITS:
         path = RULE_DIR / f"{name}.json"
@@ -831,9 +803,7 @@ def check_prepared_rule(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any
                     float(match.group(1).replace(",", ".")), agree * 100, tol=0.05)
 
 
-# ---------------------------------------------------------------------------
-# Nhóm 8 — con số đã in trong reports/ phải khớp tính lại từ dữ liệu thật
-# ---------------------------------------------------------------------------
+# Group 8: numbers printed in reports must match a recomputation from the real data.
 def _samples_by_ticker(splits: Dict[str, List[Dict[str, Any]]]
                        ) -> Dict[str, List[Dict[str, Any]]]:
     out: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -845,7 +815,7 @@ def _samples_by_ticker(splits: Dict[str, List[Dict[str, Any]]]
 
 def _recompute_coverage(rows_by_ticker: Dict[str, List[Dict[str, Any]]]
                         ) -> Tuple[Dict[str, float], Dict[str, float]]:
-    """(min, mean) % độ phủ theo chỉ tiêu — giống `scripts.eda.coverage_matrix`."""
+    """Minimum and mean coverage percentage per indicator, matching `scripts.eda.coverage_matrix`."""
     fields = sorted({k[: -len(SUFFIX)] for rows in rows_by_ticker.values() for r in rows
                      for k in r if k.endswith(SUFFIX)})
     mins: Dict[str, float] = {}
@@ -865,7 +835,7 @@ def _median(values: List[int]) -> float:
 
 def check_eda_numbers(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]],
                       splits: Dict[str, List[Dict[str, Any]]]) -> None:
-    """`reports/results/eda_summary.json` phải khớp tính lại từ prepared + retail-expanded."""
+    """`reports/results/eda_summary.json` must match a recomputation from prepared and retail-expanded."""
     path = RESULTS_DIR / "eda_summary.json"
     if not a.check(path.exists(), "report_numbers", "thiếu reports/results/eda_summary.json"):
         return
@@ -906,7 +876,7 @@ def check_eda_numbers(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]
     a.eq("report_numbers", "eda_summary: low_coverage_fields khác tính lại",
          eda.get("low_coverage_fields"), expected_low)
 
-    # Mục 3.4–3.6 (EDA cơ bản): danh sách biến được mô tả + nhận xét tự động phải khớp định nghĩa
+    # Sections 3.4 to 3.6: the described variable list and reading must match their definitions.
     a.eq("report_numbers", "eda_summary: ratio_stats khác danh sách 14 tỷ số `*_latest`",
          sorted(str(r.get("feature")) for r in (eda.get("ratio_stats") or [])),
          sorted(f"{name}_latest" for name in RATIO_PARTS))
@@ -951,7 +921,7 @@ def check_eda_numbers(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]
 
 def check_label_audit(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]],
                       splits: Dict[str, List[Dict[str, Any]]]) -> None:
-    """Kết luận "nhãn gốc không tái lập được" phải tính lại ra đúng như đã in."""
+    """The conclusion that the original labels are not reproducible must be reproduced exactly."""
     path = RESULTS_DIR / "analysis.json"
     if not a.check(path.exists(), "report_numbers", "thiếu reports/results/analysis.json"):
         return
@@ -1019,7 +989,7 @@ def check_label_audit(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]
     a.close("report_numbers", "analysis.json: max_rule_agreement khác tính lại",
             declared.get("max_rule_agreement"), max(target_agree.values()))
 
-    # Phản chứng đã in trong docs/dinh-nghia-nhan.md: WMT-2015Q2 lãi nhưng nhãn = 1
+    # Counter-example printed in docs/dinh-nghia-nhan.md: WMT-2015Q2 is profitable yet labelled 1.
     entry = index.get("WMT-2015Q2")
     if entry is None:
         a.stat("WMT-2015Q2", "không có trong prepared → không kiểm tra được phản chứng")
@@ -1029,7 +999,7 @@ def check_label_audit(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]
                 "WMT-2015Q2 phải có net_income dương (phản chứng ở docs/dinh-nghia-nhan.md)",
                 net_income=net_income)
 
-    # Con số nêu trong tài liệu phải khớp tính lại (không được nhập tay)
+    # Numbers quoted in the document must match a recomputation rather than being typed in.
     label_doc = DOCS_DIR / "dinh-nghia-nhan.md"
     if label_doc.exists():
         doc_counts = {int(m) for m in re.findall(r"trên (\d+) mẫu",
@@ -1051,10 +1021,10 @@ def check_label_audit(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]
 
 
 def check_provenance_artifact(a: Auditor) -> None:
-    """`reports/results/provenance.json` phải tồn tại và báo ĐẠT — bằng chứng dữ liệu THẬT.
+    """`reports/results/provenance.json` must exist and report a pass, proving the data is real.
 
-    Bộ kiểm chứng `scripts/verify_provenance.py` mở lại snapshot SEC thô để chứng minh từng con số
-    đều tra ngược được trong companyfacts (xem mục 3.1 báo cáo).
+    `scripts/verify_provenance.py` reopens the raw SEC snapshot to show that every number traces back to
+    companyfacts, as described in section 3.1 of the report.
     """
     path = RESULTS_DIR / "provenance.json"
     if not a.check(path.exists(), "provenance",
@@ -1078,16 +1048,13 @@ def check_provenance_artifact(a: Auditor) -> None:
 
 
 def check_model_report_alignment(a: Auditor) -> None:
-    """Chặn tái phát 4 lỗi kiểm toán: trộn mô hình, giấu cấu hình đang chạy, thiếu mô hình, câu chữ test.
+    """Guard against four recurring audit defects in the report.
 
-    1. Mọi phân tích trong `analysis.json` phải thuộc **mô hình đã chốt** (`summary.best_model`) —
-       trước đây `scripts/analyze.py` hard-code `"logistic"` nên bảng ngưỡng + permutation importance
-       + hình `04_threshold_curves.png` nói về mô hình khác với `best.joblib`.
-    2. Báo cáo phải **công bố cấu hình THẬT đang chạy** (mặc định) chứ không để bảng tinh chỉnh gây
-       hiểu là đã triển khai cấu hình CV tốt nhất.
-    3. Bảng so sánh §6.1 phải có **đủ các mô hình** đã huấn luyện (đọc từ `forecasting.models.MODEL_REGISTRY`).
-    4. Không được nói "chốt test đúng một lần" (test được chấm cho nhiều hệ thống; điều đúng là test
-       KHÔNG tham gia chọn mô hình/ngưỡng).
+    First, every analysis in `analysis.json` must describe the selected model, since a hard-coded choice
+    once made the threshold table describe a different model than `best.joblib`. Second, the report must
+    state the configuration actually in use instead of implying the best CV configuration was deployed.
+    Third, the section 6.1 comparison must list every trained model. Fourth, it must not claim test was
+    scored only once; the correct statement is that test never took part in model or threshold selection.
     """
     summary = _read_json(RESULTS_DIR / "summary.json")
     best = summary.get("best_model")
@@ -1118,7 +1085,7 @@ def check_model_report_alignment(a: Auditor) -> None:
 
 
 def _model_registry() -> set:
-    """Tên các mô hình mà môi trường hiện tại chạy được (đọc từ `forecasting.models`)."""
+    """Names of the models runnable in the current environment, read from `forecasting.models`."""
     try:
         from forecasting.models import MODEL_REGISTRY
 
@@ -1128,11 +1095,11 @@ def _model_registry() -> set:
 
 
 def check_docs_text_consistency(a: Auditor) -> None:
-    """Câu chữ trong `docs/slide.md` và `docs/BAO-CAO.md` phải khớp artifact.
+    """Wording in `docs/slide.md` and `docs/BAO-CAO.md` must match the artifacts.
 
-    Vì sao cần: hai câu dưới đây từng bị **hard-code** và lệch khỏi kết quả chạy lại (báo "tất cả
-    là FN, precision = 1.000" trong khi có 1 FP; báo "Logistic được chọn" trong khi chốt là Random
-    Forest). Kiểm tra này chặn tái phát: mọi con số phải suy ra từ `analysis.json` / `summary.json`.
+    Two sentences here were once hard-coded and drifted from a rerun, claiming every error was a false
+    negative and that logistic regression was selected. The check prevents a repeat: every number must be
+    derived from `analysis.json` or `summary.json`.
     """
     analysis = _read_json(RESULTS_DIR / "analysis.json")
     summary = _read_json(RESULTS_DIR / "summary.json")
@@ -1148,7 +1115,7 @@ def check_docs_text_consistency(a: Auditor) -> None:
     slide_path, report_path = DOCS_DIR / "slide.md", DOCS_DIR / "BAO-CAO.md"
     slide = slide_path.read_text(encoding="utf-8") if slide_path.exists() else ""
     report = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
-    # Câu chữ trong báo cáo được ghép từ nhiều dòng nguồn ⇒ chuẩn hoá khoảng trắng trước khi so.
+    # Report sentences are assembled across source lines, so whitespace is normalised before comparing.
     flat_report = re.sub(r"\s+", " ", report)
     if slide:
         a.check(f"{n_fn} FN + {n_fp} FP" in slide, "report_numbers",
@@ -1175,16 +1142,19 @@ def check_docs_text_consistency(a: Auditor) -> None:
                 "docs/BAO-CAO.md: thiếu mục 11 (Tài liệu tham khảo)")
         a.check("không có FP** (precision = 1.000)" not in flat_report, "report_numbers",
                 "docs/BAO-CAO.md: còn câu khẳng định cũ 'không có FP (precision = 1.000)'")
-    defense = DOCS_DIR / "slide-bao-ve.md"
-    checklist = DOCS_DIR / "checklist-doi-chieu-yeu-cau.md"
-    a.check(defense.exists() and defense.stat().st_size > 2000, "report_numbers",
-            "thiếu docs/slide-bao-ve.md (dàn slide bảo vệ để xuất .pptx)")
-    a.check(checklist.exists() and checklist.stat().st_size > 2000, "report_numbers",
-            "thiếu docs/checklist-doi-chieu-yeu-cau.md (đối chiếu tiêu chí)")
+    # `docs/` is git-ignored, so document checks are skipped when the directory is absent and run in full
+    # when it is present.
+    if DOCS_DIR.exists():
+        defense = DOCS_DIR / "slide-bao-ve.md"
+        checklist = DOCS_DIR / "checklist-doi-chieu-yeu-cau.md"
+        a.check(defense.exists() and defense.stat().st_size > 2000, "report_numbers",
+                "thiếu docs/slide-bao-ve.md (dàn slide bảo vệ để xuất .pptx)")
+        a.check(checklist.exists() and checklist.stat().st_size > 2000, "report_numbers",
+                "thiếu docs/checklist-doi-chieu-yeu-cau.md (đối chiếu tiêu chí)")
 
 
 def check_test_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]) -> None:
-    """`test_evaluation.json`, `test_predictions.csv` và `best.joblib` phải khớp nhau."""
+    """`test_evaluation.json`, `test_predictions.csv` and `best.joblib` must agree with each other."""
     te_path = RESULTS_DIR / "test_evaluation.json"
     if not a.check(te_path.exists(), "report_numbers",
                    "thiếu reports/results/test_evaluation.json"):
@@ -1266,9 +1236,12 @@ def check_test_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]) ->
                     declared=item, csv=dict(row))
 
 
-    # Xác suất trong CSV phải đúng bằng xác suất do mô hình đã lưu sinh ra
+    # Probabilities in the CSV must equal exactly what the saved model produces.
     model_path = MODELS_DIR / "best.joblib"
-    if a.check(model_path.exists(), "report_numbers", "thiếu reports/models/best.joblib"):
+    if not model_path.exists():
+        a.stat("report_numbers",
+               "bỏ qua đối chiếu best.joblib (chưa huấn luyện / bản clone công khai không kèm model)")
+    else:
         import joblib
 
         from forecasting.features import build_feature_matrix
@@ -1292,7 +1265,7 @@ def check_test_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]) ->
 
 
 def check_baselines(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]) -> None:
-    """Baseline ticker-prior phải bằng đúng tỷ lệ nhãn 1 của từng công ty trên train."""
+    """The ticker-prior baseline must equal each company's positive rate in train."""
     path = RESULTS_DIR / "baselines.json"
     if not a.check(path.exists(), "report_numbers", "thiếu reports/results/baselines.json"):
         return
@@ -1324,10 +1297,10 @@ def check_baselines(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]) -> None
 
 
 def check_balance_identity(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, Any]]]) -> None:
-    """Khi quý có tag `liabilities`, đẳng thức A = L + E phải (gần) đúng.
+    """When a quarter carries the `liabilities` tag, the accounting identity must hold approximately.
 
-    Vì sao cần: `forecasting/features.py` SUY RA nợ phải trả từ `total_assets - stockholders_equity`
-    khi thiếu tag. Nếu đẳng thức sai ở dữ liệu thật thì cách suy ra này không hợp lệ.
+    `forecasting/features.py` derives liabilities as total assets minus stockholders equity when the tag is
+    missing, so a failing identity in the real data would invalidate that derivation.
     """
     checked = mismatched = 0
     worst = 0.0
@@ -1353,17 +1326,17 @@ def check_balance_identity(a: Auditor, rows_by_ticker: Dict[str, List[Dict[str, 
 
 
 def check_advanced_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]) -> None:
-    """Đối soát các artifact của mục 9: tiền xử lý, lệch lớp thật, tìm kiếm, SHAP, kiểm định, nhãn.
+    """Cross-check the section 9 artifacts: preprocessing, real imbalance, search, SHAP and labels.
 
-    Mục đích: các con số "nâng cấp để đạt mức Xuất sắc" cũng phải qua lưới an toàn như mọi số khác —
-    sai số efficiency của KernelSHAP phải thật nhỏ, p-value trong [0, 1], sampler không được chạm tập
-    test của fold, và mọi định nghĩa nhãn phải dựng được split đủ 4 tập.
+    The extra numbers must pass the same safety net as everything else: the KernelSHAP efficiency gap must
+    be tiny, p-values must lie in the unit interval, samplers must not touch the fold test sets, and every
+    label definition must build a split with all four parts.
     """
     from forecasting.features import feature_names
 
     n_features = len(feature_names())
 
-    # 1) Thí nghiệm tiền xử lý
+    # 1. Preprocessing experiment.
     path = RESULTS_DIR / "preprocessing_experiment.json"
     if a.check(path.exists(), "report_numbers", "thiếu reports/results/preprocessing_experiment.json"):
         prep = _read_json(path)
@@ -1380,7 +1353,7 @@ def check_advanced_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]
         a.check(any(all(r.get(k) == v for k, v in referenced.items()) for r in rows), "report_numbers",
                 "preprocessing_experiment: không tìm thấy cấu hình tham chiếu trong bảng")
 
-    # 2) SHAP (KernelSHAP tự cài đặt)
+    # 2. SHAP from the self-implemented KernelSHAP.
     path = RESULTS_DIR / "shap.json"
     if a.check(path.exists(), "report_numbers", "thiếu reports/results/shap.json"):
         shap = _read_json(path)
@@ -1399,7 +1372,7 @@ def check_advanced_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]
             a.eq("report_numbers", "shap: mô hình được giải thích khác mô hình đã chốt",
                  shap.get("model"), _read_json(summary_path).get("best_model"))
 
-    # 3) Kiểm định ý nghĩa thống kê
+    # 3. Statistical significance tests.
     path = RESULTS_DIR / "significance.json"
     if a.check(path.exists(), "report_numbers", "thiếu reports/results/significance.json"):
         sig = _read_json(path)
@@ -1422,7 +1395,7 @@ def check_advanced_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]
             a.check(boot.get("ci95_lower") is not None and boot.get("ci95_upper") is not None,
                     "report_numbers", "significance: thiếu khoảng tin cậy của ΔAP")
 
-    # 4) Kỹ thuật xử lý lệch lớp trên dữ liệu thật
+    # 4. Class-imbalance techniques on the real data.
     path = RESULTS_DIR / "imbalance_real.json"
     if a.check(path.exists(), "report_numbers", "thiếu reports/results/imbalance_real.json"):
         imb = _read_json(path)
@@ -1438,7 +1411,7 @@ def check_advanced_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]
              max((r.get("n_oof") or 0) for r in rows),
              len(splits["train"]) + len(splits["validation"]))
 
-    # 5) Sổ thực nghiệm của tìm kiếm siêu tham số
+    # 5. Experiment ledger of the hyperparameter search.
     path = RESULTS_DIR / "search.json"
     ledger = RESULTS_DIR / "runs.csv"
     if a.check(path.exists(), "report_numbers", "thiếu reports/results/search.json"):
@@ -1453,7 +1426,7 @@ def check_advanced_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]
                     for r in search.get("rows") or []), "report_numbers",
                 "search: có mô hình không tìm được cấu hình hợp lệ nào")
 
-    # 6) Độ nhạy theo định nghĩa nhãn
+    # 6. Sensitivity across label definitions.
     path = RESULTS_DIR / "label_sensitivity.json"
     if a.check(path.exists(), "report_numbers", "thiếu reports/results/label_sensitivity.json"):
         labels = _read_json(path)
@@ -1473,7 +1446,7 @@ def check_advanced_artifacts(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]
 
 
 def check_feature_artifacts(a: Auditor) -> None:
-    """Số cột feature phải khớp giữa code (`features.py`), artifact và báo cáo."""
+    """The feature count must agree across the code, the artifacts and the report."""
     from forecasting.features import feature_names
 
     n_features = len(feature_names())
@@ -1495,7 +1468,7 @@ def check_feature_artifacts(a: Auditor) -> None:
 
 
 def check_class_balance(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]) -> None:
-    """`reports/results/class_balance.json` phải khớp nhãn thật trong prepared (đếm lại + IR)."""
+    """`reports/results/class_balance.json` must match the prepared labels on a recount and ratio."""
     path = RESULTS_DIR / "class_balance.json"
     if not a.check(path.exists(), "report_numbers", "thiếu reports/results/class_balance.json"):
         return
@@ -1528,15 +1501,14 @@ def check_class_balance(a: Auditor, splits: Dict[str, List[Dict[str, Any]]]) -> 
            [overall.get("imbalance_ratio"), round(minority_pct, 2), overall.get("level")])
 
 
-# ---------------------------------------------------------------------------
-# Chạy toàn bộ + ghi báo cáo
-# ---------------------------------------------------------------------------
+# Run every check and write the report.
 def run(tickers: Sequence[str] | None = None, skip_sec: bool = False,
         write: bool = True) -> Dict[str, Any]:
-    """Chạy toàn bộ nhóm kiểm tra; trả báo cáo (và ghi artifact khi `write=True`)."""
+    """Run every check group and return the report, writing the artifact when `write=True`."""
     a = Auditor()
-    if skip_sec:
-        a.stat("sec_snapshots", "bỏ qua (--skip-sec)")
+    if skip_sec or not _HAVE_RAW:
+        why = "--skip-sec" if skip_sec else "thiếu data/sec/raw — chạy `python -m scripts.crawl_sec`"
+        a.stat("sec_snapshots", f"bỏ qua ({why})")
     else:
         check_sec_snapshots(a, tickers)
     rows_by_ticker = check_retail_expanded(a, tickers)
@@ -1567,20 +1539,21 @@ def run(tickers: Sequence[str] | None = None, skip_sec: bool = False,
 
 
 def main(argv=None) -> int:
+    """Command-line entry point for `scripts.audit_data`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tickers", default="",
-                        help="Chỉ kiểm tra các ticker này, phân tách bằng dấu phẩy.")
+                        help="Check only these tickers, comma-separated.")
     parser.add_argument("--skip-sec", action="store_true",
-                        help="Bỏ qua nhóm snapshot SEC (nhanh hơn, không đọc ~60 MB JSON).")
+                        help="Skip the SEC snapshot group (faster, avoids reading ~60 MB of JSON).")
     parser.add_argument("--no-write", action="store_true",
-                        help="Không ghi reports/results/data_audit.*")
+                        help="Do not write reports/results/data_audit.*")
     args = parser.parse_args(argv)
     tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()] or None
     report = run(tickers=tickers, skip_sec=args.skip_sec, write=not args.no_write)
 
-    print("=== Đối soát dữ liệu trong repo với số liệu thật SEC ===")
-    print(f"  Số phép kiểm tra: {report['n_checks']} — số phát hiện: {report['n_issues']}")
+    print("=== Audit the repository data against the real SEC numbers ===")
+    print(f"  Checks run: {report['n_checks']} — issues found: {report['n_issues']}")
     for group, count in report["issues_by_group"].items():
         print(f"  * {group}: {count}")
     for key in ("retail_quarters", "legacy_10_tickers", "prepared_counts", "expected_counts",
@@ -1590,7 +1563,7 @@ def main(argv=None) -> int:
         if key in report["stats"]:
             print(f"  - {key}: {report['stats'][key]}")
     for group, items in report["issues"].items():
-        print(f"\n[{group}] {len(items)} phát hiện (in tối đa 10):")
+        print(f"\n[{group}] {len(items)} issues (showing at most 10):")
         for item in items[:10]:
             print("   *", item["message"])
     return 1 if report["n_issues"] else 0

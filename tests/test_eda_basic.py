@@ -1,10 +1,7 @@
-"""Kiểm thử EDA cơ bản (`scripts/eda.py` + tiện ích chọn dữ liệu trong `forecasting/eda.py`).
+"""Verify the basic EDA in `scripts/eda.py` and its helpers in `forecasting/eda.py`.
 
-Chạy: python -m unittest tests.test_eda_basic -v
-
-Vì sao cần: mục 3.4–3.6 của báo cáo (thống kê mô tả, tương quan, nhận xét) được người chấm đọc
-trực tiếp. Nếu công thức quy đổi đơn vị, chọn cột tỷ số, hay phát hiện "tương quan do ngoại lai"
-sai thì kết luận trong báo cáo sai — nên mọi hàm đều được kiểm thử bằng dữ liệu dựng tay có đáp án.
+Report sections 3.4 to 3.6 are read directly by a grader, so the unit conversion, the ratio selection and
+the outlier-driven-correlation detection are exercised on hand-built data with known answers.
 """
 from __future__ import annotations
 
@@ -24,14 +21,14 @@ from forecasting import eda as eda_lib  # noqa: E402
 from runtime_warnings import quiet_library_warnings  # noqa: E402
 
 
-def setUpModule() -> None:  # noqa: D103 - hook của unittest
+def setUpModule() -> None:  # noqa: D103 - unittest hook
     quiet_library_warnings()
 
 
 def make_history_row(revenue=100.0, current_assets=200.0, current_liabilities=100.0,
                      inventory=50.0, cost_of_sales=60.0, total_assets=400.0,
                      stockholders_equity=200.0, **extra) -> dict:
-    """Một dòng lịch sử tối thiểu (giá trị VND dạng chuỗi như trong prepared)."""
+    """A minimal history row with VND values as strings, matching the prepared layout."""
     row = {
         "period_end": "2019-03-31",
         "revenue_vnd": str(int(revenue * 1e9)),
@@ -47,7 +44,7 @@ def make_history_row(revenue=100.0, current_assets=200.0, current_liabilities=10
 
 
 def make_sample(label=1, history=None, ticker="AAA") -> dict:
-    """Sample tối thiểu để tính feature (không cần đầy đủ 16 chỉ tiêu)."""
+    """A minimal sample carrying enough indicators to build features."""
     return {
         "sample_id": f"{ticker}-2019Q1",
         "ticker": ticker,
@@ -58,7 +55,7 @@ def make_sample(label=1, history=None, ticker="AAA") -> dict:
 
 
 class TestIndicatorValueMatrix(unittest.TestCase):
-    """Chọn dữ liệu gốc cho bảng thống kê mô tả (đơn vị nghìn tỷ VND)."""
+    """Source data for the descriptive statistics table, in trillions of VND."""
 
     def setUp(self):
         self.rows = {
@@ -72,9 +69,9 @@ class TestIndicatorValueMatrix(unittest.TestCase):
                                                                          "inventory"])
         self.assertEqual(names, ["revenue", "net_income", "inventory"])
         self.assertEqual(matrix.shape, (2, 3))
-        self.assertAlmostEqual(matrix[0, 0], 4722.825, places=6)      # chia 1e12
+        self.assertAlmostEqual(matrix[0, 0], 4722.825, places=6)      # divided by 1e12
         self.assertAlmostEqual(matrix[0, 1], -1.0, places=6)
-        self.assertTrue(np.isnan(matrix[0, 2]))                       # None → NaN
+        self.assertTrue(np.isnan(matrix[0, 2]))                       # a missing value becomes NaN
         self.assertTrue(np.isnan(matrix[1, 1]))
         self.assertAlmostEqual(matrix[1, 0], 5.0, places=6)
 
@@ -85,7 +82,7 @@ class TestIndicatorValueMatrix(unittest.TestCase):
 
 
 class TestLatestRatioMatrix(unittest.TestCase):
-    """Ma trận 14 tỷ số dùng cho bảng mô tả và tương quan."""
+    """The 14-ratio matrix used by the descriptive and correlation tables."""
 
     def test_selects_14_ratio_columns_in_order(self):
         X, names, y = eda_lib.latest_ratio_matrix([make_sample(label=1), make_sample(label=0)])
@@ -101,11 +98,11 @@ class TestLatestRatioMatrix(unittest.TestCase):
         current_ratio = X[0, names.index("current_ratio_latest")]
         self.assertAlmostEqual(float(current_ratio), 2.0, places=6)
         debt_to_assets = X[0, names.index("debt_to_assets_latest")]
-        self.assertAlmostEqual(float(debt_to_assets), 0.5, places=6)   # (400-200)/400
+        self.assertAlmostEqual(float(debt_to_assets), 0.5, places=6)   # (400 - 200) / 400
 
 
 class TestOutlierDrivenPairs(unittest.TestCase):
-    """"Tương quan giả do ngoại lai" phải được phát hiện từ ma trận Pearson/Spearman."""
+    """Outlier-driven correlations must be detected from the Pearson and Spearman matrices."""
 
     def test_detects_pair_where_pearson_and_spearman_disagree(self):
         correlation = {
@@ -117,7 +114,7 @@ class TestOutlierDrivenPairs(unittest.TestCase):
         self.assertEqual(len(pairs), 1)
         self.assertEqual({pairs[0]["a"], pairs[0]["b"]}, {"a", "b"})
         self.assertGreater(pairs[0]["gap"], 0.3)
-        # cặp (a, c) tương quan cao nhưng Pearson ≈ Spearman ⇒ KHÔNG bị gắn cờ
+        # The pair (a, c) correlates highly but Pearson matches Spearman, so it is not flagged.
         self.assertNotIn("c", {pairs[0]["a"], pairs[0]["b"]})
 
     def test_returns_empty_without_matrices(self):
@@ -126,7 +123,7 @@ class TestOutlierDrivenPairs(unittest.TestCase):
 
 
 class TestBasicConclusions(unittest.TestCase):
-    """Nhận xét tự động phải nêu đúng số liệu và đúng việc cần làm."""
+    """The automatic commentary must state the right numbers and the right next action."""
 
     def setUp(self):
         self.ratio_stats = [
@@ -148,7 +145,7 @@ class TestBasicConclusions(unittest.TestCase):
             "spearman_matrix": [[1.0, 0.45], [0.45, 1.0]],
         }
         self.association = [{"feature": "debt_to_assets_latest", "auc": 0.88,
-                             "effect_rank_biserial": 0.76, "direction": "giá trị cao ⇒ nhãn 1"}]
+                             "effect_rank_biserial": 0.76, "direction": "high value implies label 1"}]
 
     def test_mentions_metric_choice_and_outlier_treatment(self):
         text = " ".join(eda_script.basic_conclusions(self.ratio_stats, self.indicator_stats,
@@ -156,18 +153,18 @@ class TestBasicConclusions(unittest.TestCase):
                                                      self.correlation, self.association))
         self.assertIn("KHÔNG dùng Accuracy", text)
         self.assertIn("clip/winsorize", text)
-        self.assertIn("62.3%", text)                       # % lớp dương tính từ balance
-        self.assertIn("HD, LOW, WMT", text)                # cảnh báo rò rỉ cấp thực thể
-        self.assertIn("ngoại lai", text)                   # cảnh báo tương quan giả
-        self.assertIn("debt_to_assets", text)              # tỷ số tách lớp tốt nhất
-        self.assertNotIn("_latest", text)                  # không lộ hậu tố kỹ thuật trong nhận xét
+        self.assertIn("62.3%", text)                       # positive share from the balance table
+        self.assertIn("HD, LOW, WMT", text)                # entity-level leakage warning
+        self.assertIn("ngoại lai", text)                   # spurious-correlation warning
+        self.assertIn("debt_to_assets", text)              # the best class-separating ratio
+        self.assertNotIn("_latest", text)                  # the technical suffix must not leak
 
     def test_handles_empty_inputs_without_crashing(self):
         self.assertEqual(eda_script.basic_conclusions([], [], {}, {}, {}, []), [])
 
 
 class TestLabelSharesFallback(unittest.TestCase):
-    """Bản không vẽ hình vẫn phải tính được tỷ lệ nhãn theo công ty."""
+    """The figures-free path must still compute the per-company label shares."""
 
     def test_computes_shares_and_single_class_lists(self):
         splits = {"train": [{"ticker": "AAA", "is_distressed": 1},
@@ -182,7 +179,7 @@ class TestLabelSharesFallback(unittest.TestCase):
 
 
 class TestFigures(unittest.TestCase):
-    """3 hình mới phải vẽ được (smoke test) và không lỗi khi có cột toàn NaN."""
+    """The three figures must render, including when a column is entirely NaN."""
 
     def test_figures_are_written(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -200,31 +197,31 @@ class TestFigures(unittest.TestCase):
 
 
 class TestRunEndToEnd(unittest.TestCase):
-    """Chạy thật `scripts.eda.run` vào thư mục tạm — bỏ qua nếu chưa có data/prepared."""
+    """Run `scripts.eda.run` into a temporary directory, skipped when data/prepared is absent."""
 
     def test_run_writes_summary_with_three_new_blocks(self):
         if not (ROOT / "data" / "prepared" / "train.json").exists():
-            self.skipTest("Chưa có data/prepared (chạy `python -m forecasting.data` trước).")
+            self.skipTest("data/prepared is missing; run `python -m forecasting.data` first.")
         with tempfile.TemporaryDirectory() as tmp:
             out, figs = pathlib.Path(tmp) / "results", pathlib.Path(tmp) / "figures"
             summary = eda_script.run(write=True, out_dir=out, fig_dir=figs)
             payload = json.loads((out / "eda_summary.json").read_text(encoding="utf-8"))
             markdown = (out / "eda.md").read_text(encoding="utf-8")
 
-            # (1) thống kê mô tả: 14 tỷ số + 16 chỉ tiêu, có phân vị và % ngoại lai
+            # 1. Descriptive statistics for the 14 ratios and the 16 indicators.
             self.assertEqual(len(payload["ratio_stats"]), 14)
             self.assertEqual(len(payload["indicator_stats"]), 16)
             self.assertIn("## Thống kê mô tả 14 tỷ số", markdown)
             self.assertTrue(any(r.get("iqr_outlier_pct") is not None for r in payload["ratio_stats"]))
-            # (2) tỉ lệ lớp theo % (không chỉ đếm)
+            # 2. Class proportions in percent, not only counts.
             self.assertIn("% lớp 1", markdown)
             self.assertEqual(payload["splits"]["train"]["total"], 212)
-            # (3) tương quan: giữa các tỷ số và với nhãn
+            # 3. Correlation between ratios and with the label.
             self.assertIn("## Tương quan giữa các tỷ số", markdown)
             self.assertIn("## Tương quan giữa tỷ số và NHÃN", markdown)
             self.assertEqual(len(payload["ratio_vs_label"]), 14)
             self.assertIn("outlier_driven_pairs", payload["ratio_correlation"])
-            # nhận xét tự động + danh sách hình
+            # Automatic commentary and the figure list.
             self.assertTrue(payload["conclusions"])
             self.assertIn("## Nhận xét", markdown)
             self.assertEqual(len(list(figs.glob("*.png"))), 9)
@@ -233,11 +230,11 @@ class TestRunEndToEnd(unittest.TestCase):
 
     def test_no_write_and_no_figures_mode(self):
         if not (ROOT / "data" / "prepared" / "train.json").exists():
-            self.skipTest("Chưa có data/prepared.")
+            self.skipTest("data/prepared is missing.")
         with tempfile.TemporaryDirectory() as tmp:
             out, figs = pathlib.Path(tmp) / "results", pathlib.Path(tmp) / "figures"
             summary = eda_script.run(write=False, out_dir=out, fig_dir=figs, figures=False)
             self.assertFalse((out / "eda.md").exists())
             self.assertEqual(list(figs.glob("*.png")), [])
-            self.assertEqual(len(summary["ratio_stats"]), 14)          # vẫn tính được số liệu
+            self.assertEqual(len(summary["ratio_stats"]), 14)          # the numbers are still computed
             self.assertEqual(summary["label"]["companies_all_one"], ["HD", "LOW", "WMT"])

@@ -1,0 +1,78 @@
+% =====================================================================
+%  CHƯƠNG 1 — MỞ ĐẦU
+% =====================================================================
+\chapter{Mở đầu}
+
+\section{Đặt vấn đề và tính cấp thiết}
+
+Ngành bán lẻ vận hành trên ba đặc điểm tài chính đi kèm với nhau: biên lợi nhuận ròng mỏng, hàng
+tồn kho và vốn lưu động chiếm tỉ trọng lớn, và chi phí thuê mặt bằng cố định. Trong bộ dữ liệu của
+khóa luận, các con số này quan sát được trực tiếp: tỷ số nợ trên tổng tài sản (\texttt{debt\_to\_assets})
+có trung vị 0,72 — hơn một nửa số quý khảo sát có nợ phải trả chiếm trên 70\% tổng tài sản; tỷ số
+hàng tồn kho trên doanh thu (\texttt{inventory\_to\_sales}) có trung vị 0,64. Khi doanh thu đi ngang
+hoặc giảm, đòn bẩy cao khuếch đại rủi ro rất nhanh: lợi nhuận hoạt động sụt nhẹ cũng đủ đẩy hệ số
+khả năng thanh toán xuống dưới ngưỡng an toàn.
+
+Đối với chuỗi bán lẻ, hậu quả của việc phát hiện muộn là không đối xứng. Chậm một đến hai quý có
+thể đồng nghĩa mất khả năng đàm phán với nhà cung cấp, phải giảm giá để giải phóng hàng tồn, hoặc
+huy động vốn ở điều kiện bất lợi. Với phía cho vay và đầu tư, một ca bỏ sót (false negative) có chi
+phí lớn hơn nhiều so với một báo động giả (false positive). Khóa luận định lượng bất đối xứng này
+bằng giả định chi phí $C_{FN} = 5$ và $C_{FP} = 1$, và dùng chính giả định đó để chọn ngưỡng quyết
+định thay vì mặc định lấy 0,5.
+
+\section{Mục đích nghiên cứu}
+
+Khóa luận hướng tới ba sản phẩm cụ thể thay vì chỉ báo cáo một điểm số mô hình:
+
+\begin{enumerate}
+\item Xây dựng pipeline dữ liệu tái lập được: tải \texttt{companyfacts} từ SEC, chuẩn hoá về chuỗi
+      16 chỉ tiêu theo quý, gán nhãn và chia tập có dải purge chống rò rỉ. Mọi bước kiểm chứng được
+      bằng SHA-256 và bằng đối chiếu ngược về nguồn công bố.
+\item Xây dựng bộ đặc trưng tài chính có ý nghĩa kinh tế: tỷ số thanh khoản, đòn bẩy, sinh lời,
+      hiệu quả hoạt động, tăng trưởng so với cùng kỳ và đặc trưng đường đi theo cửa sổ quý.
+\item Huấn luyện và so sánh các họ mô hình phân loại, chọn cấu hình tốt nhất theo giao thức đánh
+      giá chống thổi phồng (cross-company), và báo cáo trung thực cả những trường hợp mô hình không
+      hơn baseline.
+\end{enumerate}
+
+\section{Đối tượng và phạm vi nghiên cứu}
+
+Đối tượng nghiên cứu là các doanh nghiệp bán lẻ niêm yết tại Mỹ có báo cáo tài chính quý theo mẫu
+10-Q và báo cáo thường niên theo mẫu 10-K. Bộ dữ liệu được giới hạn ở 8 công ty (WMT, HD, LOW,
+ROST, DG, ORLY, DKS, FIVE) với 332 quý tài chính, giai đoạn FY2015--FY2026. Tiêu chí chọn công ty
+gồm: (i) có tối thiểu 32 quý (8 năm) dữ liệu để đủ dựng train/validation/test theo chính sách chia
+tập; (ii) đủ 16 chỉ tiêu chuẩn; (iii) không đổi kỳ tài chính giữa chừng.
+
+\subsection{Vì sao dùng dữ liệu XBRL của SEC}
+
+Thẻ XBRL (taxonomy) gắn cho từng dòng số liệu cho phép bóc tách theo \texttt{tag}, theo kỳ
+(\texttt{start}/\texttt{end}) và theo ngày công bố (\texttt{filed}) một cách xác định. Nhờ đó việc
+trích xuất không còn phụ thuộc vào việc đọc hiểu bố cục báo cáo, và mọi con số đều truy vết được
+về hồ sơ gốc.
+
+\subsection{Giới hạn phạm vi}
+
+Khóa luận không dự báo phá sản. Kiểm tra hồ sơ 8-K cho thấy trong 8/8 công ty, số sự kiện phá sản
+(8-K item 1.03) bằng 0, nên bài toán được định vị là dự báo suy giảm tài chính. Ngoài ra, vì chỉ có
+8 thực thể, mọi kết luận đều phải đi kèm khoảng tin cậy và không suy rộng ra toàn ngành.
+
+\section{Phương pháp tiếp cận}
+
+Quy trình được tổ chức theo trình tự dữ liệu $\rightarrow$ đặc trưng $\rightarrow$ mô hình
+$\rightarrow$ đánh giá. Điểm kiểm soát quan trọng nhất nằm ở khâu đánh giá, xuất phát từ một quan
+sát thực nghiệm: nhãn hầu như là thuộc tính của từng công ty (HD, LOW, WMT có 100\% quý mang nhãn 1;
+ROST chỉ 4,7\%). Nếu chia tập ngẫu nhiên theo mẫu, cùng một công ty sẽ xuất hiện ở cả train lẫn test
+và mô hình chỉ cần nhớ "mặt" công ty là đạt điểm cao giả tạo.
+
+Vì vậy khóa luận áp dụng đồng thời ba lớp kiểm soát:
+
+\begin{enumerate}
+\item Chia tập theo thời gian trong từng công ty (8 quý cuối là test, 4 quý trước là validation),
+      kèm dải purge ở hai biên để tránh chồng lấn cửa sổ lịch sử.
+\item Kiểm định chéo chia theo nhóm công ty: \texttt{GroupKFold} và \texttt{Leave-One-Company-Out}.
+\item Luôn đặt cạnh một baseline không dùng mô hình — lấy tỉ lệ nhãn trung bình theo công ty trong
+      train — để biết phần hiệu năng nào thực sự đến từ năng lực dự báo.
+\end{enumerate}
+
+Toàn bộ mã nguồn, artifact và kết quả trong khóa luận tái lập được bằng
+\texttt{python -m scripts.run\_all}.

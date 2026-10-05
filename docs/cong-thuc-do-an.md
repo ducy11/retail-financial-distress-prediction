@@ -103,7 +103,7 @@ toán **không** nằm ở feature mà ở **rò rỉ cấp thực thể** (mụ
 | 3.6 | Yeo–Johnson (PowerTransformer, MLE cho λ) | `power` | " |
 | 3.7 | Quantile → chuẩn: `x ↦ Φ⁻¹(rank(x)/(n+1))` | `n_quantiles = 200` | " |
 
-## 4. Bộ chỉ số đánh giá (`forecasting/evaluation.py`, `imbalance_lab/metrics.py`)
+## 4. Bộ chỉ số đánh giá (`forecasting/evaluation.py`, `labs/imbalance_lab/metrics.py`)
 
 | # | Chỉ số | Công thức | Giá trị (test, ngưỡng vận hành 0,788) |
 |---|---|---|---|
@@ -137,7 +137,7 @@ chỉ đúng cho BS **đã chia bin**; ECE 0,1090; hiệu chuẩn-tổng-thể p
 | 5.2 | **`p* = C_FP/(C_FN+C_FP) = 1/(1+C_FN/C_FP)`** | ngưỡng Bayes tối ưu (dạng odds: `η/(1−η) ≥ C_FP/C_FN`) | — (dẫn xuất) | 5:1 ⇒ **p\* = 1/6 ≈ 0,1667** |
 | 5.3 | `t_bestF1 = argmax_t F1(t)` trên đường PR | ngưỡng vận hành của đồ án | `evaluation.best_f1_point` | 0,7835 (test) / **0,7879 (chọn trên val)** |
 | 5.4 | `t_cost = argmin_t (C_FN·FN(t) + C_FP·FP(t))` | ngưỡng theo chi phí | `evaluation.cost_optimal_threshold` | 0,7835 → cost 6,0 (test); 0,7879 → cost 5,0 (val) |
-| 5.5 | `t_prec = argmax_t Recall(t)` với `Precision(t) ≥ 0,5` | chế độ `min_precision` (lab) | `imbalance_lab/thresholds.py` | `techniques.md` |
+| 5.5 | `t_prec = argmax_t Recall(t)` với `Precision(t) ≥ 0,5` | chế độ `min_precision` (lab) | `labs/imbalance_lab/thresholds.py` | `techniques.md` |
 | 5.6 | ứng viên ngưỡng = điểm của `precision_recall_curve` ∪ {0; 0,5; 1} (∪ lưới lượng tử 1001) | chỉ xét điểm thực của đường cong | `thresholds.candidate_thresholds` | — |
 
 **Đã đo (audit):** `p* = 1/6` cho chi phí **15** trên test, trong khi argmin thực nghiệm (0,7835) cho 6
@@ -145,7 +145,7 @@ và ngưỡng vận hành (0,788) cho 11. Nguyên nhân: `p*` chỉ tối ưu kh
 0,109), argmin trên chính tập đánh giá là đại lượng **in-sample**, và hàm chi phí là hàm bậc thang nên
 argmin là một **plateau**. Vì vậy repo chọn ngưỡng trên **validation** rồi mới đo trên test.
 
-## 6. Xử lý mất cân bằng (`imbalance_lab/`, `imbalance_experiment/`, `benchmark_imbalanced.py`)
+## 6. Xử lý mất cân bằng (`labs/imbalance_lab/`, `labs/imbalance_experiment/`, `labs/benchmark.py`)
 
 ### 6.1. Đo mức mất cân bằng (`forecasting/eda.py`)
 
@@ -164,8 +164,8 @@ argmin là một **plateau**. Vì vậy repo chọn ngưỡng trên **validation
 |---|---|---|---|
 | 6.2.1 | `class_weight='balanced'`: `w_c = N / (k · n_c)` | `models.HYPERPARAMS` (RF/HGB) | dùng cho RF `balanced_subsample` & HGB `balanced` |
 | 6.2.2 | `balanced_subsample`: `w_c` tính lại **theo từng bootstrap sample** của mỗi cây | sklearn | RandomForest |
-| 6.2.3 | `scale_pos_weight = n₋ / n₊` | `benchmark_imbalanced.PosWeightClassifier` | tính **trong `fit`** ⇒ chỉ thấy train |
-| 6.2.4 | Focal Loss: `FL = −[α·y·(1−p)^γ·ln p + (1−α)(1−y)·p^γ·ln(1−p)]` | `imbalance_lab/losses.py` | `γ = 2,0`; `α = 0,75` (hoặc `n₋/N` động) |
+| 6.2.3 | `scale_pos_weight = n₋ / n₊` | `labs.benchmark.PosWeightClassifier` | tính **trong `fit`** ⇒ chỉ thấy train |
+| 6.2.4 | Focal Loss: `FL = −[α·y·(1−p)^γ·ln p + (1−α)(1−y)·p^γ·ln(1−p)]` | `labs/imbalance_lab/losses.py` | `γ = 2,0`; `α = 0,75` (hoặc `n₋/N` động) |
 | 6.2.5 | grad/hess giải tích theo logit (y=1, y=0) | `losses.focal_grad_hess` | kiểm chứng bằng sai phân số; `h ≥ 1e-6`; `γ=0` ⇒ weighted BCE |
 
 ### 6.3. Cấp dữ liệu (resampling — chỉ chạy trên train của từng fold, trong `imblearn.pipeline`)
@@ -259,7 +259,7 @@ cùng bậc với các φ xếp hạng 9–15 (0,017–0,022) ⇒ thứ hạng t
 | Công thức | Trạng thái trong đồ án | Lý do / thay thế bằng |
 |---|---|---|
 | **G-mean** `= √(TPR·TNR)` | **không có trong mã** (đã kiểm tra toàn repo) | dùng **Balanced accuracy = (TPR+TNR)/2**; nếu bị hỏi: trình bày công thức chuẩn rồi nêu lý do chọn trung bình cộng (nhạy hơn khi lớp thiểu số rất nhỏ) |
-| **Focal Loss** | chỉ ở `imbalance_lab/` (backend LightGBM) | **không** thuộc pipeline chính (4 họ thuần sklearn) |
+| **Focal Loss** | chỉ ở `labs/imbalance_lab/` (backend LightGBM) | **không** thuộc pipeline chính (4 họ thuần sklearn) |
 | SMOTE / ADASYN / Borderline-SMOTE / ENN / Tomek | lab + thí nghiệm phụ | pipeline chính **cố ý không** resampling: nhãn gần như thuộc tính công ty ⇒ mẫu tổng hợp dễ rơi vào "vùng" của chính thực thể ⇒ hợp thức hoá rò rỉ cấp thực thể |
 | XGBoost / LightGBM | đã **gỡ** khỏi pipeline chính | bảo đảm tái lập offline; boosting do `HistGradientBoosting` đảm nhiệm |
 | trapezoid PR-AUC, DOR, Cohen κ, lift curve | không dùng | AP (average precision) + MCC + `lift_top_decile` |
@@ -273,8 +273,8 @@ cùng bậc với các φ xếp hạng 9–15 (0,017–0,022) ⇒ thứ hạng t
 | Nhãn (stress/Altman/forward) | `forecasting/labels.py` |
 | Feature 47 cột | `forecasting/features.py`, `forecasting/config.py::RATIOS` |
 | Tiền xử lý | `forecasting/preprocessing.py`, `forecasting/models.py` |
-| Metric & ngưỡng | `forecasting/evaluation.py`, `imbalance_lab/metrics.py`, `imbalance_lab/thresholds.py` |
-| Mất cân bằng | `imbalance_lab/`, `imbalance_experiment/`, `benchmark_imbalanced.py`, `scripts/experiment_imbalance_real.py` |
+| Metric & ngưỡng | `forecasting/evaluation.py`, `labs/imbalance_lab/metrics.py`, `labs/imbalance_lab/thresholds.py` |
+| Mất cân bằng | `labs/imbalance_lab/`, `labs/imbalance_experiment/`, `labs/benchmark.py`, `scripts/experiment_imbalance_real.py` |
 | Giải thích | `forecasting/explain.py`, `scripts/explain_model.py` |
 | Thống kê/kiểm định | `forecasting/significance.py`, `forecasting/validation.py` |
 | EDA & drift | `forecasting/eda.py`, `scripts/eda.py`, `scripts/eda_deep.py` |

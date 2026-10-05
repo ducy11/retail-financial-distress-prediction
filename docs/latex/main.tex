@@ -1,0 +1,345 @@
+% =====================================================================
+%  KHÓA LUẬN TỐT NGHIỆP — UIT (ĐHQG-HCM)
+%  Đề tài: Dự báo suy giảm tài chính doanh nghiệp bán lẻ từ dữ liệu SEC XBRL
+%  Biên dịch: XeLaTeX (khuyến nghị). Chạy: xelatex -> bibtex -> xelatex x2
+%  Quy chuẩn: Phụ lục 2 (hình thức trình bày) & Phụ lục 3 (mẫu báo cáo)
+% =====================================================================
+\documentclass[13pt,a4paper]{extreport}
+
+% ---------- Ngôn ngữ & font ----------
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage[vietnamese]{babel}
+\usepackage{amsmath,amssymb}
+
+% ---------- Khổ giấy & căn lề (Phụ lục 2) ----------
+\usepackage[a4paper,top=3.0cm,bottom=3.5cm,left=3.5cm,right=2.0cm]{geometry}
+
+% ---------- Dãn dòng 1.5 ----------
+\usepackage{setspace}
+\onehalfspacing
+
+% ---------- Hình, bảng, chú thích ----------
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage[font=small,labelfont=bf,justification=centering]{caption}
+
+% ---------- Đánh số đến cấp 4 ----------
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{4}
+
+% ---------- Định dạng tiêu đề (Phụ lục 2) ----------
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\centering\fontsize{14}{17}\selectfont}
+  {\MakeUppercase{\chaptername}\ \thechapter}{0.4em}{\MakeUppercase}
+\titlespacing*{\chapter}{0pt}{-10pt}{18pt}
+\titleformat{\section}{\normalfont\bfseries\fontsize{13}{16}\selectfont}
+  {\thesection}{0.6em}{}
+\titlespacing*{\section}{0pt}{12pt}{6pt}
+\titleformat{\subsection}{\normalfont\bfseries\fontsize{13}{16}\selectfont}
+  {\thesubsection}{0.6em}{}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+\titleformat{\subsubsection}{\normalfont\bfseries\fontsize{13}{16}\selectfont}
+  {\thesubsubsection}{0.6em}{}
+\titlespacing*{\subsubsection}{0pt}{8pt}{4pt}
+\titleformat{\paragraph}[runin]{\normalfont\bfseries}{\theparagraph}{0.6em}{}
+\titlespacing*{\paragraph}{0pt}{6pt}{0.5em}
+
+% ---------- Thụt đầu dòng mọi đoạn ----------
+\usepackage{indentfirst}
+\setlength{\parindent}{1.0cm}
+\setlength{\parskip}{4pt}
+
+% ---------- Danh sách ----------
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=1.2cm}
+
+% ---------- Đánh số trang: giữa-dưới ----------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% ---------- Liên kết ----------
+\usepackage[hidelinks,unicode]{hyperref}
+\hypersetup{pdftitle={Du bao suy giam tai chinh doanh nghiep ban le tu du lieu SEC XBRL}}
+
+% ---------- Code listing (Phụ lục) ----------
+\usepackage{listings}
+\usepackage{xcolor}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!40!black},
+  showstringspaces=false,
+  columns=flexible,
+  keepspaces=true
+}
+
+% ---------- Nhãn tiếng Việt ----------
+\renewcommand{\contentsname}{MỤC LỤC}
+\renewcommand{\listfigurename}{DANH MỤC HÌNH VẼ}
+\renewcommand{\listtablename}{DANH MỤC BẢNG BIỂU}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\bibname}{TÀI LIỆU THAM KHẢO}
+
+\begin{document}
+
+% =====================================================================
+%  TRANG BÌA CHÍNH  (không hiển thị số trang)
+% =====================================================================
+\pagenumbering{gobble}
+\begin{titlepage}
+\centering
+{\bfseries\fontsize{14}{17}\selectfont ĐẠI HỌC QUỐC GIA TP. HỒ CHÍ MINH\par}
+\vspace{4pt}
+{\bfseries\fontsize{16}{19}\selectfont TRƯỜNG ĐẠI HỌC CÔNG NGHỆ THÔNG TIN\par}
+\vspace{10pt}
+{\bfseries\fontsize{14}{17}\selectfont KHOA HỆ THỐNG THÔNG TIN\par}
+\vspace{1.8cm}
+{\bfseries\fontsize{14}{17}\selectfont <TÊN SINH VIÊN>\par}
+\vspace{1.2cm}
+{\bfseries\fontsize{16}{19}\selectfont KHÓA LUẬN TỐT NGHIỆP\par}
+\vspace{1.0cm}
+{\bfseries\fontsize{20}{24}\selectfont DỰ BÁO SUY GIẢM TÀI CHÍNH DOANH NGHIỆP\\[2pt] BÁN LẺ TỪ DỮ LIỆU SEC XBRL\\[2pt] BẰNG HỌC MÁY\par}
+\vspace{0.6cm}
+{\bfseries\fontsize{15}{18}\selectfont PREDICTING RETAIL FINANCIAL DISTRESS FROM SEC XBRL DATA USING MACHINE LEARNING\par}
+\vfill
+{\bfseries\fontsize{14}{17}\selectfont KỸ SƯ / CỬ NHÂN NGÀNH HỆ THỐNG THÔNG TIN\par}
+\vspace{1.0cm}
+{\bfseries\fontsize{13}{16}\selectfont TP. HỒ CHÍ MINH, <NĂM>\par}
+\end{titlepage}
+
+% =====================================================================
+%  TRANG BÌA PHỤ
+% =====================================================================
+\begin{titlepage}
+\centering
+{\bfseries\fontsize{14}{17}\selectfont ĐẠI HỌC QUỐC GIA TP. HỒ CHÍ MINH\par}
+\vspace{4pt}
+{\bfseries\fontsize{16}{19}\selectfont TRƯỜNG ĐẠI HỌC CÔNG NGHỆ THÔNG TIN\par}
+\vspace{10pt}
+{\bfseries\fontsize{14}{17}\selectfont KHOA HỆ THỐNG THÔNG TIN\par}
+\vspace{1.4cm}
+{\bfseries\fontsize{14}{17}\selectfont <TÊN SINH VIÊN> -- <MÃ SINH VIÊN>\par}
+\vspace{1.0cm}
+{\bfseries\fontsize{16}{19}\selectfont KHÓA LUẬN TỐT NGHIỆP\par}
+\vspace{0.8cm}
+{\bfseries\fontsize{18}{22}\selectfont DỰ BÁO SUY GIẢM TÀI CHÍNH DOANH NGHIỆP\\[2pt] BÁN LẺ TỪ DỮ LIỆU SEC XBRL\\[2pt] BẰNG HỌC MÁY\par}
+\vspace{0.5cm}
+{\bfseries\fontsize{15}{18}\selectfont PREDICTING RETAIL FINANCIAL DISTRESS FROM SEC XBRL DATA USING MACHINE LEARNING\par}
+\vspace{0.8cm}
+{\bfseries\fontsize{14}{17}\selectfont KỸ SƯ / CỬ NHÂN NGÀNH HỆ THỐNG THÔNG TIN\par}
+\vfill
+\fbox{\parbox{11.5cm}{\centering
+{\bfseries\fontsize{13}{16}\selectfont GIẢNG VIÊN HƯỚNG DẪN\par}
+\vspace{0.8cm}
+{\bfseries\fontsize{13}{16}\selectfont <TÊN GIẢNG VIÊN HƯỚNG DẪN>\par}}}
+\vspace{0.8cm}
+{\bfseries\fontsize{13}{16}\selectfont TP. HỒ CHÍ MINH, <NĂM>\par}
+\end{titlepage}
+
+% =====================================================================
+%  THÔNG TIN HỘI ĐỒNG CHẤM KHÓA LUẬN
+% =====================================================================
+\chapter*{THÔNG TIN HỘI ĐỒNG CHẤM KHÓA LUẬN TỐT NGHIỆP}
+\addcontentsline{toc}{chapter}{Thông tin hội đồng chấm khóa luận tốt nghiệp}
+Hội đồng chấm khóa luận tốt nghiệp, thành lập theo Quyết định số ............ ngày ............. của
+Hiệu trưởng Trường Đại học Công nghệ Thông tin.
+\vspace{0.4cm}
+
+\noindent\begin{tabularx}{\textwidth}{|>{\bfseries}p{6.4cm}|X|}
+\hline
+Thành phần hội đồng & Họ và tên \\
+\hline
+Chủ tịch hội đồng & .................................................... \\
+\hline
+Thư ký & .................................................... \\
+\hline
+Ủy viên 1 & .................................................... \\
+\hline
+Ủy viên 2 & .................................................... \\
+\hline
+Cán bộ phản biện & .................................................... \\
+\hline
+\end{tabularx}
+\vspace{0.3cm}
+
+\noindent Kết quả bảo vệ: ......................................... Điểm: ..................
+\clearpage
+
+% =====================================================================
+%  LỜI CẢM ƠN
+% =====================================================================
+\chapter*{LỜI CẢM ƠN}
+\addcontentsline{toc}{chapter}{Lời cảm ơn}
+Nhóm chúng em xin cảm ơn giảng viên hướng dẫn đã định hướng đề tài và đặc biệt là yêu cầu kiểm
+chứng dữ liệu về tận nguồn công bố thay vì tin vào kết quả in ra — yêu cầu đó định hình toàn bộ
+cách làm của khóa luận. Chúng em cảm ơn quý thầy cô Khoa Hệ thống Thông tin đã trang bị nền tảng
+về khai phá dữ liệu, học máy và đánh giá mô hình. Cảm ơn các bạn trong lớp đã phản biện và chỉ ra
+những điểm số chưa hợp lý trong các bản báo cáo trước. Khóa luận còn nhiều hạn chế, nhóm mong nhận
+được góp ý của hội đồng.
+\clearpage
+
+% =====================================================================
+%  MỤC LỤC
+% =====================================================================
+\phantomsection
+\tableofcontents
+\clearpage
+
+% =====================================================================
+%  DANH MỤC HÌNH VẼ
+% =====================================================================
+\phantomsection
+\addcontentsline{toc}{chapter}{Danh mục hình vẽ}
+\listoffigures
+\clearpage
+
+% =====================================================================
+%  DANH MỤC BẢNG BIỂU
+% =====================================================================
+\phantomsection
+\addcontentsline{toc}{chapter}{Danh mục bảng biểu}
+\listoftables
+\clearpage
+
+% =====================================================================
+%  DANH MỤC TỪ VIẾT TẮT
+% =====================================================================
+\chapter*{DANH MỤC TỪ VIẾT TẮT}
+\addcontentsline{toc}{chapter}{Danh mục từ viết tắt}
+\noindent\begin{longtable}{>{\bfseries}p{3.6cm}p{10.6cm}}
+10-K / 10-Q & Báo cáo thường niên / báo cáo quý nộp cho SEC \\
+8-K & Báo cáo sự kiện bất thường nộp cho SEC \\
+AP & Average Precision (diện tích dưới đường Precision--Recall) \\
+AUROC & Diện tích dưới đường cong ROC \\
+CI & Confidence Interval (khoảng tin cậy) \\
+CV & Cross-Validation (kiểm định chéo) \\
+EDA & Exploratory Data Analysis (phân tích khám phá dữ liệu) \\
+FN / FP & False Negative (bỏ sót) / False Positive (báo động giả) \\
+GroupKFold & Kiểm định chéo chia nhóm theo thực thể \\
+HGB & HistGradientBoostingClassifier (scikit-learn) \\
+IR & Imbalance Ratio (tỉ lệ lớp đa số chia lớp thiểu số) \\
+LOCO & Leave-One-Company-Out \\
+MCC & Matthews Correlation Coefficient \\
+MD\&A & Management Discussion \& Analysis \\
+MLP & Multi-Layer Perceptron (mạng nơ-ron nhiều lớp) \\
+OOF & Out-of-fold (dự đoán ngoài fold) \\
+RF & Random Forest \\
+SEC & U.S. Securities and Exchange Commission \\
+SHAP & SHapley Additive exPlanations \\
+VIF & Variance Inflation Factor \\
+XBRL & eXtensible Business Reporting Language \\
+\end{longtable}
+\clearpage
+
+% =====================================================================
+%  BẮT ĐẦU ĐÁNH SỐ TRANG Ả-RẬP (từ phần Tóm tắt)
+% =====================================================================
+\pagenumbering{arabic}
+\setcounter{page}{1}
+\pagestyle{fancy}
+\fancyhf{}
+\cfoot{\thepage}
+
+% =====================================================================
+%  TÓM TẮT KHÓA LUẬN
+% =====================================================================
+\chapter*{TÓM TẮT KHÓA LUẬN}
+\addcontentsline{toc}{chapter}{Tóm tắt khóa luận}
+Khóa luận giải quyết bài toán dự báo suy giảm tài chính (financial distress) của doanh nghiệp bán
+lẻ bằng dữ liệu báo cáo tài chính SEC XBRL. Bộ dữ liệu gồm 8 chuỗi bán lẻ niêm yết tại Mỹ
+(WMT, HD, LOW, ROST, DG, ORLY, DKS, FIVE), 332 quý tài chính FY2015--FY2026, tạo thành 324 mẫu dự
+báo. Mỗi mẫu gồm lịch sử các quý đã công bố trước thời điểm quyết định \texttt{as\_of}, quý target
+cần dự báo và nhãn nhị phân \texttt{is\_distressed}.
+
+Về dữ liệu, khóa luận xây dựng pipeline bóc tách \texttt{companyfacts} từ SEC về chuỗi 16 chỉ tiêu
+theo quý: nhận diện chỉ tiêu số dư (instant) và số phát sinh (duration), lọc fact đúng cửa sổ quý
+70--105 ngày, và với chỉ tiêu chỉ công bố dạng luỹ kế thì trừ luỹ kế hiện tại cho luỹ kế kỳ trước.
+Toàn bộ 5.312 ô dữ liệu được kiểm chứng ngược về snapshot công khai (4.609 ô có fact, 703 ô để
+\texttt{null}); số hash lệch, fact thiếu và ô bịa số đều bằng 0.
+
+Về mô hình, khóa luận tạo 47 đặc trưng tài chính (tỷ số thanh khoản/đòn bẩy/sinh lời/hiệu quả,
+tăng trưởng YoY, đặc trưng đường đi theo cửa sổ quý) và huấn luyện bốn họ mô hình thuần
+scikit-learn: Logistic Regression, Random Forest, HistGradientBoosting và MLP. Mô hình được chốt là
+Random Forest với ngưỡng vận hành 0,788 chọn theo chi phí kỳ vọng (FN đắt gấp 5 lần FP), đạt trên
+test AUROC 0,983, AP 0,991, F1 0,960.
+
+Kết luận trung thực của khóa luận nằm ở phần kiểm chứng, không nằm ở điểm số. Khi giữ trọn một công
+ty ra ngoài tập huấn luyện (GroupKFold, Leave-One-Company-Out), AUROC giảm còn 0,933 và 0,628; một
+baseline không dùng mô hình (tỉ lệ nhãn trung bình theo công ty) đạt AUROC 0,986. Kiểm định DeLong
+và bootstrap cho thấy mô hình chưa vượt baseline có ý nghĩa thống kê, và kết luận này lặp lại ở cả
+ba định nghĩa nhãn tái lập được. Do đó khóa luận định vị đóng góp chính là việc chỉ ra và định lượng
+rò rỉ thông tin ở cấp thực thể, cùng một giao thức đánh giá đúng cho bài toán.
+\clearpage
+
+% =====================================================================
+%  ABSTRACT
+% =====================================================================
+\chapter*{ABSTRACT}
+\addcontentsline{toc}{chapter}{Abstract}
+This thesis addresses retail financial distress prediction using SEC XBRL filings. The corpus
+consists of 8 U.S. retail chains (WMT, HD, LOW, ROST, DG, ORLY, DKS, FIVE), 332 fiscal quarters
+spanning FY2015--FY2026, yielding 324 prediction samples. Each sample contains the quarterly
+history disclosed before the decision timestamp \texttt{as\_of}, the target quarter, and a binary
+label \texttt{is\_distressed}.
+
+On the data side, we build a pipeline that converts SEC \texttt{companyfacts} into a quarterly
+series of 16 indicators: separating instant from duration facts, filtering facts that match a
+70--105 day fiscal quarter, and deriving quarterly values from year-to-date figures by subtracting
+the previous cumulative period. All 5,312 data cells are traced back to the public snapshot
+(4,609 cells have a matching fact, 703 are \texttt{null}); hash mismatches, missing facts and
+fabricated cells are all zero.
+
+On the modelling side, we engineer 47 financial features (liquidity, leverage, profitability and
+efficiency ratios, YoY growth, and path-based window features) and train four scikit-learn model
+families: Logistic Regression, Random Forest, HistGradientBoosting and MLP. The selected model is
+Random Forest with an operating threshold of 0.788 chosen by expected cost (a false negative costs
+five times a false positive), reaching AUROC 0.983, AP 0.991 and F1 0.960 on the test set.
+
+The main contribution is methodological rather than predictive. Under leave-one-company-out
+evaluation, in-domain AUROC of 0.983 drops to 0.933 (GroupKFold) and 0.628 (LOCO), while a
+model-free baseline based on per-company label prevalence reaches AUROC 0.986. DeLong and bootstrap
+tests confirm the model does not significantly outperform this baseline, and the conclusion holds
+across three reproducible label definitions. We therefore frame the contribution as quantifying
+entity-level information leakage and proposing a sound evaluation protocol for this problem.
+\clearpage
+
+% =====================================================================
+%  CÁC CHƯƠNG NỘI DUNG
+% =====================================================================
+\input{chapters/ch1_mo_dau}
+\input{chapters/ch2_tong_quan}
+\input{chapters/ch3_thuc_nghiem}
+\input{chapters/ch4_ket_qua}
+\input{chapters/ch5_ket_luan}
+
+% =====================================================================
+%  TÀI LIỆU THAM KHẢO
+% =====================================================================
+\clearpage
+\phantomsection
+\addcontentsline{toc}{chapter}{Tài liệu tham khảo}
+\bibliographystyle{ieeetr}
+\bibliography{references}
+
+% =====================================================================
+%  PHỤ LỤC
+% =====================================================================
+\input{phuluc}
+
+\end{document}

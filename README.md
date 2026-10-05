@@ -1,222 +1,248 @@
-# CS114 — Đồ án: Dự báo suy giảm tài chính (financial distress) doanh nghiệp bán lẻ
+# Retail Financial Distress Prediction
 
-Dự án dùng dữ liệu báo cáo tài chính (SEC XBRL — 10-K/10-Q) của các chuỗi bán lẻ lớn tại Mỹ để dự báo trước 1 quý (horizon ~90 ngày sau `as_of`) liệu công ty có rơi vào suy giảm tài chính (`is_distressed`) hay không.
+Predicts whether a US retail chain will report financial distress in the next quarter, using SEC XBRL filings (10-K / 10-Q) and four scikit-learn model families.
 
-## Cấu trúc repo
+**English (US) [Current]** · [繁體中文](README.zh-TW.md) · [Tiếng Việt](README.vi.md)
 
-```
-data/                      # Dữ liệu (đã có sẵn trong repo)
-  retail-expanded/         #   16 chỉ tiêu, quy đổi minh họa VND, có provenance từng chỉ tiêu
-  prepared/                #   Split train / validation / test / purged (manifest.json mô tả chính sách)
-  sec/raw/                 #   Snapshot SEC thô (bị loại khỏi git, tải lại bằng scripts.crawl_sec)
-  samples/                 #   Mẫu BCTC CSV định dạng đồ án
-forecasting/               # Gói Python: data pipeline, features, mô hình, đánh giá, báo cáo
-imbalance_lab/             # Lab mất cân bằng 98/2 (resampling, ngưỡng, hiệu chuẩn) — độc lập
-benchmark_imbalanced.py    # Benchmark 1 lệnh: Non-E Mode (resampling/cost-sensitive) vs E-Mode
-scripts/                   # Lệnh CLI chạy bằng `python -m scripts.*`
-notebooks/                 # Notebook chỉ ĐỌC artifact của repo (số liệu không thể lệch báo cáo) — xem notebooks/README.md
-reports/                   # Đầu ra (bảng điểm, confusion matrix, figure) — tái tạo được
-docs/                      # Tài liệu đề cương, mở rộng dữ liệu, báo cáo
-```
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![tests](https://github.com/ducy11/retail-financial-distress-prediction/actions/workflows/tests.yml/badge.svg)](https://github.com/ducy11/retail-financial-distress-prediction/actions/workflows/tests.yml)
+[![release](https://img.shields.io/badge/release-v1.0.0-informational.svg)](https://github.com/ducy11/retail-financial-distress-prediction/releases)
+[![python](https://img.shields.io/badge/python-3.11%2B-3776AB.svg)](https://www.python.org/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.6.0-F7931E.svg)](https://scikit-learn.org/)
+[![demo](https://img.shields.io/badge/demo-Streamlit-FF4B4B.svg)](app.py)
 
-## Môi trường
+The repository ships a frozen model, the full evaluation output, and the commands that regenerate both. Every number in `reports/` comes from an artifact on disk, and `python -m scripts.audit_data` matches those numbers against the SEC snapshots and the prepared splits.
 
-- Python ≥ 3.11 (dev: 3.13.12, Windows).
-- Cài phụ thuộc: `python -m pip install -r requirements.txt`.
-- Code **không phụ thuộc pandas** — data load thuần `json`, tính năng bằng `numpy`, **mô hình bằng
-  `scikit-learn`**: đúng **4 họ mô hình** (Logistic Regression · Random Forest · HistGradientBoosting ·
-  **MLP** — tuyến tính / bagging / boosting / mạng nơ-ron phi tuyến không dựa trên cây).
-  Pipeline chính **không dùng xgboost/lightgbm**; chỉ module lab mất cân bằng (`imbalance_lab/`,
-  `benchmark_imbalanced.py`, `imbalance_experiment/`) mới dùng boosting ngoài làm base learner cho các
-  kỹ thuật resampling. Mọi thứ chạy offline (trừ `scripts.fetch_events` — tuỳ chọn, cần Internet).
-- **Cảnh báo vô hại của thư viện**: bộ phiên bản đang kiểm thử (scikit-learn 1.6 + scipy 1.18, matplotlib 3.9)
-  in `OptimizeWarning: Unknown solver options: iprint` ở **mỗi** lần fit `LogisticRegression` và
-  `PyparsingDeprecationWarning` khi vẽ hình. Repo lọc **đúng** hai thông điệp này trong
-  `runtime_warnings.py` (`quiet_library_warnings()`) để log CLI/test sạch — cảnh báo khác (kể cả của code
-  dự án) vẫn hiển thị. Các module test gọi lại hàm này trong `setUpModule()` vì `unittest` chèn
-  `simplefilter("default")` lên đầu danh sách filter sau khi đã import module test.
+## Demo
 
-## Quick start
+<!-- Placeholder image: drop a real capture at docs/preview.gif (the Streamlit demo or a terminal run). -->
 
-```powershell
-# 0. (Tuỳ chọn) Tái tạo lại split từ retail-expanded — mặc định bỏ qua nếu prepared đã có.
-#    Nhãn is_distressed được giữ nguyên từ prepared cũ (sinh bởi pipeline prepare_sec gốc).
-python -m forecasting.data --force
+![Streamlit demo: three tabs that score a company, compare baselines, and explain misclassified samples](docs/preview.gif)
 
-# 0b. PORT ETL: tái tạo 16 chỉ tiêu TỪ SNAPSHOT SEC và đối chiếu ngược bảng đang dùng
-#     (99,92% ô khớp; phần lệch được liệt kê từng ô) + sinh quý cho công ty mới
-python -m scripts.prepare_sec          # → reports/results/etl_verify.{json,md}, data/retail-expanded-rebuilt/
-python -m scripts.prepare_sec --verify # chỉ đối chiếu, không ghi bảng tái tạo
+Live demo: `https://<your-app>.streamlit.app` (deploy `app.py` on Streamlit Community Cloud; the app runs in simulation mode when `reports/models/best.joblib` is absent).
 
-# 1. Huấn luyện + đánh giá trên validation, chọn mô hình & threshold
-python -m forecasting.train
-
-# 2. Đánh giá trên test với mô hình/ngưỡng đã CỐ ĐỊNH (test KHÔNG dùng để chọn mô hình/ngưỡng)
-python -m forecasting.evaluate
-
-# 3. Xuất bảng dự báo chi tiết từng mẫu + biểu đồ phân phối xác suất
-python -m forecasting.report
-
-# 4. EDA nhanh + EDA chuyên sâu + kiểm thử pipeline
-python -m scripts.eda            # 9 hình + thống kê mô tả + tương quan + nhận xét (mục 3.1–3.6)
-python -m scripts.eda_deep       # kiểm tra 47 feature, nhãn, tương quan, drift + 7 hình (mục 3.7)
-python -m unittest discover -s tests -v      # 234 test (registry 4 mô hình, chống rò rỉ, ETL, walk-forward)
-
-# 4b. Nhãn SỰ KIỆN từ SEC (tuỳ chọn — cần Internet): có phá sản thật (8-K item 1.03) hay không?
-python -m scripts.fetch_events   # → data/events/*.json, reports/results/events.{json,md}
-```
-
-## Kiểm chứng bổ sung để đạt mức Xuất sắc (mục 9 của báo cáo)
-
-```powershell
-# 5. Tiền xử lý đuôi nặng: winsorize × scaler × 4 họ mô hình trên dữ liệu THẬT
-python -m scripts.experiment_preprocessing        # → reports/results/preprocessing_experiment.{json,md}
-# 6. Giải thích mô hình bằng SHAP (KernelSHAP tự cài đặt, có tự kiểm chứng efficiency)
-python -m scripts.explain_model --max-explain 64  # → reports/results/shap.{json,md} + 3 hình
-# 7. Kiểm định "hơn nhau có thật không": DeLong + paired bootstrap trên cùng 64 mẫu test
-python -m scripts.significance                    # → reports/results/significance.{json,md}
-# 8. Kỹ thuật xử lý lệch lớp trên DỮ LIỆU THẬT (7 kỹ thuật, GroupKFold theo công ty)
-python -m scripts.experiment_imbalance_real       # → reports/results/imbalance_real.{json,md}
-# 9. Tìm kiếm siêu tham số bằng random search + SỔ THỰC NGHIỆM runs.csv
-python -m scripts.search                          # mặc định 40 trial/mô hình × 4 mô hình → runs.csv (153 dòng)
-python -m scripts.search --trials 25              # chạy nhanh hơn (sổ sẽ có ít dòng hơn)
-# 10. Độ nhạy của kết luận theo 4 ĐỊNH NGHĨA NHÃN (original, stress_signals, Altman Z'', forward-4Q)
-python -m scripts.label_sensitivity               # → reports/results/label_sensitivity.{json,md}
-# 11. Demo (dùng khi bảo vệ): dự đoán MỘT quý + giải thích SHAP cục bộ
-python -m scripts.predict --sample-id HD-2024Q2 --explain
-# 12. Kiểm chứng dữ liệu là THẬT: băm SHA-256 snapshot SEC + tra ngược từng fact + quy đổi VND
-python -m scripts.verify_provenance             # → reports/results/provenance.{json,md}
-```
-
-Bộ tài liệu bảo vệ đồ án (factsheet + dàn 11 slide + 10 câu hỏi phản biện kèm kịch bản trả lời) là tài liệu
-viết tay: [docs/bo-tai-lieu-bao-ve.md](docs/bo-tai-lieu-bao-ve.md) — kèm
-[docs/checklist-doi-chieu-yeu-cau.md](docs/checklist-doi-chieu-yeu-cau.md) (đối chiếu tiêu chí → bằng
-chứng → lệnh) và [docs/slide-bao-ve.md](docs/slide-bao-ve.md) (deck bảo vệ, xuất được `.pptx` bằng
-`python -m scripts.export_office`).
-
-**File xuất để nộp / làm slide** (`python -m scripts.export_office` → `docs/`):
-
-| File | Dùng để |
+| Recorded on the shipped artifacts | Value |
 |---|---|
-| `BAO-CAO.docx` | **Báo cáo hoàn chỉnh** dạng Word (11 mục + 3 phụ lục, bảng + hình) — bản chính để đọc/nộp |
-| `BAO-CAO-slide.pptx` | Slide tự động **14 mục**, mọi số khớp artifact (dùng làm khung slide) |
-| `BAO-CAO-slide-bao-ve.pptx` | **Deck bảo vệ 11 slide** (takeaway + bullet + hình) |
-| `BAO-CAO-slide-bao-ve.docx` | Cùng nội dung deck bảo vệ ở dạng Word — **để dựng slide** theo ý mình |
-| `bo-tai-lieu-bao-ve.docx` | **Bộ tài liệu bảo vệ đầy đủ**: factsheet số liệu + dàn 11 slide (có lời thoại) + 8 Q&A phản biện |
+| Selected model (highest cross-company AP) | `random_forest`, cross-company AP 0.958 |
+| Operating threshold | 0.788 (cost matrix `5·FN + 1·FP`) |
+| Test confusion at that threshold (n=64) | TP 36 · TN 25 · FN 2 · FP 1 |
+| AUROC: in-domain vs cross-company vs leave-one-company-out | 0.983 · 0.933 · 0.628 |
 
-## Benchmark mất cân bằng: Non-E Mode vs E-Mode (`benchmark_imbalanced.py`)
+## Key Features
 
-*(Phần này — cùng 2 lab bên dưới — dùng XGBoost/LightGBM **chỉ làm base learner** cho các kỹ thuật mất
-cân bằng; **KHÔNG thuộc bộ mô hình của đồ án** (3 họ thuần scikit-learn ở pipeline chính).)*
+- **Cell-level data provenance.** Every stored indicator is matched back to a `companyfacts` fact on tag, period, value and accession. `scripts/audit_data` re-runs that match over about 98,200 checks and reports 0 issues on the shipped data.
+- **Leak-free evaluation by construction.** Splits are chronological inside each company with a purge band, model selection uses cross-company `GroupKFold`, and the test set (64 samples) is scored exactly once with a frozen model and threshold.
+- **Deliberately small dependency surface.** The main pipeline uses numpy, scipy and scikit-learn only: no pandas, no gradient boosting, exactly four model families (Logistic Regression, Random Forest, HistGradientBoosting, MLP).
+- **Self-contained KernelSHAP.** `forecasting/explain.py` implements KernelSHAP without the `shap` package and self-checks the efficiency identity `Σφ + E[f] = f(x)`; used for global ranking and per-sample explanations.
+- **Statistical comparison layer.** DeLong's test and a paired bootstrap over the same test samples, plus walk-forward folds, leave-one-company-out and a company-cluster bootstrap for uncertainty that respects the panel structure.
+- **Imbalance labs kept out of the main path.** Three separate labs at 95/5, 98/2 and 1:50 keep every sampler inside `imblearn.pipeline.Pipeline`, and the Focal Loss objective is verified against finite differences for both gradient and hessian.
 
-Script độc lập, tái lập toàn bộ từ một lệnh, so sánh **11 phương pháp** trên dữ liệu giả lập mất cân
-bằng cao **95/5** (10.000 mẫu, chia Stratified 80/20, test cố định dùng chung cho mọi phương pháp):
+## System Architecture
 
-```powershell
-python -m pip install -r requirements-benchmark.txt
-python benchmark_imbalanced.py            # in bảng so sánh trực tiếp ra terminal
-python benchmark_imbalanced.py --cv 5     # thêm StratifiedKFold 5 fold trên train split
-python benchmark_imbalanced.py --quick    # bỏ EasyEnsemble cho nhanh
+```mermaid
+flowchart LR
+    SEC[SEC EDGAR<br/>companyfacts JSON] -->|scripts.crawl_sec| RAW[data/sec/raw<br/>+ downloads.json SHA-256]
+    RAW -->|scripts.prepare_sec| RETAIL[data/retail-expanded<br/>16 indicators per quarter]
+    RAW -->|scripts.verify_provenance| PROV[reports/results/provenance.json]
+    RETAIL -->|forecasting.data| SPLIT[data/prepared<br/>train / validation / test / purged]
+    SPLIT -->|forecasting.features| FEAT[47-feature matrix]
+    FEAT -->|forecasting.train| MODEL[reports/models/best.joblib<br/>+ summary.json]
+    MODEL -->|forecasting.evaluate| TEST[test scored once]
+    MODEL -->|forecasting.report| OUT[reports/results<br/>tables + figures]
+    MODEL -->|scripts.explain_model| SHAP[shap.json + 3 figures]
+    MODEL -->|scripts.significance| SIG[significance.json]
+    SPLIT -->|app.py| UI[Streamlit demo: 3 tabs]
+    MODEL -->|app.py| UI
+    OUT -->|scripts.audit_data| CHECK[number cross-check<br/>0 issues]
+    RAW -->|scripts.audit_data| CHECK
 ```
 
-**Chia tập (theo yêu cầu):** `train_test_split(test_size=0.2, stratify=y, random_state=42)` giữ nguyên
-tỉ lệ lớp; tuỳ chọn `--cv N` dùng `StratifiedKFold(n_splits=N, shuffle=True, random_state=42)` **trên
-train split** (test vẫn khoá làm holdout). Mọi kỹ thuật cân bằng dữ liệu (SMOTE / RandomUnderSampler /
-SMOTE+Tomek) **chỉ** chạy trên train (và trên fold-train khi CV) — validation/test không bao giờ được
-resample; script tự kiểm chứng và in PASS/FAIL.
+The same flow without a Mermaid renderer:
 
-| Nhóm | Phương pháp |
-|---|---|
-| Baseline | Logistic Regression (không can thiệp) · XGBoost/LightGBM (mặc định) |
-| Non-E Mode (data-level) | SMOTE · RandomUnderSampler · SMOTE+Tomek Links — chạy **trong `imblearn.pipeline.Pipeline`**, chỉ trên train |
-| Non-E Mode (cost-sensitive) | `class_weight='balanced'` · `scale_pos_weight` động (tính trong `fit`) |
-| E-Mode (ensemble) | `BalancedRandomForestClassifier` · `EasyEnsembleClassifier` · `RUSBoostClassifier` |
-
-Chỉ số trên test: ROC-AUC, PR-AUC (Average Precision), F1 lớp thiểu số, Balanced Accuracy,
-Precision/Recall và **thời gian huấn luyện**. Kết quả ghi vào `reports/benchmark_imbalanced.md`
-(+ `.csv`, `.log`); kiểm chứng chống rò rỉ dữ liệu chạy ngay trong script và in PASS/FAIL.
-Chi tiết & diễn giải: [docs/benchmark-mat-can-bang.md](docs/benchmark-mat-can-bang.md).
-
-## Danh mục kỹ thuật mất cân bằng (yêu cầu #2) — `imbalance_lab/techniques.py`
-
-*(Lab độc lập: base learner mặc định là LightGBM — xem ghi chú phạm vi ở mục trên.)*
-
-Lab mất cân bằng (`imbalance_lab/`) có thêm một **danh mục đầy đủ 5 nhóm kỹ thuật** + threshold tuning
-trên đường PR, chạy bằng một lệnh:
-
-```powershell
-python -m imbalance_lab.techniques            # 16 kỹ thuật (gồm BASELINE) × 5 fold → reports/imbalance/
-python -m imbalance_lab.techniques --quick --techniques baseline,smote,adasyn,focal_loss
+```
+SEC companyfacts -> data/sec/raw -> data/retail-expanded -> data/prepared -> 47 features
+                 -> train (select by cross-company AP) -> test scoring -> reports/ + Streamlit demo
 ```
 
-| Nhóm | Kỹ thuật |
-|---|---|
-| **Baseline (chưa xử lý)** | boosting mặc định — mốc so sánh cho mọi kỹ thuật |
-| Data-level / Oversampling | RandomOverSampler · SMOTE · BorderlineSMOTE · ADASYN |
-| Data-level / Undersampling | RandomUnderSampler · Tomek Links · EditedNearestNeighbours |
-| Hybrid | SMOTE + Tomek Links · SMOTE + ENN |
-| Algorithm-level | `scale_pos_weight` động · `class_weight='balanced'` · **Focal Loss** (custom objective LightGBM, grad/hess giải tích) |
-| Ensemble | BalancedRandomForestClassifier · EasyEnsembleClassifier · RUSBoostClassifier |
-| Threshold tuning | `best_f1` / `best_cost` / `min_precision` chọn trên **đường Precision-Recall của xác suất out-of-fold**, so với mốc 0.5 |
+## Tech Stack
 
-- Mọi sampler nằm TRONG `imblearn.pipeline.Pipeline` (bản nội bộ tương thích khi thiếu `imbalanced-learn`);
-  cost-sensitive / Focal Loss tính trọng số trong `fit`; ngưỡng không bao giờ chọn trên test.
-- **Đánh giá (yêu cầu #3):** Accuracy **không** là thước đo chính — bảng so sánh chỉ dùng Precision,
-  Recall, F1 (binary/macro/weighted/**F-beta**), **PR-AUC (Average Precision)**, ROC-AUC, MCC và
-  **Confusion Matrix**; accuracy chỉ xuất hiện như chỉ số chẩn đoán kèm mốc "đoán lớp đa số"
-  (`imbalance_lab/metrics.py::accuracy_diagnostic`).
-- Artifact: `reports/imbalance/techniques.{md,csv,json,log}`, `techniques_by_fold.csv` và
-  **`techniques_comparison.csv`** — bảng Baseline (chưa xử lý) vs từng kỹ thuật kèm ΔPR-AUC/ΔF1/
-  ΔF1-macro (hàm `compare_with_baseline`, `comparison_markdown`); PASS/FAIL chống rò rỉ in cho từng
-  kỹ thuật.
-- Kiểm thử: `tests/test_imbalance_techniques.py` (30 test: danh mục đủ mục, tỉ lệ mục tiêu của từng
-  sampler, grad/hess Focal Loss khớp sai phân số, ngưỡng PR hợp lệ, chống rò rỉ) và
-  `tests/test_evaluation_metrics.py` (19 test: metric khớp sklearn, chính sách không dùng accuracy,
-  `imblearn.pipeline.Pipeline`, bảng so sánh baseline).
-- Chi tiết & kết quả đo: [docs/cac-ky-thuat-mat-can-bang.md](docs/cac-ky-thuat-mat-can-bang.md).
+| Layer | Choice | Version |
+|---|---|---|
+| Language | Python | 3.11+ (CI and development: 3.13) |
+| Numerics | numpy, scipy | 2.5.3, 1.18.1 |
+| Machine learning | scikit-learn | 1.6.0 |
+| Figures | matplotlib | 3.9.3 |
+| Web demo | Streamlit + plotly | `requirements-app.txt` |
+| Imbalance labs (optional) | imbalanced-learn, LightGBM, XGBoost, pandas, tabulate | `requirements-labs.txt` |
+| Tests | `unittest` (standard library, no pytest) | 245 cases |
+| CI | GitHub Actions (`.github/workflows/tests.yml`) | Python 3.13 |
+| Data source | SEC EDGAR `companyfacts` API (XBRL from 10-K / 10-Q) | public |
 
-## Thực nghiệm: Phương pháp ĐƠN LẺ vs PHƯƠNG PHÁP KẾT HỢP (`imbalance_experiment/`)
+The main pipeline imports numpy, scipy and scikit-learn. `pandas` and the boosting libraries appear only inside `labs/`, which are standalone experiments.
 
-*(Lab độc lập: base learner mặc định là LightGBM — xem ghi chú phạm vi ở mục benchmark phía trên.)*
+## Quickstart
 
-Gói thực nghiệm độc lập so sánh **17 pipeline** trên dataset mất cân bằng **1:50** (tuỳ chọn 1:100 hoặc
-CSV kiểu *Credit Card Fraud Detection*), mọi bước resampling nằm TRONG `imblearn.pipeline.Pipeline`:
+Requirements: Python 3.11 or newer, pip, and roughly 4 GB of RAM. Everything runs on CPU; the dataset is 324 company-quarters, so training finishes in seconds on a laptop. Internet access is needed only for `scripts.crawl_sec` and `scripts.fetch_events`.
 
-```powershell
-python -m imbalance_experiment.main                       # 20.000 mẫu, 1:50, 5 fold → reports/experiment/
-python -m imbalance_experiment.main --quick --n-samples 5000
-python -m imbalance_experiment.main --imbalance-ratio 100 --model random_forest
-python -m imbalance_experiment.main --data data/creditcard.csv --target Class
+```bash
+git clone https://github.com/ducy11/retail-financial-distress-prediction.git
+cd retail-financial-distress-prediction
+
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-| Nhóm | Pipeline |
-|---|---|
-| Baseline | `baseline` (không can thiệp mất cân bằng) |
-| Single (data-level) | RandomOverSampler · SMOTE · Borderline-SMOTE · ADASYN · RandomUnderSampler · Tomek Links · ENN |
-| Single (algorithm-level) | `class_weight='balanced'` · Focal Loss |
-| Single (ensemble) | Balanced Random Forest · EasyEnsemble · Balanced Bagging |
-| **Hybrid** | SMOTE+Tomek · SMOTE+ENN · **SMOTE + Class Weights** · **RUSBoost** |
+Train, evaluate, then check the setup:
 
-- Module: `data_loader.py` (chia tập stratified) · `pipeline_builder.py` (danh mục pipeline) ·
-  `evaluation.py` (StratifiedKFold, metric **mean ± std**) · `insights.py` (phân tích tự động) ·
-  `main.py` (CLI + bảng + biểu đồ PR curve).
-- Metric: PR-AUC, ROC-AUC, F1 (thiểu số/macro), Balanced Accuracy, Recall, **FPR** — không dùng Accuracy.
-- Artifact: `reports/experiment/summary.{md,csv}`, `cv_mean_std.csv`, `results.json`, `pr_curves.png`,
-  `run.log`; mỗi pipeline có dòng PASS/FAIL chống rò rỉ.
-- Kiểm thử: `tests/test_experiment.py`; chi tiết & phân tích: [imbalance_experiment/README.md](imbalance_experiment/README.md).
+```bash
+python -m forecasting.train        # fits 4 families, selects by cross-company AP -> reports/models/best.joblib
+python -m forecasting.evaluate     # scores the test split once with the frozen model and threshold
+python -m unittest discover -s tests -v
+```
 
-## Chính sách dữ liệu (tóm tắt từ `data/prepared/manifest.json`)
+Regenerate every artifact in order (22 steps, log in `reports/results/run_all.log`):
 
-- Mỗi công ty: 8 quý cuối → test, 4 quý trước đó → validation, còn lại → train.
-- Purge: các sample có nhãn công bố sau một mốc toàn cục bị loại để tránh rò rỉ thứ tự công bố.
-- **Giữ tỉ lệ lớp (stratified):** tỉ lệ dương của train/validation/test lệch ≤ 3,3 điểm % so với toàn bộ
-  (62,3%); CV tinh chỉnh dùng `StratifiedGroupKFold` — vừa giữ tỉ lệ lớp vừa giữ TRỌN công ty ngoài
-  fold-train. Kiểm thử: `tests/test_pipeline.py::TestSplits.test_class_ratio_preserved_across_splits`.
-- **Cân bằng/tiền xử lý chỉ trên train:** pipeline chính KHÔNG resample (chỉ `class_weight='balanced*'`
-  do sklearn tính trong `fit`); impute/scale nằm trong `Pipeline` nên chỉ học thống kê từ train;
-  SMOTE / RandomUnderSampler chỉ tồn tại trong `imbalance_lab/` và `benchmark_imbalanced.py`, đặt TRONG
-  `imblearn.pipeline.Pipeline` ⇒ chỉ chạy trên train (fold-train khi CV), validation/test không bao giờ
-  bị resample. Kiểm thử: `tests/test_pipeline.py::TestNoLeakageInPreprocessing`.
-- Đơn vị: chuỗi số nguyên VND, tỷ giá minh họa 25.000 VND/USD (demo, không phải BCTC Việt Nam).
+```bash
+python -m scripts.run_all
+python -m scripts.run_all --only train,evaluate      # subset of steps
+python -m scripts.run_all --skip search,explain      # everything except these
+```
 
-Xem chi tiết: [docs/mo-rong-du-lieu.md](docs/mo-rong-du-lieu.md), [data/README.md](data/README.md).
+Rebuild the data from SEC (needs internet; `data/sec/raw` and `reports/models/*.joblib` are gitignored, so a fresh clone starts without them):
+
+```bash
+python -m scripts.crawl_sec        # snapshot companyfacts -> data/sec/raw + downloads.json
+python -m scripts.prepare_sec      # port the 16-indicator ETL and back-check the table in use
+python -m scripts.verify_provenance
+python -m scripts.audit_data
+```
+
+Optional extras:
+
+```bash
+python -m pip install -r requirements-labs.txt   # imbalance labs (LightGBM / XGBoost / imbalanced-learn)
+python -m labs.benchmark                         # 95/5 benchmark: Non-E Mode vs E-Mode
+python -m labs.imbalance_lab.techniques          # 98/2 catalogue: 15 techniques + PR threshold tuning
+python -m labs.imbalance_experiment.main         # 1:50 experiment: 17 pipelines, single vs hybrid
+
+python -m pip install -r requirements-app.txt    # Streamlit demo
+streamlit run app.py                             # http://localhost:8501
+```
+
+## Configuration / Environment Variables
+
+The repository ships `.env.example` as a template. No dotenv loader is installed, so set the value in the process environment (or let your IDE or runner load the file for you):
+
+```dotenv
+# .env.example
+#
+# Optional: run every step against a different split folder, for example the rule-based
+# labels written by `python -m scripts.relabel` into data/prepared-rule/.
+FORECASTING_PREPARED_DIR=data/prepared-rule
+```
+
+```bash
+# bash
+export FORECASTING_PREPARED_DIR=data/prepared-rule
+python -m scripts.run_all
+```
+
+```powershell
+# PowerShell
+$env:FORECASTING_PREPARED_DIR = "data/prepared-rule"
+python -m scripts.run_all
+```
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `FORECASTING_PREPARED_DIR` | No | `data/prepared` | Split folder used by `forecasting.config.prepared_dir()`. Accepts a relative or absolute path; relative paths resolve against the working directory. |
+
+The project needs no API keys or credentials. SEC asks for a real contact address in the `User-Agent` header, so replace the placeholder constant before crawling:
+
+```python
+# scripts/crawl_sec.py and scripts/fetch_events.py
+USER_AGENT = "CS114-do-an research <student@example.edu>"
+```
+
+## Testing & Development
+
+```bash
+python -m unittest discover -s tests -v         # full suite: 245 cases
+python -m unittest tests.test_pipeline -v       # one module
+python -m unittest tests.test_app -v            # Streamlit demo (skips itself when streamlit is missing)
+
+python -m scripts.audit_data                    # cross-check every reported number against artifacts
+python -m compileall -q forecasting scripts labs tests   # syntax check
+
+streamlit run app.py                            # hot reload: Streamlit reruns on save
+```
+
+What the suite locks down, beyond correctness of individual functions:
+
+- the model registry stays at exactly four scikit-learn families, and `forecasting/models.py` contains no `import lightgbm` or `import xgboost` (`tests/test_preprocessing.py::TestModelRegistry`);
+- resampling never reaches the main pipeline: no step exposes `fit_resample`, imputers and scalers learn their statistics from train only, and `class_weight="balanced*"` is resolved inside `fit` (`tests/test_pipeline.py::TestNoLeakageInPreprocessing`);
+- the class ratio survives the split and the cross-validation folds (`tests/test_pipeline.py::TestSplits`);
+- a deliberately leaky estimator is flagged, which proves the leak check can fail (`tests/test_benchmark_imbalanced.py`);
+- `scripts.audit_data` catches corrupted labels, values, publication dates and provenance when it is handed a mutated copy (`tests/test_pipeline.py::TestDataAudit`).
+
+`scripts.audit_data` skips the groups that need `data/sec/raw` or `reports/models/best.joblib`, so it runs clean on a fresh clone.
+
+No linter or formatter is configured. CI runs `python -m unittest discover -s tests -v` and then `python -m scripts.audit_data` on every push and pull request, and that pair is the gate for merging.
+
+## Project Structure
+
+```
+data/
+  prepared/            train / validation / test / purged splits + manifest.json (policy, counts, hashes)
+  retail-expanded/     16 indicators per company-quarter with per-cell provenance
+  prepared-rule/       alternative split built from rule-based labels (optional)
+  sec/raw/             SEC companyfacts snapshots (gitignored; python -m scripts.crawl_sec)
+forecasting/           core package
+  config.py            paths, seed, cost matrix, split-folder override
+  data.py              rebuilds the splits from retail-expanded
+  features.py          47-feature matrix (14 ratios, growth, path features)
+  preprocessing.py     winsorize + median imputer + scaler, all fitted on train
+  models.py            4 scikit-learn families and pipeline assembly
+  train.py             fits, evaluates on validation, selects by cross-company AP
+  evaluate.py          single frozen scoring run on test
+  report.py            per-sample prediction table and score histogram
+  explain.py           self-implemented KernelSHAP with an efficiency self-check
+  validation.py        GroupKFold, leave-one-company-out, walk-forward, cluster bootstrap
+  significance.py      DeLong test and paired bootstrap
+  baselines.py         dummy, ticker prior, single feature, Altman Z''
+  labels.py, eda.py, search.py, tuning.py, evaluation.py, data_loader.py
+labs/                  imbalance experiments; extra dependencies, outside the main pipeline
+  benchmark.py         95/5: Non-E Mode (resampling / cost-sensitive) vs E-Mode
+  imbalance_lab/       98/2: 15-technique catalogue, Focal Loss, PR threshold tuning
+  imbalance_experiment/ 1:50: 17 pipelines, single vs hybrid
+scripts/               CLI entry points
+  crawl_sec.py, prepare_sec.py, verify_provenance.py, audit_data.py
+  eda.py, eda_deep.py, analyze.py, explain_model.py, significance.py, class_balance.py
+  experiment_preprocessing.py, experiment_imbalance_real.py, experiment_defense.py
+  label_sensitivity.py, relabel.py, search.py, predict.py, fetch_events.py
+  run_all.py           runs all 22 steps and logs the outcome
+  make_report.py, export_office.py, export_report_latex.py, make_uit_report.py
+  probe_tags.py, probe_features.py   XBRL tag discovery helpers
+app.py                 Streamlit demo, three tabs, reads artifacts directly
+runtime_warnings.py    filters the two known harmless library warnings
+tests/                 17 modules, 245 unittest cases
+reports/
+  results/             JSON/MD/CSV outputs, including data_audit.json and run_all.log
+  figures/             figures grouped by topic (eda, analysis, shap, ...)
+  models/              best.joblib (gitignored; recreate with python -m forecasting.train)
+  experiment/, imbalance/   lab outputs
+docs/                  report, model card, reproduction guide, per-topic documentation
+```
+
+## License & Credits
+
+MIT License, Copyright (c) 2026 [ducy11](https://github.com/ducy11). See [LICENSE](LICENSE).
+
+- Filings and XBRL facts come from the SEC EDGAR `companyfacts` API. The snapshots kept under `data/sec/raw` are derived from that public data; SHA-256 hashes and accession numbers for each used fact live in `data/sec/downloads.json` and in the per-cell provenance of `data/retail-expanded`.
+- Monetary values are stored as VND integers for presentation, converted at a demo rate of 25,000 VND/USD. These are US filings, not Vietnamese financial statements.
+- Built with scikit-learn, numpy, scipy, matplotlib, Streamlit, imbalanced-learn, LightGBM and XGBoost. Each library keeps its own license; the boosting libraries are used only by the labs.
+- Course project for CS114. The report, model card and reproduction guide are in [`docs/`](docs/README.md).
+
+

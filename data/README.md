@@ -1,6 +1,6 @@
 # Dữ liệu huấn luyện và kiểm thử
 
-Corpus hiện tại: **8 doanh nghiệp, 332 quý, 16 chỉ tiêu** — WMT, HD, LOW, ROST, DG, ORLY, DKS, FIVE. [Tệp dữ liệu và nguồn BCTC để review](../docs/mo-rong-du-lieu.md).
+Corpus hiện tại: **8 doanh nghiệp, 332 quý, 16 chỉ tiêu** — WMT, HD, LOW, ROST, DG, ORLY, DKS, FIVE. Tệp dữ liệu và nguồn BCTC: `data/retail-expanded/corpus.json`.
 
 - `retail-expanded/corpus.json`: công ty được chọn và lý do loại 12 công ty còn lại.
 - `retail-expanded/*-16-indicators-vnd.json`: dữ liệu tiền VND, provenance từng chỉ tiêu, đối soát quý/năm.

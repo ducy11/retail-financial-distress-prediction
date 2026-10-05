@@ -23,7 +23,7 @@ bằng học máy trên dữ liệu báo cáo tài chính công bố (SEC XBRL)
 |---|---|---|---|
 | 1 | Bộ dữ liệu có bị mất cân bằng không? | 2.1 | `reports/results/class_balance.json`, `reports/results/eda_deep.md` |
 | 2 | Trình bày công thức đánh giá? | 7.1–7.2 | `forecasting/evaluation.py`, `docs/cong-thuc-do-an.md` |
-| 3 | Các cách xử lý mất cân bằng dữ liệu? | 9.1 | `docs/cac-ky-thuat-mat-can-bang.md`, `imbalance_lab/` |
+| 3 | Các cách xử lý mất cân bằng dữ liệu? | 9.1 | `docs/cac-ky-thuat-mat-can-bang.md`, `labs/imbalance_lab/` |
 | 4 | Ngoài baseline có đề xuất thêm đặc trưng mới gì? | 8.1 | `forecasting/features.py` (47 cột, 6 khối) |
 | 5 | Tại sao dùng thực nghiệm loại bỏ dần và khác gì baseline? | 8.2–8.3 | `reports/results/analysis.json::ablation` |
 | 6 | Non-E Mode và E-Mode là gì? | 9.2 | `reports/benchmark_imbalanced.md` |
@@ -643,10 +643,10 @@ nhờ đó biết được đâu là nút thắt thật của bài toán.
 
 | Cấp độ | Kỹ thuật | Cài đặt trong đồ án | Kiểm chứng |
 |---|---|---|---|
-| **1. Cấp dữ liệu** (data-level) | Random Oversampling, **SMOTE**, Borderline-SMOTE, ADASYN, Random Undersampling, **Tomek Links**, **ENN** | `imbalance_lab/samplers.py` + `imblearn.*`, chạy **trong** `imblearn.pipeline.Pipeline` | `test_oversamplers_reach_target_ratio`, `test_undersampler_reaches_target_ratio`, `test_cleaning_techniques_keep_minority_untouched`, `test_samplers_never_mutate_inputs` |
-| **2. Cấp thuật toán** (algorithm-level) | `class_weight='balanced'`, **`scale_pos_weight`**, **Focal Loss** (custom objective) | `models.BalancedWeightClassifier`, `ScalePosWeightClassifier`, `imbalance_lab/losses.py` | `test_balanced_class_weight_uses_fit_labels`, `test_scale_pos_weight_uses_only_given_fold_labels`, `test_gradient_matches_finite_difference`, `test_gamma_zero_reduces_to_weighted_bce` |
+| **1. Cấp dữ liệu** (data-level) | Random Oversampling, **SMOTE**, Borderline-SMOTE, ADASYN, Random Undersampling, **Tomek Links**, **ENN** | `labs/imbalance_lab/samplers.py` + `imblearn.*`, chạy **trong** `imblearn.pipeline.Pipeline` | `test_oversamplers_reach_target_ratio`, `test_undersampler_reaches_target_ratio`, `test_cleaning_techniques_keep_minority_untouched`, `test_samplers_never_mutate_inputs` |
+| **2. Cấp thuật toán** (algorithm-level) | `class_weight='balanced'`, **`scale_pos_weight`**, **Focal Loss** (custom objective) | `models.BalancedWeightClassifier`, `ScalePosWeightClassifier`, `labs/imbalance_lab/losses.py` | `test_balanced_class_weight_uses_fit_labels`, `test_scale_pos_weight_uses_only_given_fold_labels`, `test_gradient_matches_finite_difference`, `test_gamma_zero_reduces_to_weighted_bce` |
 | **3. Cấp tập hợp** (ensemble-level) | **Balanced Random Forest**, EasyEnsemble, Balanced Bagging, RUSBoost | `imblearn.ensemble.*`, `RobustRUSBoost` (dự phòng khi AdaBoost từ chối fit ở 1:50) | `TestCatalogCoverage`, `TestNoLeakageInCatalog` |
-| **4. Cấp hậu xử lý** (post-processing) | **Threshold moving** theo chi phí / theo đường PR | `imbalance_lab/thresholds.py::tune_thresholds_from_pr_curve` (3 chế độ: `best_f1`, `best_cost`, `min_precision`) | `TestPRThresholds` (5 test: PR-AUC khớp sklearn, ngưỡng nằm trên đường cong, F1 = max F1 của đường cong, chi phí tối thiểu, min-precision đạt mục tiêu) |
+| **4. Cấp hậu xử lý** (post-processing) | **Threshold moving** theo chi phí / theo đường PR | `labs/imbalance_lab/thresholds.py::tune_thresholds_from_pr_curve` (3 chế độ: `best_f1`, `best_cost`, `min_precision`) | `TestPRThresholds` (5 test: PR-AUC khớp sklearn, ngưỡng nằm trên đường cong, F1 = max F1 của đường cong, chi phí tối thiểu, min-precision đạt mục tiêu) |
 
 **Chống rò rỉ ở mọi cấp:** mọi sampler nằm trong `imblearn.pipeline.Pipeline` ⇒ `fit_resample` chỉ chạy
 trên train của fold; trọng số lớp/Focal Loss được tính **trong `fit`** từ nhãn nhận được; ensemble lấy
@@ -760,7 +760,7 @@ vậy thứ tự ưu tiên đúng là: **(1)** luôn có baseline; **(2)** xếp
    HistGradientBoosting dùng `class_weight='balanced'`; cả hai tính trọng số **trong `fit`** từ nhãn train
    (kiểm chứng bằng `test_balanced_class_weight_uses_fit_labels`), không đụng tới dữ liệu.
 4. **Nhưng nhóm KHÔNG phủ nhận resampling:** toàn bộ 17 pipeline vẫn được cài đặt, kiểm thử và chạy công
-   khai trong `imbalance_lab/` + `imbalance_experiment/`, kèm cả kết quả **trên dữ liệu thật**
+   khai trong `labs/imbalance_lab/` + `labs/imbalance_experiment/`, kèm cả kết quả **trên dữ liệu thật**
    (`imbalance_real.md`). Kết luận "không dùng" là **kết quả đo**, không phải định kiến.
 
 ### 9.4. Đối chứng **LiteSVM** — trả lời câu hỏi "Có cần chạy thêm LiteSVM không?"
@@ -798,7 +798,7 @@ cả bốn mô hình chính** (logistic 0,9828; RF 0,9828; HGB 0,9767; MLP 0,970
   làm Recall sụp (TN/FP/FN/TP = 26/0/19/19). Bài học: **ngưỡng là tài sản của từng mô hình**, phải chọn lại
   trên validation cho từng họ mô hình.
 
-Kiểm chứng thêm trên **bộ giả lập 95/5** (cùng bộ sinh dữ liệu với `benchmark_imbalanced.py`, nên so được
+Kiểm chứng thêm trên **bộ giả lập 95/5** (cùng bộ sinh dữ liệu với `labs/benchmark.py`, nên so được
 trực tiếp với bảng ở Chương 9.2):
 
 | Phương pháp | Nhóm | ROC-AUC | PR-AUC | F1 thiểu số | Bal. Acc |
@@ -974,7 +974,7 @@ FocalLoss: FL = -[ alpha*y*(1-p)^gamma*ln p + (1-alpha)*(1-y)*p^gamma*ln(1-p) ]
 | Ch.4–6 (4 mô hình, so sánh, per-class, overfit) | `baselines.json`, `summary.json`, `test_evaluation.json`, `analysis.json`, `defense_models.md` | `python -m forecasting.train`, `python -m forecasting.baselines`, `python -m scripts.analyze`, `python -m scripts.experiment_defense` |
 | Ch.7 (metric, ngưỡng, chi phí) | `test_evaluation.json`, `analysis.json::threshold` | `python -m forecasting.evaluate` |
 | Ch.8 (47 feature, ablation) | `analysis.json::ablation`, `eda_deep.json` | `python -m scripts.analyze` |
-| Ch.9 (cân bằng, LiteSVM, XGBoost) | `benchmark_imbalanced*.md`, `experiment/summary.md`, `imbalance_real.md`, `techniques.md`, `defense_models.md` | `python benchmark_imbalanced.py`, `python -m imbalance_experiment.main`, `python -m scripts.experiment_imbalance_real`, `python -m scripts.experiment_defense` |
+| Ch.9 (cân bằng, LiteSVM, XGBoost) | `benchmark_imbalanced*.md`, `experiment/summary.md`, `imbalance_real.md`, `techniques.md`, `defense_models.md` | `python -m labs.benchmark`, `python -m labs.imbalance_experiment.main`, `python -m scripts.experiment_imbalance_real`, `python -m scripts.experiment_defense` |
 | Ch.10 (rò rỉ thực thể, kiểm định, nhãn) | `validation_checks.json`, `significance.md`, `walk_forward.json`, `label_sensitivity.json`, `events.md`, `provenance.md` | `python -m forecasting.validation`, `python -m scripts.significance`, `python -m scripts.label_sensitivity`, `python -m scripts.fetch_events`, `python -m scripts.verify_provenance` |
 | Toàn bộ | — | `python -m scripts.run_all` (22 bước) → `python -m scripts.make_report` |
 

@@ -2,7 +2,7 @@
 
 *Tài liệu viết tay (không sinh tự động). Mọi con số dưới đây trích từ artifact sinh bằng một lệnh:
 `reports/imbalance/techniques.md` (+ `.csv`, `.json`, `.log`) — chạy lại được bằng
-`python -m imbalance_lab.techniques`.*
+`python -m labs.imbalance_lab.techniques`.*
 
 > **Phạm vi:** LightGBM/XGBoost trong lab này chỉ là **base learner cho các kỹ thuật mất cân bằng**
 > (ví dụ Focal Loss cần custom objective của LightGBM), **KHÔNG thuộc bộ mô hình của đồ án**. Bộ mô hình
@@ -14,7 +14,7 @@
 | Mục trong yêu cầu #2 | Khoá | Cài đặt | Kiểm thử tự động |
 |---|---|---|---|
 | **(tham chiếu — yêu cầu #3) Baseline: chưa xử lý mất cân bằng** | `baseline` | `models.make_base_classifier` (boosting mặc định, không resampling/không trọng số lớp) | `test_baseline_is_present_and_runs_first`, `TestBaselineComparison` |
-| Oversampling: Random Oversampling | `ros` | `imbalance_lab/samplers.py::RandomOverSampler` (nội bộ) · `imblearn.over_sampling.RandomOverSampler` | `test_oversamplers_reach_target_ratio`, `test_samplers_never_mutate_inputs` |
+| Oversampling: Random Oversampling | `ros` | `labs/imbalance_lab/samplers.py::RandomOverSampler` (nội bộ) · `imblearn.over_sampling.RandomOverSampler` | `test_oversamplers_reach_target_ratio`, `test_samplers_never_mutate_inputs` |
 | Oversampling: SMOTE | `smote` | `samplers.SMOTE` · `imblearn SMOTE` | như trên |
 | Oversampling: BorderlineSMOTE | `borderline_smote` | `samplers.BorderlineSMOTE` (biến thể borderline-1: chỉ nội suy từ mẫu vùng DANGER) · `imblearn BorderlineSMOTE` | như trên |
 | Oversampling: ADASYN | `adasyn` | `samplers.ADASYN` (số mẫu tỉ lệ với độ khó) · `imblearn ADASYN` | như trên |
@@ -24,10 +24,10 @@
 | Hybrid: SMOTE-ENN / SMOTE-Tomek | `smote_enn`, `smote_tomek` | `samplers.make_hybrid_sampler` · `imblearn SMOTEENN` / `SMOTETomek` | `test_hybrid_techniques_balance_then_clean` |
 | Cost-sensitive: `scale_pos_weight` | `cost_sensitive_scale_pos_weight` | `models.ScalePosWeightClassifier` — trọng số tính **trong `fit`** | `tests/test_imbalance_lab.py::test_scale_pos_weight_uses_only_given_fold_labels` |
 | Cost-sensitive: `class_weight='balanced'` | `cost_sensitive_class_weight` | `models.BalancedWeightClassifier` — `compute_class_weight('balanced')` trên nhãn nhận được | `test_balanced_class_weight_uses_fit_labels` |
-| Focal Loss (custom loss) | `focal_loss` | `imbalance_lab/losses.py` — grad/hess giải tích theo logit + `FocalLossClassifier` (LightGBM custom objective) | `test_gradient_matches_finite_difference`, `test_hessian_matches_finite_difference_of_gradient`, `test_gamma_zero_reduces_to_weighted_bce`, `test_hessian_is_strictly_positive` |
+| Focal Loss (custom loss) | `focal_loss` | `labs/imbalance_lab/losses.py` — grad/hess giải tích theo logit + `FocalLossClassifier` (LightGBM custom objective) | `test_gradient_matches_finite_difference`, `test_hessian_matches_finite_difference_of_gradient`, `test_gamma_zero_reduces_to_weighted_bce`, `test_hessian_is_strictly_positive` |
 | Ensemble: BalancedRandomForest | `balanced_rf` | `imblearn.ensemble.BalancedRandomForestClassifier` | `TestCatalogCoverage`, `TestNoLeakageInCatalog` |
 | Ensemble: EasyEnsemble (+ RUSBoost) | `easy_ensemble`, `rusboost` | `imblearn.ensemble.EasyEnsembleClassifier` / `RUSBoostClassifier` | như trên |
-| Threshold tuning theo PR (thay 0.5) | áp cho **mọi** kỹ thuật | `imbalance_lab/thresholds.py::tune_thresholds_from_pr_curve` (ứng viên = điểm của `precision_recall_curve`) | `TestPRThresholds` (5 test: PR-AUC khớp sklearn, ngưỡng nằm trên đường cong, F1 = max F1 của đường cong, cost tối thiểu, min-precision đạt mục tiêu) |
+| Threshold tuning theo PR (thay 0.5) | áp cho **mọi** kỹ thuật | `labs/imbalance_lab/thresholds.py::tune_thresholds_from_pr_curve` (ứng viên = điểm của `precision_recall_curve`) | `TestPRThresholds` (5 test: PR-AUC khớp sklearn, ngưỡng nằm trên đường cong, F1 = max F1 của đường cong, cost tối thiểu, min-precision đạt mục tiêu) |
 
 Danh mục được khoá bằng test `TestCatalogCoverage::test_required_groups_and_techniques_present`:
 nếu ai sửa code và bỏ sót một kỹ thuật trong danh sách yêu cầu, test FAIL ngay.
@@ -61,7 +61,7 @@ chỉ nói về điểm vận hành sau khi đã chọn. Mọi kỹ thuật đ�
 
 ## 3. Threshold tuning trên đường Precision-Recall (thay vì 0.5)
 
-- `imbalance_lab/thresholds.py::pr_curve_points` gọi đúng `sklearn.metrics.precision_recall_curve` và
+- `labs/imbalance_lab/thresholds.py::pr_curve_points` gọi đúng `sklearn.metrics.precision_recall_curve` và
   trả PR-AUC = `average_precision_score` (test `test_pr_auc_matches_sklearn`).
 - `tune_thresholds_from_pr_curve` lấy **ứng viên ngưỡng chính là các điểm của đường PR** (không phải
   lưới lượng tử nội suy), rồi chọn 3 chế độ: `best_f1` (max F1 trên đường cong), `best_cost`
@@ -77,7 +77,7 @@ chỉ nói về điểm vận hành sau khi đã chọn. Mọi kỹ thuật đ�
 
 ## 4. Đánh giá mô hình (yêu cầu #3)
 
-- **Accuracy KHÔNG dùng làm thước đo chính**: `imbalance_lab/metrics.py::PRIMARY_METRICS` =
+- **Accuracy KHÔNG dùng làm thước đo chính**: `labs/imbalance_lab/metrics.py::PRIMARY_METRICS` =
   Precision, Recall, F1 (binary) , F1-macro, F1-weighted, **F-beta** (`config.FBETA_BETA = 2,0`),
   PR-AUC (Average Precision), ROC-AUC, MCC; kèm Confusion Matrix (TN/FP/FN/TP) và balanced accuracy.
   Accuracy chỉ là chỉ số **chẩn đoán** (`DIAGNOSTIC_METRICS`, hàm `accuracy_diagnostic`) và luôn in kèm
@@ -164,9 +164,9 @@ F1-macro / F-beta / PR-AUC / MCC song song.
 ## 8. Tái lập
 
 ```powershell
-python -m pip install -r imbalance_lab/requirements.txt
-python -m imbalance_lab.techniques            # toàn bộ danh mục + threshold tuning → reports/imbalance/
-python -m imbalance_lab.techniques --quick --techniques baseline,smote,adasyn,focal_loss
+python -m pip install -r requirements-labs.txt
+python -m labs.imbalance_lab.techniques            # toàn bộ danh mục + threshold tuning → reports/imbalance/
+python -m labs.imbalance_lab.techniques --quick --techniques baseline,smote,adasyn,focal_loss
 python -m unittest discover -s tests -v       # 30 test danh mục + 19 test ĐÁNH GIÁ (yêu cầu #3)
 ```
 

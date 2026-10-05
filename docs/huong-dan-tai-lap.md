@@ -46,9 +46,9 @@ python -m scripts.analyze --quick                        # giảm số lần ho�
 | `python -m scripts.relabel` | `data/prepared-rule/*`, `reports/results/relabel.*` | Nhãn quy tắc tái lập được + kiểm chứng độ nhạy |
 | `python -m scripts.audit_data` | `reports/results/data_audit.{json,md}` | Đối soát từng con số với số liệu thật trong snapshot SEC (provenance, VND, split, nhãn quy tắc, artifact báo cáo) |
 | `python -m scripts.class_balance` | `reports/results/class_balance.{json,md}` | Mất cân bằng lớp: đếm/ tỉ lệ/ Imbalance Ratio theo tập, theo công ty, theo nhãn quy tắc |
-| `python -m imbalance_lab.run` | `reports/imbalance/summary.{md,csv,json}`, `run.log` | Lab 98/2: 3 chiến lược + hiệu chuẩn + mốc minh hoạ SAI (rò rỉ) |
-| `python -m imbalance_lab.techniques` | `reports/imbalance/techniques.{md,csv,json}`, `techniques_by_fold.csv`, `techniques.log` | Danh mục 15 kỹ thuật (yêu cầu #2) + threshold tuning trên đường PR, PASS/FAIL chống rò rỉ |
-| `python -m imbalance_experiment.main` | `reports/experiment/summary.{md,csv}`, `cv_mean_std.csv`, `results.json`, `pr_curves.png` | Thực nghiệm ĐƠN LẺ vs KẾT HỢP: 17 pipeline, mất cân bằng 1:50, metric mean ± std, chống rò rỉ |
+| `python -m labs.imbalance_lab.run` | `reports/imbalance/summary.{md,csv,json}`, `run.log` | Lab 98/2: 3 chiến lược + hiệu chuẩn + mốc minh hoạ SAI (rò rỉ) |
+| `python -m labs.imbalance_lab.techniques` | `reports/imbalance/techniques.{md,csv,json}`, `techniques_by_fold.csv`, `techniques.log` | Danh mục 15 kỹ thuật (yêu cầu #2) + threshold tuning trên đường PR, PASS/FAIL chống rò rỉ |
+| `python -m labs.imbalance_experiment.main` | `reports/experiment/summary.{md,csv}`, `cv_mean_std.csv`, `results.json`, `pr_curves.png` | Thực nghiệm ĐƠN LẺ vs KẾT HỢP: 17 pipeline, mất cân bằng 1:50, metric mean ± std, chống rò rỉ |
 | `python -m scripts.make_report` | `docs/*.md` | Báo cáo + slide + tài liệu |
 | `python -m scripts.export_office` | `docs/BAO-CAO.docx`, `docs/BAO-CAO-slide.pptx`, `docs/BAO-CAO-slide-bao-ve.pptx`, `docs/BAO-CAO-slide-bao-ve.docx`, `docs/bo-tai-lieu-bao-ve.docx` | BÁO CÁO HOÀN CHỈNH dạng Word + 2 bộ slide (.pptx) + Word dàn slide bảo vệ |
 | `python -m unittest discover -s tests -v` | — | Kiểm thử: tái lập byte-identical, chống rò rỉ, tính nhất quán metric, mutation test cho auditor |

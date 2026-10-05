@@ -1,0 +1,85 @@
+% =====================================================================
+%  PHỤ LỤC — MÃ NGUỒN TRÍCH XUẤT XBRL
+% =====================================================================
+\appendix
+\chapter{Mã nguồn trích xuất dữ liệu SEC XBRL}
+
+Phụ lục trích hai hàm cốt lõi của pipeline. Mã đầy đủ nằm trong thư mục \texttt{scripts/} của kho mã
+nguồn kèm theo khóa luận; phần dưới đây chỉ giữ lại logic chính và chuyển chú thích sang tiếng Anh
+cho gọn (logic không đổi).
+
+\section{Tải companyfacts từ SEC}
+
+Đoạn mã dưới đây là hàm tải một snapshot \texttt{companyfacts} và ghi lại hash để kiểm chứng nguồn
+gốc về sau (trích từ \texttt{scripts/crawl\_sec.py}).
+
+\begin{lstlisting}[language=Python]
+def download_one(ticker, meta):
+    """Download one companyfacts snapshot; record its provenance hash."""
+    url = meta["url"]
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = resp.read()
+    path = RAW_DIR / f"{ticker}-companyfacts.json"
+    path.write_bytes(data)
+    meta["sha256"] = sha256_bytes(data)            # provenance: detect manual edits
+    meta["downloaded_at"] = datetime.now(timezone.utc).isoformat()
+    return "downloaded"
+\end{lstlisting}
+
+\section{Bóc tách một ô dữ liệu theo bốn phương pháp}
+
+Hàm \texttt{derive\_cell} tái tạo một ô (quý, chỉ tiêu) từ snapshot. Thứ tự thử: tag ưu tiên, rồi
+số dư cuối kỳ / fact đúng quý / luỹ kế trừ luỹ kế; nếu không có fact thì trả \texttt{None} với method
+\texttt{absent}. Hàm không bao giờ suy diễn giá trị (trích từ \texttt{scripts/prepare\_sec.py}).
+
+\begin{lstlisting}[language=Python]
+def derive_cell(facts, indicator, period_start, period_end,
+                available_on=None, fiscal_quarter=None):
+    """Rebuild ONE cell from the snapshot: instant / quarter / YTD-diff / absent."""
+    for tag in tags_for(indicator):
+        candidates = facts.get(tag) or []
+
+        # (1) Instant indicator: value at a point in time (end only)
+        if indicator in INSTANT_INDICATORS:
+            chosen = _published([f for f in candidates
+                                 if not f.get("start") and f.get("end") == period_end],
+                                available_on)
+            if chosen:
+                chosen["tag"] = tag
+                return int(chosen["val"]), {"method": "instant", "facts": [chosen]}
+            continue
+
+        # (2) Duration indicator: prefer the fact that matches exactly one quarter
+        quarter = _published([f for f in candidates
+                              if f.get("start") == period_start
+                              and f.get("end") == period_end], available_on)
+        if quarter:
+            quarter["tag"] = tag
+            method = "reported_first_quarter" if fiscal_quarter == 1 else "reported_quarter"
+            return int(quarter["val"]), {"method": method, "facts": [quarter]}
+
+        # (3) Only year-to-date facts: this period minus the previous cumulative period
+        ytd = _published([f for f in candidates
+                          if f.get("start") and f.get("end") == period_end
+                          and str(f.get("start")) < str(period_start)], available_on)
+        if ytd:
+            same_ytd = [f for f in candidates if f.get("start") == ytd.get("start")
+                        and str(f.get("end")) < str(period_end)]
+            if same_ytd:
+                previous_end = max(str(f["end"]) for f in same_ytd)
+                previous = _published([f for f in same_ytd
+                                       if str(f["end"]) == previous_end], available_on)
+                if previous:
+                    ytd["tag"], previous["tag"] = tag, tag
+                    return (int(ytd["val"]) - int(previous["val"]),
+                            {"method": "current_ytd_minus_previous_ytd",
+                             "facts": [ytd, previous]})
+
+    # (4) No usable fact: leave the cell empty instead of guessing a value
+    return None, {"method": "absent", "facts": []}
+\end{lstlisting}
+
+Hai hàm \texttt{\_published} và \texttt{tags\_for} (không in ở đây) chọn bản công bố SỚM NHẤT đã có
+trước \texttt{available\_on} — đúng bản mà nhà đầu tư thực sự thấy tại thời điểm ra quyết định, và
+chọn tag theo thứ tự ưu tiên của từng chỉ tiêu.

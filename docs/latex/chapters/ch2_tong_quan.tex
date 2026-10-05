@@ -1,0 +1,101 @@
+% =====================================================================
+%  CHƯƠNG 2 — TỔNG QUAN
+% =====================================================================
+\chapter{Tổng quan}
+
+\section{Bản chất rủi ro kiệt quệ tài chính}
+
+Trong tài chính doanh nghiệp, kiệt quệ tài chính (financial distress) là trạng thái doanh nghiệp
+không còn đủ khả năng tạo dòng tiền để thực hiện đầy đủ các nghĩa vụ nợ, hoặc đang xuất hiện các
+dấu hiệu dẫn tới tình trạng đó \cite{beaver1966}. Các dấu hiệu thường được dùng gồm lỗ ròng kéo dài,
+dòng tiền hoạt động âm, vốn lưu động âm và vốn chủ sở hữu âm.
+
+Cần phân biệt rõ hai khái niệm. Kiệt quệ tài chính là một \emph{quá trình} kéo dài nhiều quý, còn
+phá sản là một \emph{sự kiện} pháp lý xảy ra tại một thời điểm. Doanh nghiệp có thể ở trạng thái
+kiệt quệ tài chính trong vài quý mà chưa nộp đơn phá sản, và ngược lại một số vụ phá sản xảy ra
+đột ngột do nguyên nhân không phản ánh trong báo cáo tài chính quý. Khóa luận chọn định vị bài toán
+ở mức kiệt quệ tài chính vì lý do thực nghiệm: kiểm tra hồ sơ 8-K cho thấy bộ dữ liệu hiện tại
+không chứa sự kiện phá sản nào (0/8 công ty).
+
+Với ngành bán lẻ, danh sách tín hiệu sớm cần chú ý khác với doanh nghiệp sản xuất. Vòng quay hàng
+tồn và tỷ lệ chi phí bán hàng trên doanh thu phản ứng nhanh nhất khi sức mua suy yếu; cơ cấu nợ
+ngắn hạn quyết định khả năng chịu được giai đoạn doanh thu đi ngang; và dòng tiền hoạt động là chỉ
+báo ít bị pha loãng bởi các bút toán kế toán hơn lợi nhuận ròng.
+
+\section{Chuẩn dữ liệu báo cáo tài chính SEC XBRL}
+
+Từ năm 2009, U.S. Securities and Exchange Commission (SEC) yêu cầu công ty đại chúng nộp báo cáo
+tài chính kèm phần XBRL (eXtensible Business Reporting Language) \cite{secxbrl2026}. Mỗi dòng số
+liệu được gắn một thẻ (tag) thuộc taxonomy US-GAAP. SEC công bố các fact này qua endpoint
+\texttt{data.sec.gov/api/xbrl/companyfacts/CIK\{cik\}.json} \cite{secfacts2026}. Mỗi fact có cấu
+trúc gồm: \texttt{tag}, kỳ bắt đầu \texttt{start}, kỳ kết thúc \texttt{end}, giá trị \texttt{val},
+số hiệu hồ sơ \texttt{accn} và ngày nộp \texttt{filed}.
+
+\subsection{Hai loại chỉ tiêu cần phân biệt}
+
+\begin{itemize}
+\item Chỉ tiêu \textbf{số dư} (instant), ví dụ \texttt{Assets}, \texttt{Liabilities},
+      \texttt{StockholdersEquity}: chỉ có \texttt{end}, đặc trưng cho một thời điểm.
+\item Chỉ tiêu \textbf{số phát sinh} (duration), ví dụ \texttt{Revenues}, \texttt{NetIncomeLoss},
+      \texttt{NetCashProvidedByOperatingActivities}: có cả \texttt{start} và \texttt{end}.
+\end{itemize}
+
+Với chỉ tiêu số phát sinh, một điểm dễ sai là lấy nhầm fact luỹ kế từ đầu năm (year-to-date) thay
+vì fact của riêng một quý. Nếu một công ty chỉ công bố dạng luỹ kế, phải trừ luỹ kế hiện tại cho
+luỹ kế của kỳ liền trước để ra giá trị quý riêng. Một quý tài chính 13 tuần tương ứng khoảng 70--105
+ngày; đây là cận lọc hữu ích để loại các fact bán niên hoặc luỹ kế.
+
+Đơn vị tiền trong bộ dữ liệu được quy đổi minh hoạ sang VND chỉ để thống nhất đơn vị trình bày. Cần
+lưu ý đây là dữ liệu theo chuẩn US-GAAP của Mỹ, không phải báo cáo tài chính Việt Nam. Khi đối chiếu
+với bối cảnh trong nước phải tính đến khác biệt về chế độ kế toán doanh nghiệp \cite{thongtu200},
+các chuẩn mực kế toán Việt Nam \cite{vas2005} và quy định pháp lý về kế toán \cite{luatketoan2015}.
+
+\section{Phương pháp dự báo cổ điển so với học máy}
+
+\subsection{Altman Z-score}
+
+Altman xây dựng điểm số tổ hợp tuyến tính từ vài tỷ số kế toán với trọng số cố định
+\cite{altman1968}. Với doanh nghiệp phi sản xuất và dịch vụ, biến thể $Z''$ được dùng:
+
+\begin{equation}
+Z'' = 6{,}56\,\frac{\text{vốn lưu động}}{\text{tổng tài sản}}
+    + 3{,}26\,\frac{\text{lợi nhuận giữ lại}}{\text{tổng tài sản}}
+    + 6{,}72\,\frac{\text{EBIT}}{\text{tổng tài sản}}
+    + 1{,}05\,\frac{\text{vốn chủ sở hữu}}{\text{tổng nợ}}
+\end{equation}
+
+Ưu điểm của $Z''$ là minh bạch và không cần huấn luyện; hạn chế là trọng số được chọn từ một tập
+mẫu cũ, giả định quan hệ tuyến tính giữa các tỷ số và dùng một ngưỡng chung cho mọi ngành.
+Barboza và cộng sự cho thấy các mô hình học máy vượt các mô hình thống kê truyền thống trên bài
+toán dự báo phá sản \cite{barboza2017}.
+
+\subsection{Học máy}
+
+Học máy thay hai giả định của mô hình cổ điển — trọng số cố định và quan hệ tuyến tính — bằng cách
+học trọng số và mặt quyết định từ dữ liệu. Với 47 đặc trưng và các tương tác phi tuyến (ví dụ lợi
+nhuận giảm chỉ nguy hiểm khi đi kèm đòn bẩy cao), mô hình cây và mạng nơ-ron có cơ hội bắt được
+quan hệ mà một công thức tuyến tính bỏ lỡ. Khóa luận chọn bốn họ đại diện cho bốn cơ chế học khác
+nhau: tuyến tính (Logistic Regression) \cite{pedregosa2011}, bagging cây (Random Forest)
+\cite{breiman2001}, boosting cây (HistGradientBoosting) \cite{friedman2001} và mạng nơ-ron
+(MLP). XGBoost được dùng như đối chứng phản biện \cite{chen2016}.
+
+\section{Các thước đo đánh giá trên dữ liệu mất cân bằng}
+
+\subsection{Vì sao không dùng độ chính xác}
+
+Trên tập test của khóa luận, lớp suy giảm chiếm 59,4\%; chỉ cần dự đoán tất cả là suy giảm đã đạt
+độ chính xác 59,4\% mà không phân biệt được gì. Vì vậy độ chính xác (accuracy) không được dùng làm
+chỉ số chính. Thay vào đó khóa luận báo cáo AUROC \cite{fawcett2006}, AP (diện tích dưới đường
+Precision--Recall) \cite{davis2006}, Precision/Recall/F1, macro-F1, MCC và Brier score.
+
+\subsection{Ngưỡng quyết định theo chi phí kỳ vọng}
+
+Ngưỡng 0,5 là mặc định nhưng không có cơ sở. Khóa luận chọn ngưỡng tối thiểu hoá chi phí kỳ vọng
+$C_{FN}\cdot FN + C_{FP}\cdot FP$ (lý thuyết quyết định). Nếu xác suất được hiệu chuẩn đúng, ngưỡng
+tối ưu là
+\begin{equation}
+p^{*} = \frac{C_{FP}}{C_{FN} + C_{FP}}.
+\end{equation}
+Với $C_{FN} = 5$ và $C_{FP} = 1$, $p^{*} = 1/6 \approx 0{,}167$. Trên dữ liệu thực, ngưỡng tối ưu
+tính được cao hơn nhiều (0,788) vì mô hình không hiệu chuẩn tuyệt đối — đây cũng là một điểm cần
+thảo luận khi triển khai.

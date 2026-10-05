@@ -1,6 +1,6 @@
-# Benchmark mất cân bằng: **Non-E Mode** vs **E-Mode** (`benchmark_imbalanced.py`)
+# Benchmark mất cân bằng: **Non-E Mode** vs **E-Mode** (`labs/benchmark.py`)
 
-> **Phạm vi:** script này (và 2 lab `imbalance_lab/`, `imbalance_experiment/`) dùng boosting ngoài
+> **Phạm vi:** script này (và 2 lab `labs/imbalance_lab/`, `labs/imbalance_experiment/`) dùng boosting ngoài
 > — XGBoost/LightGBM — **chỉ làm base learner** cho các nhóm kỹ thuật mất cân bằng (script tự hạ cấp
 > xuống HistGradientBoosting khi thiếu thư viện, ghi rõ backend trong log). **Bộ mô hình của đồ án vẫn
 > đúng 3 họ thuần scikit-learn**: Logistic Regression · Random Forest · HistGradientBoosting.
@@ -8,8 +8,8 @@
 Script độc lập ở gốc repo — chạy một lệnh, in bảng so sánh trực tiếp ra terminal:
 
 ```powershell
-python -m pip install -r requirements-benchmark.txt
-python benchmark_imbalanced.py     # ~75–120 giây (11 phương pháp)
+python -m pip install -r requirements-labs.txt
+python -m labs.benchmark     # ~75–120 giây (11 phương pháp)
 ```
 
 Artifact tái tạo được: `reports/benchmark_imbalanced.md` (bảng + kiểm chứng + ghi chú),
@@ -92,7 +92,7 @@ một lần** toàn bộ mẫu (`tests/test_benchmark_imbalanced.py::TestStratif
 
 ## 4.1. Kiểm tra độ ổn định bằng `StratifiedKFold` 5 fold (trên train split)
 
-`python benchmark_imbalanced.py --cv 5` — mỗi phương pháp chạy lại 5 fold, báo cáo **trung bình ±
+`python -m labs.benchmark --cv 5` — mỗi phương pháp chạy lại 5 fold, báo cáo **trung bình ±
 độ lệch chuẩn**; test 2.000 mẫu vẫn khoá làm holdout. Tỉ lệ dương của các fold validation:
 **5,25 % – 5,31 %** (dataset 5,00 %) ⇒ chia stratified có hiệu lực. Cả **55/55 fold PASS** 3 kiểm
 chứng chống rò rỉ (`reports/benchmark_imbalanced_cv.md`, `.csv`).
@@ -160,10 +160,10 @@ của một lần chia tập; độ lệch chuẩn nhỏ (PR-AUC ± 0,007…0,04
 
 - **Một split, một seed** (42): kết quả holdout là point estimate. Đã giảm rủi ro bằng chế độ `--cv 5`
   (StratifiedKFold trên train split ⇒ có độ lệch chuẩn qua fold, xếp hạng trùng holdout), nhưng vẫn
-  chưa có **khoảng tin cậy bootstrap** cho holdout — muốn có thì dùng `imbalance_lab` (đã có
+  chưa có **khoảng tin cậy bootstrap** cho holdout — muốn có thì dùng `labs.imbalance_lab` (đã có
   StratifiedKFold + bootstrap CI + quét ngưỡng OOF) hoặc lặp nhiều seed rồi tổng hợp.
 - Ngưỡng báo cáo cố định 0,5 cho mọi phương pháp (đúng yêu cầu so sánh thuần phân loại); tối ưu ngưỡng
-  là chủ đề riêng — xem `imbalance_lab/thresholds.py`, `reports/imbalance/thresholds.json`.
+  là chủ đề riêng — xem `labs/imbalance_lab/thresholds.py`, `reports/imbalance/thresholds.json`.
 - Thời gian huấn luyện đo trên máy dev (1 luồng, `n_jobs=1`) nên chỉ dùng để **so sánh tương đối**.
 - Dữ liệu giả lập có cấu trúc mạnh (`n_informative=8`), nên “mô hình mặc định thắng” ở đây **không**
   suy ra được rằng resampling vô dụng với mọi dữ liệu mất cân bằng — chỉ nói rằng nó không cần thiết

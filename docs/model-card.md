@@ -119,7 +119,7 @@ cậy bootstrap).
 python -m scripts.run_all                 # toàn bộ artifact + docs (22 bước, gồm PORT ETL ở bước 2)
 python -m scripts.audit_data              # đối chiếu với số liệu thật SEC: 0 phát hiện
 python -m unittest discover -s tests -v   # 234 test (registry 4 mô hình, chống rò rỉ, ETL, walk-forward)
-python -m imbalance_lab.run               # lab mất cân bằng (kèm hiệu chuẩn + mốc minh hoạ rò rỉ)
+python -m labs.imbalance_lab.run               # lab mất cân bằng (kèm hiệu chuẩn + mốc minh hoạ rò rỉ)
 ```
 
 ## 11. Chạy mô hình trên một mẫu/quý mới (demo)

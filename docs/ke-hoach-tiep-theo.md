@@ -33,7 +33,7 @@ theo AP, ngưỡng theo chi phí, PR-AUC/F1 thay Accuracy). Nút thắt thật n
 |---|---|---|---|
 | **Định nghĩa lại nhãn** theo công thức công khai (Altman Z''/Ohlson O ngưỡng, hoặc "distress trong 4 quý tới": âm vốn chủ / cắt cổ tức / hủy niêm yết) | Nhãn hiện tại không tái tạo được (74,7% là mức khớp cao nhất) | `forecasting/labels.py` đã có nhãn quy tắc `stress_signals` → mở rộng thành 2–3 định nghĩa, chạy `python -m scripts.relabel` cho từng định nghĩa | Kết luận (mô hình vs ticker-prior) **giống nhau** trên ≥ 2 định nghĩa nhãn; AP cross-company ổn định |
 | **Chọn mô hình & báo cáo theo AP cross-company**, không theo F1 in-domain | Mô hình được chốt theo in-domain (HGB 0,977) nhưng **RF tốt hơn khi cross-company** (0,933 vs 0,926) | `forecasting/train.py`: đổi khoá xếp hạng sang AP cross-company (dùng `forecasting.validation.grouped_cv`), in cả hai bảng | Mô hình chốt là mô hình có **AP cross-company** cao nhất; hai con số được nêu cạnh nhau |
-| **Chốt ngưỡng theo chi phí + hiệu chuẩn lại xác suất** | Ngưỡng tối ưu lệch nhau 0,093 vs 0,890 tuỳ chiến lược; sau resampling xác suất bị kéo lệch | `imbalance_lab/` đã có 3 chế độ ngưỡng; bổ sung `CalibratedClassifierCV` (isotonic) cho nhánh resampling rồi so Brier/reliability | Brier ≤ 0,06 và ngưỡng vận hành không còn phụ thuộc việc có resample hay không |
+| **Chốt ngưỡng theo chi phí + hiệu chuẩn lại xác suất** | Ngưỡng tối ưu lệch nhau 0,093 vs 0,890 tuỳ chiến lược; sau resampling xác suất bị kéo lệch | `labs/imbalance_lab/` đã có 3 chế độ ngưỡng; bổ sung `CalibratedClassifierCV` (isotonic) cho nhánh resampling rồi so Brier/reliability | Brier ≤ 0,06 và ngưỡng vận hành không còn phụ thuộc việc có resample hay không |
 
 ### P1 — tăng sức mạnh thật (cần thêm dữ liệu / thí nghiệm)
 
@@ -51,7 +51,7 @@ theo AP, ngưỡng theo chi phí, PR-AUC/F1 thay Accuracy). Nút thắt thật n
 | **Model card + data card** trong `docs/` | Người dùng phải biết nhãn chưa kiểm chứng được và có rò rỉ thực thể | Có mục "Known limitations" nêu nhãn gốc, IR theo công ty, `ticker_prior` = 0,986 |
 | **Monitoring drift** (`reports/monitoring.md`): PSI/K-S theo feature, tỉ lệ dương theo quý, AP cross-company | Dữ liệu bán lẻ dịch chuyển theo mùa/thuế quan | Cảnh báo khi PSI > 0,2 hoặc AP cross-company giảm > 0,05. **Phần feature ĐÃ CÓ**: `reports/results/eda_deep.md` (KS/SMD/PSI train→test + tỉ lệ thiếu theo split); còn lại là chạy lại theo thời gian |
 | **Ngưỡng cấu hình hoá + log quyết định** | Ngưỡng là biến nghiệp vụ (FN đắt gấp 5–10 lần FP) | Ngưỡng nằm trong file cấu hình; mỗi dự báo ghi `sample_id`, `P(distress)`, ngưỡng, phiên bản model |
-| **CI bắt buộc chạy** `unittest` + `scripts.audit_data` + smoke test `imbalance_lab` | Ba lỗi thật chỉ bị phát hiện nhờ chạy: `searchsorted` sai chiều, `fit_resample` trên pipeline có classifier, số liệu trong docs bị lệch | CI xanh; audit = **0 phát hiện** trên **98.200** phép kiểm tra |
+| **CI bắt buộc chạy** `unittest` + `scripts.audit_data` + smoke test `labs.imbalance_lab` | Ba lỗi thật chỉ bị phát hiện nhờ chạy: `searchsorted` sai chiều, `fit_resample` trên pipeline có classifier, số liệu trong docs bị lệch | CI xanh; audit = **0 phát hiện** trên **98.200** phép kiểm tra |
 
 ## 4. Việc làm được ngay trong một buổi (không cần dữ liệu mới)
 
@@ -106,7 +106,7 @@ python -m scripts.eda_deep               # chất lượng feature, entropy/IR n
 python -m scripts.experiment_preprocessing  # winsorize × scaler trên dữ liệu thật (24 cấu hình, 4 họ mô hình)
 python -m scripts.explain_model          # SHAP (KernelSHAP tự cài) + giải thích mẫu sai
 python -m scripts.significance           # DeLong + paired bootstrap: mô hình vs ticker_prior
-python -m imbalance_lab.run              # lab 98/2: 3 chiến lược + mốc minh hoạ rò rỉ
+python -m labs.imbalance_lab.run              # lab 98/2: 3 chiến lược + mốc minh hoạ rò rỉ
 ```
 
 | Artifact tham chiếu | Nội dung |

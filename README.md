@@ -243,6 +243,6 @@ MIT License, Copyright (c) 2026 [ducy11](https://github.com/ducy11). See [LICENS
 - Filings and XBRL facts come from the SEC EDGAR `companyfacts` API. The snapshots kept under `data/sec/raw` are derived from that public data; SHA-256 hashes and accession numbers for each used fact live in `data/sec/downloads.json` and in the per-cell provenance of `data/retail-expanded`.
 - Monetary values are stored as VND integers for presentation, converted at a demo rate of 25,000 VND/USD. These are US filings, not Vietnamese financial statements.
 - Built with scikit-learn, numpy, scipy, matplotlib, Streamlit, imbalanced-learn, LightGBM and XGBoost. Each library keeps its own license; the boosting libraries are used only by the labs.
-- Course project for CS114. The report, model card and reproduction guide are in [`docs/`](docs/README.md).
+- Course project for CS114.
 
 

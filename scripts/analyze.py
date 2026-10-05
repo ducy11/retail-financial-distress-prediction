@@ -1,11 +1,8 @@
-"""Phân tích chuyên sâu: overfitting, quan trọng feature, ablation, lỗi, ngưỡng, hiệu chuẩn.
+"""Deep result analysis: overfitting, feature importance, ablation, errors, thresholds and calibration.
 
-Đây là phần "Phân tích kết quả chuyên sâu" của báo cáo (tiêu chí then chốt để đạt loại Giỏi).
-Mọi hình/bảng sinh từ artifact trong `reports/` nên không có số liệu nhập tay.
-
-Lệnh: python -m scripts.analyze [--quick]
-      → reports/figures/analysis/*.png, reports/results/analysis.{json,md},
-        reports/results/error_cases.csv
+Every figure and table is derived from the artifacts under `reports/`, so no number is typed in by hand.
+Writes `reports/figures/analysis/*.png`, `reports/results/analysis.{json,md}` and
+`reports/results/error_cases.csv`; run with `python -m scripts.analyze [--quick]`.
 """
 from __future__ import annotations
 
@@ -37,29 +34,27 @@ ANALYSIS_DIR = FIGURES_DIR / "analysis"
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
-    """Đọc JSON nếu có, ngược lại trả {} (để script chạy được khi thiếu artifact phụ)."""
+    """Read JSON when present, otherwise return an empty mapping so missing artifacts are tolerated."""
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def chosen_model() -> str:
-    """Tên mô hình ĐƯỢC CHỐT, đọc từ `reports/results/summary.json` (KHÔNG hard-code).
+    """Name of the selected model, read from `reports/results/summary.json` rather than hard-coded.
 
-    Vì sao: trước đây hằng số này hard-code `"logistic"`, nên bảng ngưỡng + permutation importance
-    thuộc **mô hình khác** với mô hình được triển khai (`best.joblib` = random_forest) ⇒ số liệu
-    giữa các mục của báo cáo mâu thuẫn (0,37 vs 0,788) và hình minh hoạ không phải của mô hình
-    đang dùng. Nay MỌI phân tích (ngưỡng, importance, ablation) dùng đúng mô hình đã chốt, với
-    cấu hình mặc định giống `best.joblib` (xem `forecasting/models.py::HYPERPARAMS`).
+    Hard-coding it once made the threshold and importance tables describe a different model than the
+    deployed `best.joblib`, so report sections disagreed. Every analysis now uses the selected model with
+    the default hyperparameters from `forecasting.models`.
     """
     name = _load_json(RESULTS_DIR / "summary.json").get("best_model")
     return name if name in MODEL_REGISTRY else "logistic"
 
 
-#: Mô hình dùng cho mọi phân tích trong script = mô hình đã chốt (đọc từ artifact, không nhập tay).
+#: Model used by every analysis: the selected one, read from the artifacts instead of typed in.
 MODEL = chosen_model()
 
 
 def artifacts() -> Dict[str, Any]:
-    """Nạp mọi artifact có sẵn."""
+    """Load every artifact that is available."""
     return {
         "summary": _load_json(RESULTS_DIR / "summary.json"),
         "test_evaluation": _load_json(RESULTS_DIR / "test_evaluation.json"),
@@ -71,7 +66,7 @@ def artifacts() -> Dict[str, Any]:
 
 
 def _fit(model_name: str, samples: List[Dict[str, Any]], **params):
-    """Fit pipeline mới cho một split (kiểm chứng độc lập, không đọc mô hình cũ)."""
+    """Fit a fresh pipeline for one split, independent of any previously saved model."""
     X, y = build_feature_matrix(samples), extract_labels(samples)
     model = make_model(model_name, **params)
     model.fit(X, y)
@@ -79,7 +74,7 @@ def _fit(model_name: str, samples: List[Dict[str, Any]], **params):
 
 
 def overfit_table(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Bảng Train vs Validation theo từng mô hình (phát hiện overfitting qua gap)."""
+    """Train against validation per model, exposing overfitting through the gap."""
     rows: List[Dict[str, Any]] = []
     for m in summary.get("models", []):
         rows.append({
@@ -98,7 +93,7 @@ def overfit_table(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def fig_overfit(rows: List[Dict[str, Any]], path: Path) -> None:
-    """Hình: cột đôi Train/Validation AUROC cho từng mô hình (đọc overfit bằng mắt)."""
+    """Figure: paired train and validation AUROC bars per model, so overfitting is visible."""
     names = [r["model"] for r in rows]
     x = np.arange(len(names))
     fig, ax = plt.subplots(figsize=(7.5, 4.2))
@@ -120,10 +115,10 @@ def fig_overfit(rows: List[Dict[str, Any]], path: Path) -> None:
 
 def feature_importance(train_s, val_s, test_s, path: Path, n_repeats: int = 20
                        ) -> Dict[str, Any]:
-    """Độ quan trọng feature theo 3 góc nhìn: permutation (val/test) + hệ số logistic.
+    """Feature importance from permutation on validation and test, plus linear coefficients.
 
-    Permutation importance = mức giảm AUROC khi hoán vị ngẫu nhiên một cột. Vừa để diễn giải,
-    vừa để phát hiện "cột quyết định" (dấu hiệu bài toán bị một đặc trưng chi phối).
+    Permutation importance is the AUROC drop when a column is shuffled. It serves both interpretation and
+    detection of a single dominant column that would signal a degenerate problem.
     """
     model, _, _ = _fit(MODEL, train_s)
     names = feature_names()
@@ -137,9 +132,7 @@ def feature_importance(train_s, val_s, test_s, path: Path, n_repeats: int = 20
         out[tag] = [{"feature": names[i], "mean_decrease_auroc": float(pi.importances_mean[i]),
                      "std": float(pi.importances_std[i])} for i in order[:15]]
 
-    # Hệ số chỉ tồn tại với mô hình tuyến tính; với mô hình cây (RF) thì BỎ QUA thay vì lỗi.
-    # (Trước đây `MODEL` hard-code "logistic" nên dòng này luôn chạy được — sau khi chuyển sang
-    #  đúng mô hình đã chốt là random_forest thì phải kiểm tra thuộc tính trước khi đọc.)
+    # Coefficients exist only for linear models, so tree models skip this block instead of failing.
     estimator = model.named_steps["model"]
     if hasattr(estimator, "coef_"):
         coefs = np.asarray(estimator.coef_).ravel()
@@ -166,7 +159,7 @@ def feature_importance(train_s, val_s, test_s, path: Path, n_repeats: int = 20
 
 
 def correlation_vif(train_s, path: Path) -> Dict[str, Any]:
-    """Tương quan giữa các feature + VIF: hệ số logistic có diễn giải được hay không?"""
+    """Feature correlation and VIF, showing whether linear coefficients stay interpretable."""
     X = build_feature_matrix(train_s)
     names = feature_names()
     keep = [j for j in range(X.shape[1]) if np.isfinite(X[:, j]).sum() >= 30]
@@ -203,7 +196,7 @@ def correlation_vif(train_s, path: Path) -> Dict[str, Any]:
 
 def _evaluate_variant(train_s, val_s, test_s, drop_cols: List[str] | None = None,
                       min_history: int = 0, model_name: str = MODEL) -> Dict[str, Any]:
-    """Fit một biến thể (bỏ cột / lọc mẫu non) và trả metric val+test để so ablation."""
+    """Fit one ablation variant and return its validation and test metrics."""
     if min_history:
         train_s = filter_by_history(train_s, min_history)
         val_s = filter_by_history(val_s, min_history)
@@ -231,7 +224,7 @@ def _evaluate_variant(train_s, val_s, test_s, drop_cols: List[str] | None = None
 
 
 def ablation(train_s, val_s, test_s) -> List[Dict[str, Any]]:
-    """Ablation: nhóm feature nào thực sự đóng góp, và mẫu quá non ảnh hưởng ra sao?"""
+    """Ablation: which feature groups contribute, and how short histories affect the result."""
     names = feature_names()
     groups = feature_groups()
     rows: List[Dict[str, Any]] = []
@@ -244,7 +237,7 @@ def ablation(train_s, val_s, test_s) -> List[Dict[str, Any]]:
         rows.append({"variant": f"bỏ nhóm {group} ({len(cols)} cột)", "drop": cols,
                      "min_history": 0, **res})
 
-    # Bỏ các cột có độ phủ thấp trên train (<50% giá trị hữu hạn)
+    # Drop columns whose coverage on train falls below 50 percent of finite values.
     X_tr = build_feature_matrix(train_s)
     coverage = np.isfinite(X_tr).mean(axis=0)
     low = [n for n, c in zip(names, coverage) if c < 0.5]
@@ -259,7 +252,7 @@ def ablation(train_s, val_s, test_s) -> List[Dict[str, Any]]:
 
 
 def error_cases(test_evaluation: Dict[str, Any], test_s) -> Tuple[List[Dict[str, Any]], Path]:
-    """Bảng các mẫu dự đoán sai kèm giá trị chỉ tiêu — để giải thích lỗi có cấu trúc."""
+    """Misclassified samples with their indicator values, so the errors can be explained structurally."""
     mis = test_evaluation.get("misclassified", [])
     wanted = ["current_ratio_latest", "working_capital_to_assets", "net_margin_latest",
               "debt_to_assets_latest", "inventory_to_sales_latest", "ocf_to_sales_latest",
@@ -287,7 +280,7 @@ def error_cases(test_evaluation: Dict[str, Any], test_s) -> Tuple[List[Dict[str,
 
 
 def threshold_curve(train_s, val_s, test_s, path: Path) -> Dict[str, Any]:
-    """Đường precision/recall/F1/chi phí theo ngưỡng — chọn ngưỡng có lý do, không tùy hứng."""
+    """Precision, recall, F1 and cost against the threshold, so the choice is justified."""
     model, _, _ = _fit(MODEL, train_s)
     grid = np.round(np.arange(0.05, 0.96, 0.01), 3)
     out: Dict[str, Any] = {"model": MODEL, "cost_fn": COST_FN, "cost_fp": COST_FP}
@@ -297,10 +290,9 @@ def threshold_curve(train_s, val_s, test_s, path: Path) -> Dict[str, Any]:
         X, y = build_feature_matrix(samples), extract_labels(samples)
         proba = predict_proba(model, X)
         rows = [metrics_at_threshold(y, proba, float(t)) for t in grid]
-        # Dùng ĐÚNG hai hàm mà bước chốt mô hình dùng (`forecasting.evaluation`) để số ngưỡng trong
-        # mục 7.6 khớp tuyệt đối với `summary.json` (best-F1 trên validation) và
-        # `test_evaluation.json` (best-F1/ngưỡng tối ưu chi phí trên test) — trước đây script tự quét
-        # lưới riêng nên có thể ra ngưỡng khác (0,33 so với 0,788) trên cùng một mô hình.
+        # Reuse exactly the helpers from `forecasting.evaluation` so the thresholds reported here match
+        # `summary.json` and `test_evaluation.json`; a private grid previously produced different
+        # thresholds for the same model.
         out[tag] = {"best_f1": best_f1_point(y, proba) or max(rows, key=lambda r: r["f1"]),
                     "cost_optimal": cost_optimal_threshold(y, proba)}
         ax = axes[0, col]
@@ -330,7 +322,7 @@ def threshold_curve(train_s, val_s, test_s, path: Path) -> Dict[str, Any]:
 
 def _reliability(y: np.ndarray, proba: np.ndarray, n_bins: int = 8
                  ) -> Tuple[List[float], List[float], List[int]]:
-    """(xác suất dự báo trung bình, tần suất thực tế, số mẫu) theo từng bin."""
+    """Return mean predicted probability, observed frequency and count for each bin."""
     edges = np.linspace(0.0, 1.0, n_bins + 1)
     idx = np.clip(np.digitize(proba, edges[1:-1]), 0, n_bins - 1)
     xs, ys, ns = [], [], []
@@ -344,7 +336,7 @@ def _reliability(y: np.ndarray, proba: np.ndarray, n_bins: int = 8
 
 
 def calibration(train_s, val_s, test_s, path: Path, n_bins: int = 8) -> Dict[str, Any]:
-    """Đường hiệu chuẩn + Brier: xác suất của mô hình có khớp tần suất thực tế?"""
+    """Calibration curve and Brier score, showing whether probabilities match observed frequencies."""
     model, _, _ = _fit(MODEL, train_s)
     out: Dict[str, Any] = {"model": MODEL, "bins": {}}
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.6))
@@ -370,13 +362,12 @@ def calibration(train_s, val_s, test_s, path: Path, n_bins: int = 8) -> Dict[str
 
 
 def learning_curve_figure(train_s, path: Path, n_splits: int = 4) -> Dict[str, Any]:
-    """Learning curve với GroupKFold: thêm dữ liệu còn giúp được nữa không?"""
+    """Learning curve under GroupKFold, showing whether more data would still help."""
     X, y = build_feature_matrix(train_s), extract_labels(train_s)
     groups = np.asarray([s[GROUP_KEY] for s in train_s])
     with warnings.catch_warnings():
-        # Vài fold chỉ có MỘT lớp (vì chia theo CÔNG TY: HD/LOW/WMT toàn nhãn 1) nên sklearn không
-        # tính được AUROC và in traceback dạng cảnh báo. Ta tắt cảnh báo để log sạch, NHƯNG đếm số
-        # điểm bị NaN và ghi vào artifact — báo cáo trung thực, không che dữ liệu thiếu.
+        # Grouped folds can be single-class, so sklearn cannot score AUROC and warns. Warnings are
+        # silenced for a clean log, but the NaN points are counted and recorded in the artifact.
         warnings.simplefilter("ignore")
         sizes, train_scores, val_scores = learning_curve(
             make_model(MODEL), X, y, groups=groups, cv=GroupKFold(n_splits=n_splits),
@@ -409,7 +400,7 @@ def learning_curve_figure(train_s, path: Path, n_splits: int = 4) -> Dict[str, A
 
 
 def headline(arts: Dict[str, Any]) -> Dict[str, Any]:
-    """Bảng 'câu chuyện chính': in-domain vs cross-company vs baseline vs dummy."""
+    """Headline table: in-domain, cross-company, ticker prior and dummy side by side."""
     rows: List[Dict[str, Any]] = []
     checks = arts.get("validation_checks", {})
     for name, d in (checks.get("in_domain_test") or {}).items():
@@ -431,10 +422,10 @@ def headline(arts: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def label_audit(train_s, val_s, test_s) -> Dict[str, Any]:
-    """Audit nhãn: nhãn gốc có khớp quy tắc kế toán đơn giản nào không? (không phải nhập tay)
+    """Label audit: does the original label match any simple accounting rule?
 
-    Trả mức khớp của từng quy tắc thử nghiệm, tính trên (a) quý target và (b) dòng lịch sử cuối
-    cùng — giúp phân biệt “nhãn theo tương lai” với “nhãn đã có trong feature” (rò rỉ).
+    Returns the agreement of each trial rule measured on the target quarter and on the last history row,
+    which distinguishes a forward-looking label from one already present in the features.
     """
     from forecasting.labels import signal_flags
 
@@ -484,7 +475,7 @@ def label_audit(train_s, val_s, test_s) -> Dict[str, Any]:
         target_agree[name] = ok_t / total if total else float("nan")
         history_agree[name] = ok_h / total if total else float("nan")
 
-    # 6 tín hiệu căng thẳng tổng hợp (dùng cho nhãn quy tắc ở scripts.relabel)
+    # Six composite stress signals, the rule labels reused by scripts.relabel.
     stress_flags = {"stress_signals>=1": [], "stress_signals>=2": []}
     for s in samples:
         entry = index.get(s["sample_id"])
@@ -506,7 +497,7 @@ def label_audit(train_s, val_s, test_s) -> Dict[str, Any]:
 
 
 def fig_headline(rows: List[Dict[str, Any]], path: Path) -> None:
-    """Hình: AUROC in-domain vs cross-company vs baseline — hình 'gây ấn tượng' của báo cáo."""
+    """Figure: in-domain, cross-company and baseline AUROC side by side, the headline chart."""
     items = [r for r in rows if r.get("auroc") is not None]
     items.sort(key=lambda r: r["auroc"])
     colors = ["crimson" if r["source"] in ("baseline",) else
@@ -525,7 +516,7 @@ def fig_headline(rows: List[Dict[str, Any]], path: Path) -> None:
 
 
 def _n(value: Any, digits: int = 3) -> str:
-    """Định dạng số cho bảng markdown (None/NaN → '—')."""
+    """Format a number for the markdown tables, rendering None and NaN as a dash."""
     try:
         f = float(value)
     except (TypeError, ValueError):
@@ -534,7 +525,7 @@ def _n(value: Any, digits: int = 3) -> str:
 
 
 def _pct(value: Any, digits: int = 1) -> str:
-    """Định dạng tỷ lệ 0–1 thành phần trăm (None/NaN → '—')."""
+    """Format a 0-1 share as a percentage, rendering None and NaN as a dash."""
     try:
         f = float(value)
     except (TypeError, ValueError):
@@ -543,7 +534,7 @@ def _pct(value: Any, digits: int = 1) -> str:
 
 
 def _markdown(out: Dict[str, Any]) -> str:
-    """Sinh báo cáo markdown từ kết quả phân tích (không nhập tay số liệu)."""
+    """Render the markdown report from the analysis results, with no hand-typed numbers."""
     lines: List[str] = ["# Phân tích kết quả chuyên sâu (sinh tự động)", "",
                         "Số liệu lấy từ `reports/results/*.json`; hình ở "
                         "`reports/figures/analysis/`.", ""]
@@ -636,7 +627,7 @@ def _markdown(out: Dict[str, Any]) -> str:
 
 
 def run(quick: bool = False) -> Dict[str, Any]:
-    """Chạy toàn bộ phân tích chuyên sâu, ghi hình + bảng markdown/json."""
+    """Run the full analysis and write the figures plus the markdown and JSON tables."""
     ensure_dirs()
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
     arts = artifacts()
@@ -667,18 +658,19 @@ def run(quick: bool = False) -> Dict[str, Any]:
     top = out["importance"]["test"][0] if out["importance"]["test"] else {}
     cross = [r for r in head["rows"] if r["source"] == "GroupKFold"]
     cross_auc = min((r["auroc"] for r in cross if r["auroc"] is not None), default=None)
-    print(f"Phân tích: top feature (test) = {top.get('feature')} "
-          f"(ΔAUROC={_n(top.get('mean_decrease_auroc'))}); VIF>10: {vif['n_vif_above_10']} cột; "
-          f"lỗi test: {len(errs)} mẫu; AUROC xấu nhất cross-company = {_n(cross_auc)}")
+    print(f"Analysis: top feature (test) = {top.get('feature')} "
+          f"(delta AUROC={_n(top.get('mean_decrease_auroc'))}); VIF>10: {vif['n_vif_above_10']} columns; "
+          f"test errors: {len(errs)} samples; worst cross-company AUROC = {_n(cross_auc)}")
     return out
 
 
 def main(argv=None) -> int:
+    """Command-line entry point for `scripts.analyze`."""
     ensure_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--quick", action="store_true", help="Giảm số lần hoán vị (chạy nhanh).")
+    parser.add_argument("--quick", action="store_true", help="Fewer permutation repeats, faster run.")
     args = parser.parse_args(argv)
-    print("=== Phân tích chuyên sâu ===")
+    print("=== Deep analysis ===")
     run(quick=args.quick)
     return 0
 

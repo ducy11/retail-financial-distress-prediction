@@ -1,36 +1,134 @@
-# Python
+# Ignore rules for a Python project that also ships Office documents and SEC data snapshots.
+
+# 1. Python bytecode and runtime caches.
 __pycache__/
 *.py[cod]
-*.egg-info/
+*$py.class
+*.so
+
+# 2. Virtual environments; recreate from requirements*.txt.
 .venv/
 venv/
 env/
+ENV/
+.conda/
+virtualenv/
 
-# Notebooks
+# 3. Build and packaging output.
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+MANIFEST
+*.manifest
+
+# 4. Test, lint and coverage caches.
+.pytest_cache/
+.cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+*_cache/
+
+# 5. Notebook and IPython state.
 .ipynb_checkpoints/
+profile_default/
+ipython_config.py
 
-# IDE / OS
+# 6. IDE and editor metadata.
 .vscode/
 .idea/
+*.iml
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+
+# 7. OS metadata.
 .DS_Store
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+ehthumbs.db
 
-# Outputs của đồ án (tái tạo được bằng python -m scripts.* / forecasting.*)
-reports/results/*
-reports/figures/*
-!reports/results/.gitkeep
-!reports/figures/.gitkeep
-docs/*.tmp
-~$*
-_*
+# 8. Secrets and credentials; nothing here is ever committed. The SEC crawler carries only a
+#    User-Agent placeholder, and .env.example stays tracked as the template.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.p8
+*.p10
+secrets.json
+credentials.json
+*.token
+*.secret
+.sec_edgar_credentials
+.netrc
 
-# Dữ liệu thô SEC (snapshot lớn, tải lại bằng scripts.crawl_sec)
+# 9. Logs and crash dumps; each pipeline run recreates them, including reports/results/run_all.log,
+#    reports/**/run.log and the lab logs.
+*.log
+*.log.*
+logs/
+crash-*.txt
+core.*
+*.dmp
+
+# 10. Trained model binaries; rebuild with `python -m forecasting.train`. The .gitkeep
+#     placeholder stays tracked so the folder exists in a fresh clone.
+reports/models/*.joblib
+reports/models/*.pkl
+reports/models/*.pickle
+reports/models/*.bin
+reports/models/*.h5
+reports/models/*.onnx
+reports/models/*.pt
+reports/models/*.pth
+reports/models/*.ckpt
+reports/models/*.sav
+!reports/models/.gitkeep
+
+# 11. Raw SEC snapshots; download with `python -m scripts.crawl_sec`. The SHA-256 manifest
+#     data/sec/downloads.json stays tracked for provenance checks.
 data/sec/raw/*
 !data/sec/raw/.gitkeep
 
-# Bảng chỉ tiêu TÁI TẠO từ snapshot SEC (tái tạo bằng `python -m scripts.prepare_sec`)
-# — giữ lại bản gốc `data/retail-expanded/` đang dùng cho pipeline, không commit bản tái tạo.
+# 12. Indicator tables rebuilt from the snapshot by `python -m scripts.prepare_sec`; the
+#     reviewed tables in data/retail-expanded/ stay tracked.
 data/retail-expanded-rebuilt/
 
-# Logs
-*.log
+# 13. Compressed archives.
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# 14. Office lock and temporary files. Do not add a `_*` rule: it would also ignore
+#     `__init__.py`.
+~$*
+*.tmp
+*.bak
+
+# 15. Documentation under docs/ is tracked on purpose, including the Word, slide and PDF
+#     deliverables. Uncomment the next line to keep it private instead.
+# docs/
+
+# Tracked on purpose, so none of the rules above may hide them:
+#   data/sec/downloads.json, data/prepared/*.json, data/retail-expanded/*.json,
+#   reports/results/*.{json,md,csv}, reports/figures/**/*.png, docs/**,
+#   requirements.txt and requirements-*.txt

@@ -7,12 +7,9 @@ scikit-learn==1.6.0
 matplotlib==3.9.3
 
 # xgboost/lightgbm CHỈ dùng cho 2 lab mất cân bằng (không thuộc pipeline chính):
-#   imbalance_lab/ (Focal Loss = custom objective LightGBM), benchmark_imbalanced.py, imbalance_experiment/
-# Nếu muốn chạy các lab đó thì cài thêm: pip install -r requirements-benchmark.txt
+#   labs/imbalance_lab/ (Focal Loss = custom objective LightGBM), labs/benchmark.py, labs/imbalance_experiment/
+# Nếu muốn chạy các lab đó thì cài thêm: pip install -r requirements-labs.txt
 # (bản thân lab vẫn tự chạy được khi thiếu: kỹ thuật phụ thuộc thư viện sẽ bị bỏ qua và ghi rõ trong log)
 
 # Tùy chọn: vẽ đồ thị đẹp hơn (không bắt buộc — fallback matplotlib thuần)
 # seaborn>=0.13
-
-# Tùy chọn: tương tác notebook
-# jupyter>=1.0

@@ -1,0 +1,35 @@
+# Line-ending normalisation and file classification for a repository that mixes source code
+# with Office documents.
+
+# Normalise text files to LF on commit, which keeps diffs clean between Windows and Linux CI.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF; uncomment when such files are added.
+# *.bat text eol=crlf
+# *.ps1 text eol=crlf
+
+# Binary formats: disable diff and merge so git never corrupts them.
+*.docx   binary
+*.doc    binary
+*.pptx   binary
+*.ppt    binary
+*.xlsx   binary
+*.pdf    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.svg    binary
+*.joblib binary
+*.pkl    binary
+*.bin    binary
+*.h5     binary
+
+# Explicit languages so GitHub highlights and counts files correctly.
+*.py     text diff=python
+*.md     text diff=markdown
+*.json   text
+*.csv    text
+*.yml    text
+*.yaml   text
+*.ipynb  text diff=python

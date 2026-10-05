@@ -1,0 +1,811 @@
+{
+  "overfit": [
+    {
+      "model": "logistic",
+      "train_auroc": 0.9840909090909091,
+      "val_auroc": 0.9653679653679653,
+      "gap_auroc": 0.018722943722943808,
+      "train_f1": 0.935361216730038,
+      "val_f1": 0.975609756097561,
+      "gap_f1": -0.04024853936752293,
+      "val_ap": 0.986863711001642,
+      "best_f1_val": 0.975609756097561,
+      "brier_val": 0.050540987749494566
+    },
+    {
+      "model": "random_forest",
+      "train_auroc": 0.9995265151515152,
+      "val_auroc": 0.9653679653679653,
+      "gap_auroc": 0.03415854978354993,
+      "train_f1": 0.9847328244274809,
+      "val_f1": 0.975609756097561,
+      "gap_f1": 0.009123068329919937,
+      "val_ap": 0.986863711001642,
+      "best_f1_val": 0.975609756097561,
+      "brier_val": 0.04587148013701739
+    },
+    {
+      "model": "hist_gradient_boosting",
+      "train_auroc": 1.0,
+      "val_auroc": 0.974025974025974,
+      "gap_auroc": 0.025974025974025983,
+      "train_f1": 1.0,
+      "val_f1": 0.975609756097561,
+      "gap_f1": 0.024390243902439046,
+      "val_ap": 0.9894179894179894,
+      "best_f1_val": 0.975609756097561,
+      "brier_val": 0.03679936411631017
+    },
+    {
+      "model": "mlp",
+      "train_auroc": 0.9735795454545455,
+      "val_auroc": 0.987012987012987,
+      "gap_auroc": -0.013433441558441506,
+      "train_f1": 0.9363295880149812,
+      "val_f1": 0.9130434782608695,
+      "gap_f1": 0.023286109754111717,
+      "val_ap": 0.9931869717584003,
+      "best_f1_val": 0.9767441860465117,
+      "brier_val": 0.07902284673523699
+    }
+  ],
+  "importance": {
+    "model": "random_forest",
+    "n_features": 47,
+    "val": [
+      {
+        "feature": "gross_margin_latest",
+        "mean_decrease_auroc": 0.00800865800865802,
+        "std": 0.005522662693581415
+      },
+      {
+        "feature": "receivables_to_sales_latest",
+        "mean_decrease_auroc": 0.001298701298701288,
+        "std": 0.001983799002145369
+      },
+      {
+        "feature": "working_capital_to_assets",
+        "mean_decrease_auroc": 0.0010822510822510955,
+        "std": 0.007606616186495937
+      },
+      {
+        "feature": "operating_margin_latest",
+        "mean_decrease_auroc": 0.0010822510822510734,
+        "std": 0.002694783462768102
+      },
+      {
+        "feature": "net_margin_latest",
+        "mean_decrease_auroc": 0.00021645021645021466,
+        "std": 0.0021536524612697223
+      },
+      {
+        "feature": "retained_to_assets_latest",
+        "mean_decrease_auroc": 0.00021645021645020913,
+        "std": 0.006909476060394973
+      },
+      {
+        "feature": "operating_margin_yoy",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      },
+      {
+        "feature": "net_margin_yoy",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      },
+      {
+        "feature": "cash_to_assets_latest",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      },
+      {
+        "feature": "revenue_per_asset_latest",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      },
+      {
+        "feature": "revenue_per_asset_yoy",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      },
+      {
+        "feature": "cash_to_assets_yoy",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      },
+      {
+        "feature": "inventory_to_sales_yoy",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      },
+      {
+        "feature": "receivables_to_sales_yoy",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      },
+      {
+        "feature": "sgna_pct_revenue_latest",
+        "mean_decrease_auroc": 0.0,
+        "std": 0.0
+      }
+    ],
+    "test": [
+      {
+        "feature": "current_ratio_min_window",
+        "mean_decrease_auroc": 0.03451417004048586,
+        "std": 0.01490605844746513
+      },
+      {
+        "feature": "current_ratio_latest",
+        "mean_decrease_auroc": 0.02090080971659919,
+        "std": 0.01264686137573211
+      },
+      {
+        "feature": "debt_to_assets_latest",
+        "mean_decrease_auroc": 0.013866396761133604,
+        "std": 0.00818587540307522
+      },
+      {
+        "feature": "working_capital_to_assets",
+        "mean_decrease_auroc": 0.006983805668016191,
+        "std": 0.006352373799398051
+      },
+      {
+        "feature": "debt_to_equity_latest",
+        "mean_decrease_auroc": 0.0056174089068826314,
+        "std": 0.0037527956764093874
+      },
+      {
+        "feature": "quick_ratio_latest",
+        "mean_decrease_auroc": 0.0031882591093117417,
+        "std": 0.0028676966733820375
+      },
+      {
+        "feature": "receivables_to_sales_latest",
+        "mean_decrease_auroc": 0.0031882591093117365,
+        "std": 0.0018462992254002996
+      },
+      {
+        "feature": "retained_to_assets_latest",
+        "mean_decrease_auroc": 0.0030870445344129693,
+        "std": 0.002780639042068065
+      },
+      {
+        "feature": "net_margin_latest",
+        "mean_decrease_auroc": 0.0025303643724696066,
+        "std": 0.003176590045845161
+      },
+      {
+        "feature": "current_assets_yoy_growth",
+        "mean_decrease_auroc": 0.0022773279352226285,
+        "std": 0.0014623667284210252
+      },
+      {
+        "feature": "ocf_to_sales_min_window",
+        "mean_decrease_auroc": 0.0017712550607287437,
+        "std": 0.001807041606412669
+      },
+      {
+        "feature": "distress_quarters_in_window",
+        "mean_decrease_auroc": 0.0016700404858299156,
+        "std": 0.0006617761553958701
+      },
+      {
+        "feature": "revenue_drawdown_window",
+        "mean_decrease_auroc": 0.001518218623481743,
+        "std": 0.0008765439309559195
+      },
+      {
+        "feature": "debt_to_equity_yoy",
+        "mean_decrease_auroc": 0.0014676113360323983,
+        "std": 0.0008144472135339543
+      },
+      {
+        "feature": "cash_to_assets_latest",
+        "mean_decrease_auroc": 0.0014170040485829872,
+        "std": 0.0012961789954317612
+      }
+    ],
+    "coefficient_model": null,
+    "logistic_coefficients_standardized": []
+  },
+  "vif": {
+    "n_features_used": 47,
+    "vif_top10": [
+      {
+        "feature": "cash_to_assets_yoy",
+        "vif": 798.1036567735367
+      },
+      {
+        "feature": "cash_and_equivalents_yoy_growth",
+        "vif": 765.9198797483707
+      },
+      {
+        "feature": "revenue_yoy_growth",
+        "vif": 288.0860772062094
+      },
+      {
+        "feature": "current_ratio_latest",
+        "vif": 244.15984046728437
+      },
+      {
+        "feature": "revenue_per_asset_yoy",
+        "vif": 225.88233200819698
+      },
+      {
+        "feature": "working_capital_to_assets",
+        "vif": 175.43501671676364
+      },
+      {
+        "feature": "current_assets_yoy_growth",
+        "vif": 158.04822464871097
+      },
+      {
+        "feature": "total_assets_yoy_growth",
+        "vif": 144.5854263945051
+      },
+      {
+        "feature": "net_income_yoy_growth",
+        "vif": 139.09991411955502
+      },
+      {
+        "feature": "net_margin_yoy",
+        "vif": 136.17025871198226
+      }
+    ],
+    "n_vif_above_10": 33
+  },
+  "ablation": [
+    {
+      "variant": "tất cả feature",
+      "drop": [],
+      "min_history": 0,
+      "n_features": 47,
+      "n_train": 212,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.9653679653679653,
+        "average_precision": 0.986863711001642,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.9827935222672065,
+        "average_precision": 0.990780227276072,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    },
+    {
+      "variant": "bỏ nhóm ratios_latest (14 cột)",
+      "drop": [
+        "gross_margin_latest",
+        "operating_margin_latest",
+        "net_margin_latest",
+        "sgna_pct_revenue_latest",
+        "current_ratio_latest",
+        "quick_ratio_latest",
+        "debt_to_assets_latest",
+        "debt_to_equity_latest",
+        "inventory_to_sales_latest",
+        "receivables_to_sales_latest",
+        "cash_to_assets_latest",
+        "ocf_to_sales_latest",
+        "retained_to_assets_latest",
+        "revenue_per_asset_latest"
+      ],
+      "min_history": 0,
+      "n_features": 33,
+      "n_train": 212,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.9523809523809523,
+        "average_precision": 0.9836309523809523,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.965587044534413,
+        "average_precision": 0.9821416264975822,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    },
+    {
+      "variant": "bỏ nhóm ratios_yoy (14 cột)",
+      "drop": [
+        "gross_margin_yoy",
+        "operating_margin_yoy",
+        "net_margin_yoy",
+        "sgna_pct_revenue_yoy",
+        "current_ratio_yoy",
+        "quick_ratio_yoy",
+        "debt_to_assets_yoy",
+        "debt_to_equity_yoy",
+        "inventory_to_sales_yoy",
+        "receivables_to_sales_yoy",
+        "cash_to_assets_yoy",
+        "ocf_to_sales_yoy",
+        "retained_to_assets_yoy",
+        "revenue_per_asset_yoy"
+      ],
+      "min_history": 0,
+      "n_features": 33,
+      "n_train": 212,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.974025974025974,
+        "average_precision": 0.9894179894179894,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.9736842105263158,
+        "average_precision": 0.9853753113102142,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    },
+    {
+      "variant": "bỏ nhóm growth (10 cột)",
+      "drop": [
+        "revenue_yoy_growth",
+        "cost_of_sales_yoy_growth",
+        "inventory_yoy_growth",
+        "operating_cash_flow_yoy_growth",
+        "total_assets_yoy_growth",
+        "cash_and_equivalents_yoy_growth",
+        "operating_income_yoy_growth",
+        "current_assets_yoy_growth",
+        "current_liabilities_yoy_growth",
+        "net_income_yoy_growth"
+      ],
+      "min_history": 0,
+      "n_features": 37,
+      "n_train": 212,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.9696969696969696,
+        "average_precision": 0.9880952380952381,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.9848178137651822,
+        "average_precision": 0.9925521350546177,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    },
+    {
+      "variant": "bỏ nhóm structure (1 cột)",
+      "drop": [
+        "working_capital_to_assets"
+      ],
+      "min_history": 0,
+      "n_features": 46,
+      "n_train": 212,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.961038961038961,
+        "average_precision": 0.9857142857142858,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.9817813765182186,
+        "average_precision": 0.9901804105405212,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    },
+    {
+      "variant": "bỏ nhóm stress (2 cột)",
+      "drop": [
+        "distress_quarters_in_window",
+        "revenue_cv"
+      ],
+      "min_history": 0,
+      "n_features": 45,
+      "n_train": 212,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.9653679653679653,
+        "average_precision": 0.986863711001642,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.9858299595141701,
+        "average_precision": 0.9929149797570849,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    },
+    {
+      "variant": "bỏ nhóm path (6 cột)",
+      "drop": [
+        "current_ratio_min_window",
+        "ocf_to_sales_min_window",
+        "net_margin_min_window",
+        "revenue_drawdown_window",
+        "negative_ni_streak",
+        "negative_ocf_streak"
+      ],
+      "min_history": 0,
+      "n_features": 41,
+      "n_train": 212,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.961038961038961,
+        "average_precision": 0.9857142857142858,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.9767206477732794,
+        "average_precision": 0.9872112921689262,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    },
+    {
+      "variant": "bỏ cột độ phủ <50% (0 cột)",
+      "drop": [],
+      "min_history": 0,
+      "n_features": 47,
+      "n_train": 212,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.9653679653679653,
+        "average_precision": 0.986863711001642,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.9827935222672065,
+        "average_precision": 0.990780227276072,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    },
+    {
+      "variant": "chỉ mẫu có ≥5 quý lịch sử",
+      "drop": [],
+      "min_history": 5,
+      "n_features": 47,
+      "n_train": 180,
+      "n_test": 64,
+      "val": {
+        "auroc": 0.9653679653679653,
+        "average_precision": 0.986863711001642,
+        "f1": 0.975609756097561,
+        "macro_f1": 0.9660657476139979,
+        "accuracy": 0.96875
+      },
+      "test": {
+        "auroc": 0.986842105263158,
+        "average_precision": 0.9932920536635708,
+        "f1": 0.9487179487179487,
+        "macro_f1": 0.9343589743589744,
+        "accuracy": 0.9375
+      }
+    }
+  ],
+  "label_audit": {
+    "n_samples": 308,
+    "rule_agreement": {
+      "net_income<0": 0.3961038961038961,
+      "operating_income<0": 0.39285714285714285,
+      "operating_cash_flow<0": 0.4025974025974026,
+      "ocf<0 hoặc ni<0": 0.4090909090909091,
+      "current_liabilities>current_assets": 0.6525974025974026,
+      "stockholders_equity<0": 0.5194805194805194,
+      "retained_earnings<0": 0.5422077922077922,
+      "stress_signals>=1": 0.7467532467532467,
+      "stress_signals>=2": 0.4772727272727273
+    },
+    "rule_agreement_last_history": {
+      "net_income<0": 0.3961038961038961,
+      "operating_income<0": 0.39285714285714285,
+      "operating_cash_flow<0": 0.4025974025974026,
+      "ocf<0 hoặc ni<0": 0.4090909090909091,
+      "current_liabilities>current_assets": 0.6525974025974026,
+      "stockholders_equity<0": 0.5194805194805194,
+      "retained_earnings<0": 0.5422077922077922
+    },
+    "max_rule_agreement": 0.7467532467532467,
+    "note": "Nhãn gốc không khớp quy tắc kế toán đơn giản nào => không tái tạo được; xem docs/dinh-nghia-nhan.md và scripts/relabel.py."
+  },
+  "error_cases": [
+    {
+      "sample_id": "HD-2024Q2",
+      "ticker": "HD",
+      "actual": 1,
+      "predicted": 0,
+      "probability": 0.7834807777221335,
+      "n_history": 37,
+      "current_ratio_latest": 1.3392175376657498,
+      "working_capital_to_assets": 0.10429130379906601,
+      "net_margin_latest": 0.09885221593717393,
+      "debt_to_assets_latest": 0.9770289031932349,
+      "inventory_to_sales_latest": 0.6155197979021363,
+      "ocf_to_sales_latest": 0.1509418419462903,
+      "revenue_yoy_growth": -0.022519258125989747
+    },
+    {
+      "sample_id": "DG-2025Q2",
+      "ticker": "DG",
+      "actual": 0,
+      "predicted": 1,
+      "probability": 0.7975207048609142,
+      "n_history": 29,
+      "current_ratio_latest": 1.2330912063638557,
+      "working_capital_to_assets": 0.04816878563373983,
+      "net_margin_latest": 0.03755546077660754,
+      "debt_to_assets_latest": 0.7513957894401904,
+      "inventory_to_sales_latest": 0.6314784650294908,
+      "ocf_to_sales_latest": 0.08117638028976486,
+      "revenue_yoy_growth": 0.05264846624795328
+    },
+    {
+      "sample_id": "FIVE-2024Q3",
+      "ticker": "FIVE",
+      "actual": 1,
+      "predicted": 0,
+      "probability": 0.17446336088059378,
+      "n_history": 26,
+      "current_ratio_latest": 1.632561058369393,
+      "working_capital_to_assets": 0.1080036001698419,
+      "net_margin_latest": 0.03975573115006102,
+      "debt_to_assets_latest": 0.5993811834312449,
+      "inventory_to_sales_latest": 0.7708768789100665,
+      "ocf_to_sales_latest": 0.08584226130598782,
+      "revenue_yoy_growth": 0.0936624236970359
+    }
+  ],
+  "error_cases_csv": "E:\\CS114\\Do-an\\do-an\\reports\\results\\error_cases.csv",
+  "threshold": {
+    "model": "random_forest",
+    "cost_fn": 5.0,
+    "cost_fp": 1.0,
+    "validation": {
+      "best_f1": {
+        "threshold": 0.7879126873178737,
+        "precision": 1.0,
+        "recall": 0.9523809523809523,
+        "f1": 0.975609756097561
+      },
+      "cost_optimal": {
+        "threshold": 0.7879126873178737,
+        "expected_cost": 5.0,
+        "cost_fn": 5.0,
+        "cost_fp": 1.0,
+        "f1": 0.975609756097561,
+        "precision": 1.0,
+        "recall": 0.9523809523809523
+      }
+    },
+    "test": {
+      "best_f1": {
+        "threshold": 0.7834807777221335,
+        "precision": 0.9736842105263158,
+        "recall": 0.9736842105263158,
+        "f1": 0.9736842105263158
+      },
+      "cost_optimal": {
+        "threshold": 0.7834807777221335,
+        "expected_cost": 6.0,
+        "cost_fn": 5.0,
+        "cost_fp": 1.0,
+        "f1": 0.9736842105263158,
+        "precision": 0.9736842105263158,
+        "recall": 0.9736842105263158
+      }
+    }
+  },
+  "calibration": {
+    "model": "random_forest",
+    "bins": {
+      "validation": {
+        "predicted_mean": [
+          0.08516112983211582,
+          0.19221918065757393,
+          0.3204768819620275,
+          0.8245720517297579,
+          0.9248613123221259
+        ],
+        "observed_rate": [
+          0.0,
+          0.14285714285714285,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "n": [
+          3,
+          7,
+          2,
+          4,
+          16
+        ],
+        "brier": 0.04587148013701739,
+        "ece": 0.0983094441859492
+      },
+      "test": {
+        "predicted_mean": [
+          0.08412768625410746,
+          0.19848360106272758,
+          0.2834491023648366,
+          0.8112428360168135,
+          0.9414852441093869
+        ],
+        "observed_rate": [
+          0.0,
+          0.07692307692307693,
+          0.0,
+          0.75,
+          1.0
+        ],
+        "n": [
+          8,
+          13,
+          3,
+          12,
+          28
+        ],
+        "brier": 0.058029377866729515,
+        "ece": 0.08557785637627742
+      }
+    }
+  },
+  "learning_curve": {
+    "train_sizes": [
+      56,
+      83,
+      109,
+      135,
+      162
+    ],
+    "train_auroc_mean": [
+      NaN,
+      1.0,
+      0.9998966087675765,
+      0.9998024488951908,
+      0.9996963118207082
+    ],
+    "val_auroc_mean": [
+      NaN,
+      0.7313633014237854,
+      0.8177476850359915,
+      0.8550721138926785,
+      0.8948400026273011
+    ],
+    "gap_at_full_data": 0.10485630919340705,
+    "n_nan_folds": {
+      "train": 5,
+      "val": 5
+    },
+    "note": "Ô NaN = fold mà tập con chỉ có MỘT lớp (nhãn gần như là thuộc tính công ty) nên AUROC không xác định; giá trị trung bình bỏ qua các ô đó (`np.nanmean`)."
+  },
+  "headline": {
+    "rows": [
+      {
+        "system": "model[logistic] — in-domain",
+        "auroc": 0.9827935222672065,
+        "average_precision": 0.988690773755972,
+        "source": "train→test"
+      },
+      {
+        "system": "model[random_forest] — in-domain",
+        "auroc": 0.9827935222672065,
+        "average_precision": 0.990780227276072,
+        "source": "train→test"
+      },
+      {
+        "system": "model[hist_gradient_boosting] — in-domain",
+        "auroc": 0.9767206477732794,
+        "average_precision": 0.9868394417217132,
+        "source": "train→test"
+      },
+      {
+        "system": "model[mlp] — in-domain",
+        "auroc": 0.9706477732793523,
+        "average_precision": 0.9819303834542545,
+        "source": "train→test"
+      },
+      {
+        "system": "model[logistic] — cross-company",
+        "auroc": 0.9119461126440511,
+        "average_precision": 0.9418604100903478,
+        "source": "GroupKFold"
+      },
+      {
+        "system": "model[random_forest] — cross-company",
+        "auroc": 0.9334523616296054,
+        "average_precision": 0.9568668718768785,
+        "source": "GroupKFold"
+      },
+      {
+        "system": "model[hist_gradient_boosting] — cross-company",
+        "auroc": 0.9261686414543093,
+        "average_precision": 0.9528592096331339,
+        "source": "GroupKFold"
+      },
+      {
+        "system": "model[mlp] — cross-company",
+        "auroc": 0.7891170264567441,
+        "average_precision": 0.8319506377641226,
+        "source": "GroupKFold"
+      },
+      {
+        "system": "dummy_most_frequent",
+        "auroc": 0.5,
+        "average_precision": 0.59375,
+        "source": "baseline"
+      },
+      {
+        "system": "ticker_prior",
+        "auroc": 0.9858299595141702,
+        "average_precision": 0.9846491228070176,
+        "source": "baseline"
+      },
+      {
+        "system": "single_feature[debt_to_assets_latest]",
+        "auroc": 0.888663967611336,
+        "average_precision": 0.9379353574488052,
+        "source": "baseline"
+      },
+      {
+        "system": "rule[altman_z_double_prime<1.1]",
+        "auroc": 0.7580971659919029,
+        "average_precision": 0.8648197088265781,
+        "source": "baseline"
+      },
+      {
+        "system": "model[logistic]",
+        "auroc": 0.9827935222672065,
+        "average_precision": 0.988690773755972,
+        "source": "baseline"
+      },
+      {
+        "system": "model[random_forest]",
+        "auroc": 0.9827935222672065,
+        "average_precision": 0.990780227276072,
+        "source": "baseline"
+      },
+      {
+        "system": "model[hist_gradient_boosting]",
+        "auroc": 0.9767206477732794,
+        "average_precision": 0.9868394417217132,
+        "source": "baseline"
+      },
+      {
+        "system": "model[mlp]",
+        "auroc": 0.9706477732793523,
+        "average_precision": 0.9819303834542545,
+        "source": "baseline"
+      }
+    ],
+    "loco_mean_auroc": 0.6280092592592593,
+    "loco_n_evaluable": 8,
+    "loco_skipped_companies": [],
+    "dummy_reference_auroc": 0.5
+  }
+}
